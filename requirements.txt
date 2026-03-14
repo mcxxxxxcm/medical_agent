@@ -1,0 +1,17 @@
+langchain-community~=0.4.1
+langchain~=1.1.0
+langchain-core~=1.2.12
+python-dotenv~=1.0.1
+langchain-openai~=1.0.0
+pypdf
+langchain-text-splitters~=1.1.0
+pydantic~=2.12.5
+langgraph~=1.0.10
+flask~=3.0.0
+flask-cors~=5.0.0
+langchain-chroma~=0.1.0
+
+rank-bm25~=0.2.2
+asyncio~=3.4.3
+jieba~=0.42.1
+chromadb~=1.5.1

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>医疗助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 500;
+        }
+
+        .config-bar {
+            background: white;
+            padding: 12px 24px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .config-bar label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .config-bar input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 150px;
+        }
+
+        .config-bar select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .message.user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            align-self: flex-end;
+        }
+
+        .message.assistant {
+            background: white;
+            color: #333;
+            align-self: flex-start;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .message.assistant .warning {
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: #fff3cd;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #856404;
+        }
+
+        .message.assistant .sources {
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .input-container {
+            background: white;
+            padding: 16px 24px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 12px;
+        }
+
+        .input-container textarea {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .input-container textarea:focus {
+            border-color: #667eea;
+        }
+
+        .input-container button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .input-container button:hover {
+            transform: scale(1.05);
+        }
+
+        .input-container button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .typing {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+        }
+
+        .typing span {
+            width: 8px;
+            height: 8px;
+            background: #999;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .typing span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .typing span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+            }
+            40% {
+                transform: scale(1);
+            }
+        }
+
+        .clear-btn {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .clear-btn:hover {
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🏥 医疗助手</h1>
+</div>
+
+<div class="config-bar">
+    <label>用户ID：</label>
+    <input type="text" id="userId" placeholder="输入用户ID" value="test_user">
+
+    <label>会话ID：</label>
+    <input type="text" id="threadId" placeholder="留空自动生成">
+
+    <label>输出模式：</label>
+    <select id="streamMode">
+        <option value="stream">流式输出</option>
+        <option value="sync">同步输出</option>
+    </select>
+
+    <button class="clear-btn" onclick="clearChat()">清空对话</button>
+</div>
+
+<div class="chat-container" id="chatContainer">
+    <div class="message assistant">
+        您好！我是医疗助手，可以为您解答健康相关问题。请问有什么可以帮助您的？
+    </div>
+</div>
+
+<div class="input-container">
+        <textarea
+                id="userInput"
+                placeholder="输入您的问题..."
+                rows="1"
+                onkeydown="handleKeyDown(event)"
+        ></textarea>
+    <button id="sendBtn" onclick="sendMessage()">发送</button>
+</div>
+
+<script>
+    const API_BASE = window.location.origin;
+    let isStreaming = false;
+
+    // 自动调整输入框高度
+    const textarea = document.getElementById('userInput');
+    textarea.addEventListener('input', function () {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+
+    // 回车发送
+    function handleKeyDown(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    // 发送消息
+    async function sendMessage() {
+        const input = document.getElementById('userInput');
+        const question = input.value.trim();
+
+        if (!question || isStreaming) return;
+
+        const userId = document.getElementById('userId').value || 'default';
+        const threadId = document.getElementById('threadId').value || null;
+        const streamMode = document.getElementById('streamMode').value;
+
+        // 添加用户消息
+        addMessage(question, 'user');
+        input.value = '';
+        input.style.height = 'auto';
+
+        // 禁用发送按钮
+        isStreaming = true;
+        document.getElementById('sendBtn').disabled = true;
+
+        // 显示加载动画
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message assistant typing';
+        loadingDiv.innerHTML = '<span></span><span></span><span></span>';
+        document.getElementById('chatContainer').appendChild(loadingDiv);
+        scrollToBottom();
+
+        try {
+            if (streamMode === 'stream') {
+                await sendStreamRequest(question, userId, threadId, loadingDiv);
+            } else {
+                await sendSyncRequest(question, userId, threadId, loadingDiv);
+            }
+        } catch (error) {
+            loadingDiv.className = 'message assistant';
+            loadingDiv.innerHTML = `抱歉，发生错误：${error.message}`;
+        } finally {
+            isStreaming = false;
+            document.getElementById('sendBtn').disabled = false;
+        }
+    }
+
+    // 流式请求
+    async function sendStreamRequest(question, userId, threadId, loadingDiv) {
+        const response = await fetch(`${API_BASE}/api/chat/stream`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                question: question,
+                user_id: userId,
+                thread_id: threadId
+            })
+        });
+
+        loadingDiv.className = 'message assistant';
+        loadingDiv.innerHTML = '';
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullAnswer = '';
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            console.log('Received chunk:', chunk); // 调试日志
+
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    console.log('Extracted data:', data); // 调试日志
+
+                    if (data === '[DONE]') {
+                        console.log('Stream completed'); // 调试日志
+                        break;
+                    } else if (data.startsWith('[ERROR]')) {
+                        loadingDiv.innerHTML = data;
+                    } else {
+                        try {
+                            // 解析JSON编码的答案
+                            const token = JSON.parse(data);
+                            fullAnswer += token;
+
+                            console.log('Current full answer:', fullAnswer); // 调试日志
+                            loadingDiv.innerHTML = formatAnswer(fullAnswer);
+                            scrollToBottom();
+                        } catch (e) {
+                            // 如果解析失败，直接使用原始数据
+                            fullAnswer += data;
+
+                            console.log('Current full answer (raw):', fullAnswer);
+                            loadingDiv.innerHTML = formatAnswer(fullAnswer);
+                            scrollToBottom();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 同步请求
+    async function sendSyncRequest(question, userId, threadId, loadingDiv) {
+        const response = await fetch(`${API_BASE}/api/chat`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                question: question,
+                user_id: userId,
+                thread_id: threadId
+            })
+        });
+
+        const data = await response.json();
+
+        loadingDiv.className = 'message assistant';
+        let html = formatAnswer(data.answer || '抱歉，我无法回答这个问题。');
+
+        if (data.warnings && data.warnings.length > 0) {
+            html += `<div class="warning">⚠️ ${data.warnings.join('<br>')}</div>`;
+        }
+
+        if (data.sources && data.sources.length > 0) {
+            html += `<div class="sources">📚 来源：${data.sources.map(s => s.source).join(', ')}</div>`;
+        }
+
+        loadingDiv.innerHTML = html;
+        scrollToBottom();
+    }
+
+    // 添加消息
+    function addMessage(content, role) {
+        const div = document.createElement('div');
+        div.className = `message ${role}`;
+        div.textContent = content;
+        document.getElementById('chatContainer').appendChild(div);
+        scrollToBottom();
+    }
+
+    // 格式化答案
+    function formatAnswer(text) {
+        return text
+            .replace(/\n/g, '<br>')
+            .replace(/### (.*)/g, '<strong>$1</strong>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    }
+
+    // 滚动到底部
+    function scrollToBottom() {
+        const container = document.getElementById('chatContainer');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // 清空对话
+    function clearChat() {
+        document.getElementById('chatContainer').innerHTML = `
+                <div class="message assistant">
+                    您好！我是医疗助手，可以为您解答健康相关问题。请问有什么可以帮助您的？
+                </div>
+            `;
+        document.getElementById('threadId').value = '';
+    }
+</script>
+</body>
+</html>

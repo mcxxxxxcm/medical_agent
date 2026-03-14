@@ -1,0 +1,168 @@
+2026-02-27 10:40:46 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": null,
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-01 14:45:25 - app.memory.long_term_memory - ERROR - 初始化 Store 表结构失败：'_GeneratorContextManager' object has no attribute 'setup'
+2026-03-01 14:45:25 - app.memory.long_term_memory - ERROR - 初始化 Store 表结构失败：'_GeneratorContextManager' object has no attribute 'setup'
+2026-03-01 14:45:36 - app.memory.long_term_memory - ERROR - 初始化 Store 表结构失败：'_GeneratorContextManager' object has no attribute 'setup'
+2026-03-01 14:56:40 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": null,
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-01 15:02:18 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": null,
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-01 17:04:27 - app.graph.nodes - ERROR - 答案生成失败：name 'result' is not defined
+2026-03-02 00:57:02 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-02 01:22:39 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-02 01:25:00 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-02 01:27:59 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-02 01:35:43 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-02 01:43:09 - app.graph.nodes - ERROR - JSON解析失败，原始响应：```json
+{
+    "symptoms": ["发烧"],
+    "severity": null,
+    "body_parts": null,
+    "duration": null,
+    "additional_info": null
+}
+```
+2026-03-06 00:10:50 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 00:11:06 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 00:18:25 - app.graph.nodes - ERROR - 路由节点执行失败：'NoneType' object has no attribute 'question_type'
+2026-03-06 00:18:42 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 00:37:34 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 00:38:06 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 00:56:08 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 00:56:10 - app.graph.nodes - ERROR - 知识检索失败：no such column: collections.topic
+2026-03-06 00:56:27 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 01:02:55 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 01:03:10 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 01:30:07 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 01:31:18 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 01:39:31 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 01:39:41 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 01:43:36 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-06 01:44:00 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-06 13:35:29 - app.graph.nodes - ERROR - 路由节点执行失败：Request timed out.
+2026-03-06 13:37:19 - app.graph.nodes - ERROR - 路由节点执行失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:37:22 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/embeddings)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:37:33 - app.graph.nodes - ERROR - 答案生成失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:37:34 - app.graph.nodes - ERROR - 安全检查失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:39:27 - app.graph.nodes - ERROR - 路由节点执行失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:39:29 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/embeddings)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:39:39 - app.graph.nodes - ERROR - 答案生成失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:39:39 - app.graph.nodes - ERROR - 安全检查失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:41:10 - app.graph.nodes - ERROR - 路由节点执行失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:41:13 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/embeddings)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:41:23 - app.graph.nodes - ERROR - 答案生成失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:41:23 - app.graph.nodes - ERROR - 安全检查失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:59:16 - app.graph.nodes - ERROR - 路由节点执行失败：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/chat/completions)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 13:59:18 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 404 - {'error': {'message': 'Invalid URL (POST /v1/chat/completions/embeddings)', 'type': 'invalid_request_error', 'param': '', 'code': ''}}
+2026-03-06 14:02:17 - app.graph.nodes - ERROR - 路由节点执行失败：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model gpt-3.5-turbo under group default (distributor) (request id: 20260306060219202313464VUR5ux2g)', 'type': 'new_api_error'}}
+2026-03-06 14:02:22 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model embedding-2 under group default (distributor) (request id: 20260306060223876894210I0kPgvAe)', 'type': 'new_api_error'}}
+2026-03-06 14:02:36 - app.graph.nodes - ERROR - 答案生成失败：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model gpt-3.5-turbo under group default (distributor) (request id: 20260306060238191447297UuYiRQev)', 'type': 'new_api_error'}}
+2026-03-06 14:02:39 - app.graph.nodes - ERROR - 安全检查失败：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model gpt-3.5-turbo under group default (distributor) (request id: 202603060602408654632135uDrsTUe)', 'type': 'new_api_error'}}
+2026-03-09 22:40:19 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model embedding-2 under group default (distributor) (request id: 20260309144018193925409htjzwi4r)', 'type': 'new_api_error'}}
+2026-03-09 22:40:33 - app.graph.nodes - ERROR - 安全检查失败：'AIMessage' object has no attribute 'detected_issues'
+2026-03-09 22:55:01 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-10 17:33:35 - app.api.routes - ERROR - 流式处理失败：'coroutine' object has no attribute 'astream_event'
+2026-03-10 17:36:44 - app.api.routes - ERROR - 流式处理失败：'CompiledStateGraph' object has no attribute 'astream_event'
+2026-03-10 17:38:06 - app.api.routes - ERROR - 流式处理失败：'CompiledStateGraph' object has no attribute 'astream_event'
+2026-03-12 21:17:30 - app.api.routes - ERROR - 流式处理失败：'NoneType' object is not a mapping
+2026-03-12 21:22:58 - app.graph.nodes - ERROR - 知识检索失败：type object 'datetime.time' has no attribute 'time'
+2026-03-12 21:24:07 - app.graph.nodes - ERROR - 知识检索失败：type object 'datetime.time' has no attribute 'time'
+2026-03-12 21:27:41 - app.graph.nodes - ERROR - 知识检索失败：type object 'datetime.time' has no attribute 'time'
+2026-03-12 21:30:56 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-12 21:31:40 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-12 21:40:17 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 12:10:33 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:04:10 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:04:54 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:06:27 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:07:04 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:26:21 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:27:04 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:28:23 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:29:44 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:47:56 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:49:34 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:54:32 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:59:33 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 16:59:53 - app.graph.nodes - ERROR - 知识检索失败：module 'datetime' has no attribute 'now'
+2026-03-13 17:01:14 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 17:01:18 - app.graph.nodes - ERROR - 知识检索失败：module 'datetime' has no attribute 'now'
+2026-03-13 17:08:17 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 17:08:20 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：BasicKeyCommands.setex() got an unexpected keyword argument 'ensure_ascii'
+2026-03-13 17:15:04 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
+2026-03-13 17:15:58 - app.graph.nodes - ERROR - 流式生成失败：Error code: 403 - {'error': {'message': '预扣费额度失败, 用户剩余额度: ＄0.015344, 需要预扣费额度: ＄0.050000 (request id: 20260313091557814275185XnYD3nz7)', 'type': 'new_api_error', 'param': '', 'code': 'insufficient_user_quota'}}
