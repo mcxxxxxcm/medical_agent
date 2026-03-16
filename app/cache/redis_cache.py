@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from langchain_core.documents import Document
 from app.core.app_logging import get_logger
 from app.core.config import get_config
+import redis
 
 logger = get_logger(__name__)
 
@@ -67,7 +68,7 @@ class RedisCache:
     def _connect(self):
         """连接 Redis"""
         try:
-            import redis
+
             from redis.connection import ConnectionPool
 
             # 使用连接池

@@ -251,8 +251,7 @@ async def stream(request: ChatRequest):
                     output = event.get("data", {}).get("output", {})
                     answer = output.get("final_answer", "")
                     if answer:
-                        import json
-                        yield f"data: {json.dumps(answer, ensure_ascii=False)}\n\n"
+                        state_snapshot.update(output)
                         answer_generated = True
 
                 # 捕获用户档案
@@ -268,7 +267,7 @@ async def stream(request: ChatRequest):
                     full_state = {**input_state, **state_snapshot}
 
                     # 判断路径类型
-                    if state_snapshot.get("final_answer"):
+                    if answer_generated and state_snapshot.get("final_answer"):
                         # direct_answer 路径：已经有答案，直接返回
                         yield f"data: {json.dumps(state_snapshot['final_answer'], ensure_ascii=False)}\n\n"
 

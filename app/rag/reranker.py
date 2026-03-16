@@ -5,19 +5,45 @@
     3. 更稳健的懒加载与单例模式
     4. 显式指定 Torch 数据类型 (fp16 加速)
 """
+import os
 import re
+from pathlib import Path
 from typing import List, Optional, Tuple
 from langchain_core.documents import Document
 from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
 
-# 模型配置
+
+# 默认模型路径逻辑
+def get_default_model_path():
+    """获取默认模型路径，支持 Docker 和本地环境"""
+    # 优先使用环境变量
+    env_path = os.environ.get("RERANKER_MODEL_PATH")
+    if env_path and Path(env_path).exists():
+        return env_path
+
+    # 本地开发路径
+    local_path = Path(__file__).parent.parent.parent / "bge-reranker-v2-m3"
+    if local_path.exists():
+        return str(local_path)
+
+    # 降级：使用 HuggingFace 在线模型
+    return "BAAI/bge-reranker-v2-m3"
+
+
 RERANKER_MODELS = {
-    "bge-v2-m3": r"D:\Agent\medical_assistant_agent\bge-reranker-v2-m3",  # 推荐：通用性强，支持长文本
-    "bce-base": "maidalun1020/bce-reranker-base_v1",  # 备选：百度中文专用
+    "bge-v2-m3": get_default_model_path(),
+    "bce-base": "maidalun1020/bce-reranker-base_v1",
 }
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
+
+# 模型配置 本地路径
+# RERANKER_MODELS = {
+#     "bge-v2-m3": r"D:\Agent\medical_assistant_agent\bge-reranker-v2-m3",  # 推荐：通用性强，支持长文本
+#     "bce-base": "maidalun1020/bce-reranker-base_v1",  # 备选：百度中文专用
+# }
+# DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
 
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)

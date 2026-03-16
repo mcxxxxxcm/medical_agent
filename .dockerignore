@@ -1,0 +1,50 @@
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+.env.local
+
+# IDE 相关
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# 日志文件 (运行时生成)
+logs/*.log
+
+# 本地数据 (通过 volume 挂载)
+data/chroma_db/
+
+# 缓存文件
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Docker 相关
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 文档
+*.md
+!README.md
+
+# 测试文件
+tests/
+*_test.py
+test_*.py

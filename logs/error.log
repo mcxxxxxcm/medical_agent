@@ -166,3 +166,11 @@
 2026-03-13 17:08:20 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：BasicKeyCommands.setex() got an unexpected keyword argument 'ensure_ascii'
 2026-03-13 17:15:04 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Embedding dimension 1536 does not match collection dimensionality 1024
 2026-03-13 17:15:58 - app.graph.nodes - ERROR - 流式生成失败：Error code: 403 - {'error': {'message': '预扣费额度失败, 用户剩余额度: ＄0.015344, 需要预扣费额度: ＄0.050000 (request id: 20260313091557814275185XnYD3nz7)', 'type': 'new_api_error', 'param': '', 'code': 'insufficient_user_quota'}}
+2026-03-15 15:20:33 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-03-15 15:21:04 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-03-15 15:25:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-15 15:25:53 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Connection error.
+2026-03-15 15:25:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-15 15:26:03 - app.graph.nodes - ERROR - 流式生成失败：Connection error.
+2026-03-15 18:03:51 - app.rag.reranker - ERROR - 缺少依赖库：No module named 'sentence_transformers'。请运行：pip install sentence-transformers torch
+2026-03-16 05:16:17 - app.rag.reranker - ERROR - 缺少依赖库：No module named 'sentence_transformers'。请运行：pip install sentence-transformers torch
