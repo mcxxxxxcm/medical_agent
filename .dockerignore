@@ -48,3 +48,9 @@ docker-compose*.yml
 tests/
 *_test.py
 test_*.py
+
+# 【关键】不要把这些大数据目录打包进镜像
+data/
+docs/
+models/
+README.md

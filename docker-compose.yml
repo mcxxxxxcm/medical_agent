@@ -22,17 +22,16 @@ services:
       - DEBUG=false
       - HOST=0.0.0.0
       - PORT=8000
-      # 指定容器内模型路径
-      - RERANKER_MODEL_PATH=/app/models/bge-reranker-v2-m3
 
       # LLM 配置 (从 .env 文件读取)
-      - MODEL_NAME=${MODEL_NAME:-gpt-4-turbo}
+      - MODEL_NAME=${MODEL_NAME}
       - MODEL_URL=${MODEL_URL}
       - MODEL_API_KEY=${MODEL_API_KEY}
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.2}
+      - RERANKER_MODEL_PATH=${RERANKER_MODEL_PATH}
 
       # Embedding 配置
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-1536}
 
       # 数据库配置 - PostgreSQL (用于检查点存储)
@@ -51,15 +50,18 @@ services:
       - LOG_LEVEL=INFO
     volumes:
       # 挂在本地模型到容器内
-      - ./bge-reranker-v2-m3:/app/models/bge-reranker-v2-m3:ro
+      - ./bge-reranker-onnx:/app/models/bge-reranker-onnx:ro
       # 持久化向量数据库
-      - ./data/chroma_db:/app/data/chroma_db
+#      - ./data/chroma_db:/app/data/chroma_db
+      - D:\Agent\medical_assistant_agent\data\chroma_db:/app/data/chroma_db
       # 持久化 BM25 索引
       - ./app/api/data:/app/app/api/data
       # 日志目录
       - ./logs:/app/logs
       # 文档目录 (如果需要动态更新)
       - ./docs:/app/docs
+      - ./data:/app/data
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,7 +80,7 @@ services:
   # PostgreSQL 服务 - 检查点持久化存储
   # ==========================================
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: medical-assistant-postgres
     restart: unless-stopped
     environment:
@@ -86,8 +88,8 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=medical_assistant_db
     volumes:
-      # 数据持久化
-      - postgres_data:/var/lib/postgresql/data
+      # 使用本地目录挂载
+      - D:/BaiduNetdiskDownload/posgresql/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     networks:
@@ -130,7 +132,5 @@ networks:
 # 数据卷配置
 # ==========================================
 volumes:
-  postgres_data:
-    driver: local
   redis_data:
     driver: local

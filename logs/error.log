@@ -174,3 +174,54 @@
 2026-03-15 15:26:03 - app.graph.nodes - ERROR - 流式生成失败：Connection error.
 2026-03-15 18:03:51 - app.rag.reranker - ERROR - 缺少依赖库：No module named 'sentence_transformers'。请运行：pip install sentence-transformers torch
 2026-03-16 05:16:17 - app.rag.reranker - ERROR - 缺少依赖库：No module named 'sentence_transformers'。请运行：pip install sentence-transformers torch
+2026-03-17 01:02:28 - app.graph.nodes - ERROR - 路由节点执行失败：Connection error.
+2026-03-17 01:02:34 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-17 01:02:35 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Connection error.
+2026-03-17 01:02:38 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-17 01:02:40 - app.graph.nodes - ERROR - 流式生成失败：Connection error.
+2026-03-17 01:09:00 - app.graph.nodes - ERROR - 路由节点执行失败：Connection error.
+2026-03-17 01:09:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-17 01:09:07 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Connection error.
+2026-03-17 01:09:10 - app.cache.semantic_cache - ERROR - 获取embedding失败：Connection error.
+2026-03-17 01:09:11 - app.graph.nodes - ERROR - 流式生成失败：Connection error.
+2026-03-17 01:17:43 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 01:17:54 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-03-17 01:22:30 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 01:22:59 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 01:28:25 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 01:37:28 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 01:38:31 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='knowledge', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-16 18:04:37 - app.rag.reranker - ERROR - 缺少依赖库：No module named 'optimum.onnxruntime'。请运行：pip install optimum[onnxruntime] transformers
+2026-03-16 18:05:05 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='general', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 14:40:37 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 07:31:14 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='general', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 07:33:13 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='general', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-03-17 08:34:33 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model embedding-3 under group default (distributor) (request id: 20260317083432574418306z1AOHPil)', 'type': 'new_api_error'}}
+2026-03-17 08:34:35 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 503 - {'error': {'code': 'model_not_found', 'message': 'No available channel for model embedding-3 under group default (distributor) (request id: 20260317083434954526591H2VorPwO)', 'type': 'new_api_error'}}
+2026-03-17 14:39:58 - app.api.routes - ERROR - 流式处理失败：consuming input failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+2026-03-17 14:40:37 - app.api.routes - ERROR - 流式处理失败：the connection is closed
+2026-03-17 15:21:05 - app.api.routes - ERROR - 流式处理失败：consuming input failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.

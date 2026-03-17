@@ -21,12 +21,14 @@ class Settings(BaseSettings):
 
     # ===== LLM 配置 =====
     MODEL_NAME: str = "gpt-4-turbo"
+    # MODEL_NAME: str = "glm-4"
     MODEL_URL: Optional[str] = None
     MODEL_API_KEY: Optional[str] = None
     MODEL_TEMPERATURE: float = 0.2
 
     # ===== Embedding 配置 =====
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # EMBEDDING_MODEL: str = "embedding-3"
     EMBEDDING_DIMENSION: int = 1536
 
     # ===== 数据库配置 =====
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
     # ===== 语义缓存配置 =====
     ENABLE_SEMANTIC_CACHE: bool = True  # 是否启用语义相似缓存
     SEMANTIC_CACHE_THRESHOLD: float = 0.80  # 语义相似度阈值（0.92 = 92% 相似）
+
+    # ===== RERANKER_MODEL本地路径 =====
+    RERANKER_MODEL_PATH: str = "/app/models/bge-reranker-onnx"
 
     class Config:
         extra = "ignore"

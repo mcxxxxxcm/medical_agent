@@ -1,15 +1,17 @@
-"""Reranker 重排序模块 (生产优化版)
-改进点：
-    1. 引入中文分词预处理 (提升 Cross-Encoder 对中文的理解)
-    2. 增加置信度阈值过滤 (防止低质量文档进入 LLM)
-    3. 更稳健的懒加载与单例模式
-    4. 显式指定 Torch 数据类型 (fp16 加速)
+"""Reranker 重排序模块 (ONNX轻量版)
+优势：
+    1、无需pytorch，docker镜像体积减小 ~10g
+    2、ONNX Runtime推理速度更快
+    3、内存占用低
 """
 import os
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from langchain_core.documents import Document
+from pyexpat import features
+
+from app.core import get_config
 from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,18 +20,19 @@ logger = get_logger(__name__)
 # 默认模型路径逻辑
 def get_default_model_path():
     """获取默认模型路径，支持 Docker 和本地环境"""
+    config=get_config()
     # 优先使用环境变量
-    env_path = os.environ.get("RERANKER_MODEL_PATH")
+    env_path = config.RERANKER_MODEL_PATH
     if env_path and Path(env_path).exists():
         return env_path
 
     # 本地开发路径
-    local_path = Path(__file__).parent.parent.parent / "bge-reranker-v2-m3"
+    local_path = Path(__file__).parent.parent.parent / "bge-reranker-onnx"
     if local_path.exists():
         return str(local_path)
 
     # 降级：使用 HuggingFace 在线模型
-    return "BAAI/bge-reranker-v2-m3"
+    return "BAAI/bge-reranker-base-onnx-o3-cpu"
 
 
 RERANKER_MODELS = {
@@ -37,13 +40,6 @@ RERANKER_MODELS = {
     "bce-base": "maidalun1020/bce-reranker-base_v1",
 }
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
-
-# 模型配置 本地路径
-# RERANKER_MODELS = {
-#     "bge-v2-m3": r"D:\Agent\medical_assistant_agent\bge-reranker-v2-m3",  # 推荐：通用性强，支持长文本
-#     "bce-base": "maidalun1020/bce-reranker-base_v1",  # 备选：百度中文专用
-# }
-# DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
 
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)
@@ -56,51 +52,50 @@ def clean_text(text: str) -> str:
 
 
 class Reranker:
-    """
-    重排序器：基于 Cross-Encoder 架构
+    """ONNX 轻量级 Reranker
+    使用ONNX Runtime进行推理，无需pytorch
     流程：Query + Doc -> Concat -> BERT -> Sigmoid -> Score
     """
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, device: Optional[str] = None, use_fp16: bool = True):
+    def __init__(self, model_name: str = DEFAULT_MODEL, device: str = "cpu"):
         self.model_name = model_name
         self._device = device
-        self._use_fp16 = use_fp16
         self._model = None
+        self._tokenizer = None
         self._available = False
-
         # 延迟加载 (Lazy Load)，避免导入时阻塞
         self._load_model()
 
     def _load_model(self):
         """加载模型 (带自动降级)"""
         try:
-            from sentence_transformers import CrossEncoder
-            import torch
+            from optimum.onnxruntime import ORTModelForSequenceClassification
+            from transformers import AutoTokenizer
 
-            # 1. 设备选择
-            if self._device is None:
-                self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info(f"正在加载 ONNX Reranker 模型：{self.model_name}")
 
-            # 2. 数据类型优化 (GPU 下启用 fp16 提速)
-            if self._device == "cuda" and self._use_fp16:
-                logger.info(f"启用 FP16 加速推理")
-
-            logger.info(f"正在加载 Reranker 模型：{self.model_name} ({self._device})...")
-
-            # 3. 初始化模型
-            # trust_remote_code=True 用于加载某些自定义架构的模型 (如 bge-m3)
-            self._model = CrossEncoder(
-                self.model_name,
-                max_length=512,
-                device=self._device,
-                automodel_args={"torch_dtype": "float16"} if (self._device == "cuda" and self._use_fp16) else {}
-            )
+            # 检查是否为本地路径
+            model_path=Path(self.model_name)
+            if model_path.exists() and model_path.is_dir():
+                # 本地模型目录
+                self._model = ORTModelForSequenceClassification.from_pretrained(
+                    str(model_path),
+                    export=False
+                )
+                self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            else:
+                # HuggingFace 在线模型（自动下载 ONNX 版本）
+                self._model = ORTModelForSequenceClassification.from_pretrained(
+                    self.model_name,
+                    export=False
+                )
+                self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
             self._available = True
-            logger.info("✅ Reranker 模型加载成功")
+            logger.info(f"ONNX Reranker模型加载成功")
 
         except ImportError as e:
-            logger.error(f"缺少依赖库：{e}。请运行：pip install sentence-transformers torch")
+            logger.error(f"缺少依赖库：{e}。请运行：pip install optimum[onnxruntime] transformers")
             self._available = False
         except Exception as e:
             logger.warning(f"⚠️ Reranker 加载失败：{e}。系统将降级为纯检索模式。")
@@ -148,25 +143,39 @@ class Reranker:
             if not pairs:
                 return []
 
-            # 3. 批量推理 (Batch Prediction)
-            # CrossEncoder 一次性计算所有 (query, doc) 对的相关性分数
-            scores = self._model.predict(pairs, batch_size=8, show_progress_bar=False)
+            # Tokenize
+            features=self._tokenizer(
+                pairs,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+            )
 
-            # 4. 分数关联与排序
-            scored_items: List[Tuple[Document, float]] = list(zip(valid_docs, scores))
+            # ONNX 推理
+            outputs = self._model(**features)
+            scores = outputs.logits.squeeze(-1)
+
+            # 转换为列表
+            if hasattr(scores, "tolist"):
+                scores = scores.tolist()
+            if not isinstance(scores, list):
+                scores = [scores]
+
+            # 排序
+            scored_items=list(zip(valid_docs, scores))
             scored_items.sort(key=lambda x: x[1], reverse=True)
 
-            # 5. 阈值过滤 & 截取 Top-K
-            final_docs = []
+            # 阈值过滤 与 截取top-k
+            final_docs=[]
             for doc, score in scored_items:
                 if score >= score_threshold and len(final_docs) < top_k:
-                    # 将分数写入 metadata，方便后续节点调试或展示
-                    doc.metadata["rerank_score"] = float(score)
+                    doc.metadata["rerank_score"]=float(score)
                     final_docs.append(doc)
                 elif len(final_docs) >= top_k:
                     break
 
-            logger.info(f"🎯 重排序完成：{len(documents)} -> {len(final_docs)} (最高分：{scored_items[0][1]:.4f})")
+            logger.info(f"重排序完成：{len(documents)} -> {len(final_docs)} （最高分：{scored_items[0][1]:.4f}")
             return final_docs
 
         except Exception as e:

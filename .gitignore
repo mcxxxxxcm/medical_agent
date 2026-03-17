@@ -1,3 +1,4 @@
-bge-reranker-v2-m3/ 
+bge-reranker-v2-m3/
+bge-reranker-onnx/
 .env 
 QA 
