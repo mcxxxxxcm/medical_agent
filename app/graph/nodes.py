@@ -20,6 +20,7 @@ import re
 import uuid
 import time
 from typing import Dict, Any, List, Optional, Literal
+from functools import wraps
 
 from langchain_core.messages import HumanMessage, SystemMessage, RemoveMessage, AIMessage
 from langgraph.types import Command
@@ -35,6 +36,51 @@ from app.rag.hybrid_retriever import get_hybrid_retriever
 logger = get_logger(__name__)
 config = get_config()
 
+
+# 计时装饰器
+def timing_decorator(node_name: str):
+    """节点耗时记录装饰器"""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            logger.info(f"⏱️ [{node_name}] 开始执行")
+
+            try:
+                result = func(*args, **kwargs)
+                elapsed_time = (time.time() - start_time) * 1000
+                logger.info(f"⏱️ [{node_name}] 执行完成，耗时：{elapsed_time:.2f}ms")
+                return result
+            except Exception as e:
+                elapsed_time = (time.time() - start_time) * 1000
+                logger.error(f"⏱️ [{node_name}] 执行失败，耗时：{elapsed_time:.2f}ms，错误：{str(e)}")
+                raise
+
+        return wrapper
+
+    return decorator
+
+def async_timing_decorator(node_name: str):
+    """节点耗时记录装饰器"""
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            start_time = time.time()
+            logger.info(f"计时器：{node_name}开始执行")
+
+            try:
+                result = func(*args, **kwargs)
+                elapsed_time = (time.time() - start_time) * 1000
+                logger.info(f"计时器：{node_name}执行完成，耗时：{elapsed_time:.2f}ms")
+                return result
+            except Exception as e:
+                elapsed_time = (time.time() - start_time) * 1000
+                logger.error(f"计时器：{node_name}执行失败，耗时：{elapsed_time:.2f}ms，错误：{str(e)}")
+                raise
+        return wrapper
+    return decorator
 
 # 结构化输出模型定义（改进原始方案，使用langchain的with_structured_output替代手动JSON解析）
 class RouterOutput(BaseModel):
@@ -73,7 +119,7 @@ class ProfileExtractionOutput(BaseModel):
     gender: Optional[str] = Field(default=None, description="性别")
     allergies: Optional[List[str]] = Field(default=None, description="过敏史")
 
-
+@timing_decorator("路由")
 def router_node(state: MedicalAssistantState) -> Command:
     """路由节点
     
@@ -132,7 +178,7 @@ def router_node(state: MedicalAssistantState) -> Command:
         logger.error(f"路由节点执行失败：{str(e)}")
         return Command(goto="knowledge_retrieval")
 
-
+@timing_decorator("症状解析")
 def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """症状解析节点
     
@@ -186,7 +232,7 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"症状解析失败：{str(e)}")
         return {"symptoms": None}
 
-
+@timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """知识检索节点
     
@@ -252,7 +298,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "error": f"知识检索失败：{str(e)}"
         }
 
-
+@timing_decorator("答案生成")
 def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """答案生成节点
     
@@ -410,7 +456,7 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     #         ]
     #     }
 
-
+@timing_decorator("安全检查")
 def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """安全检查节点
     
@@ -473,7 +519,7 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"安全检查失败：{str(e)}")
         return {"warnings": ["本回答仅供参考，不能替代专业医生的诊断和治疗建议"]}
 
-
+@timing_decorator("长期记忆加载")
 def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """长期记忆加载节点
     功能描述：
@@ -522,7 +568,7 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"加载长期记忆失败：{str(e)}")
         return {"user_profile": None}
 
-
+@timing_decorator("用户档案提取")
 def profile_extraction_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """用户档案提取节点
     功能描述：从用户问题中提取关键信息并更新用户档案
@@ -579,7 +625,7 @@ def profile_extraction_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.warning(f"用户档案提取失败{str(e)}")
         return {}
 
-
+@timing_decorator("同步直接回答")
 def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """直接回答节点
     功能描述：
@@ -643,7 +689,7 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
             ]
         }
 
-
+@timing_decorator("查询重写")
 def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """查询重写节点
     功能描述：
@@ -701,7 +747,7 @@ def should_summarize(state: MedicalAssistantState) -> str:
     from langgraph.graph import END
     return END
 
-
+@timing_decorator("对话总结")
 def summarize_conversation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """对话总结节点
     功能描述：
@@ -789,7 +835,7 @@ def summarize_conversation_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"对话总结失败：{str(e)}")
         return {}
 
-
+@timing_decorator("获取上下文（对话总结）")
 def get_context_with_summary(state: MedicalAssistantState) -> List:
     """获取带摘要的上下文消息
     功能描述：
@@ -816,6 +862,7 @@ async def stream_answer_generation(state: MedicalAssistantState):
         str：每个token片段
     """
     logger.info(f"流式答案生成节点开始执行")
+    start_time=time.time()
 
     question = state.get("question", "")
     user_profile = state.get("user_profile")
@@ -902,7 +949,8 @@ async def stream_answer_generation(state: MedicalAssistantState):
                 full_answer += token
                 yield token  # 每个token立即返回
 
-        logger.info(f"流式生成完成，总长度：{len(full_answer)}字符")
+        elapsed_time = (time.time() - start_time) * 1000
+        logger.info(f"流式生成完成，总长度：{len(full_answer)}字符，耗时：{elapsed_time:.2f}ms")
 
     except Exception as e:
         logger.error(f"流式生成失败：{str(e)}")
@@ -912,6 +960,7 @@ async def stream_answer_generation(state: MedicalAssistantState):
 async def stream_direct_answer(state: MedicalAssistantState):
     """流式直接回答节点"""
     logger.info("流式直接回答节点开始执行")
+    start_time=time.time()
 
     question = state.get("question", "")
     user_profile = state.get("user_profile")
@@ -951,7 +1000,8 @@ async def stream_direct_answer(state: MedicalAssistantState):
                 full_answer += token
                 yield token
 
-        logger.info(f"流式直接回答完成：{full_answer}")
+        elapsed_time = (time.time() - start_time) * 1000
+        logger.info(f"流式生成完成，总长度：{len(full_answer)}字符，耗时：{elapsed_time:.2f}ms")
 
     except Exception as e:
         logger.error(f"流式直接回答失败：{str(e)}")

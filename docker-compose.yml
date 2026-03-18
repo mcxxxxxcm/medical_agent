@@ -28,7 +28,8 @@ services:
       - MODEL_URL=${MODEL_URL}
       - MODEL_API_KEY=${MODEL_API_KEY}
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.2}
-      - RERANKER_MODEL_PATH=${RERANKER_MODEL_PATH}
+#      - RERANKER_MODEL_PATH=${RERANKER_MODEL_PATH}
+      - RERANKER_MODEL_PATH=/app/models/bge-reranker-onnx
 
       # Embedding 配置
       - EMBEDDING_MODEL=${EMBEDDING_MODEL}

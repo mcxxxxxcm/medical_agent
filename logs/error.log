@@ -225,3 +225,7 @@
 2026-03-17 15:21:05 - app.api.routes - ERROR - 流式处理失败：consuming input failed: server closed the connection unexpectedly
 	This probably means the server terminated abnormally
 	before or while processing the request.
+2026-03-18 23:16:35 - app.api.routes - ERROR - 流式处理失败：Expected dict, got <function timing_decorator.<locals>.decorator.<locals>.wrapper at 0x000002C5047DE660>
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/INVALID_GRAPH_NODE_RETURN_VALUE
+2026-03-18 23:24:40 - app.api.routes - ERROR - 流式处理失败：'async for' requires an object with __aiter__ method, got coroutine
+2026-03-18 23:30:52 - app.api.routes - ERROR - 流式处理失败：'async for' requires an object with __aiter__ method, got coroutine

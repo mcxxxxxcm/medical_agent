@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple
 from langchain_core.documents import Document
 from pyexpat import features
 
-from app.core import get_config
 from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,9 +19,8 @@ logger = get_logger(__name__)
 # 默认模型路径逻辑
 def get_default_model_path():
     """获取默认模型路径，支持 Docker 和本地环境"""
-    config=get_config()
     # 优先使用环境变量
-    env_path = config.RERANKER_MODEL_PATH
+    env_path = os.environ.get("RERANKER_MODEL_PATH")
     if env_path and Path(env_path).exists():
         return env_path
 
