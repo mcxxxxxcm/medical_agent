@@ -31,6 +31,7 @@ from app.rag.hybrid_retriever import get_hybrid_retriever
 from app.rag.reranker import get_reranker
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
+import jieba
 
 logger = get_logger(__name__)
 
@@ -72,6 +73,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"应用启动中...")
     await get_checkpointer()
     logger.info(f"检查点保存器初始化完成")
+
+    # 1. 预加载jieba分词器
+    logger.info("预加载 jieba 分词器...")
+    jieba.initialize()
+    logger.info("jieba 分词器预加载完成")
 
     # 2. ✅ 新增：预加载 Reranker 模型
     logger.info("预加载 Reranker 模型...")

@@ -12,7 +12,7 @@ import hashlib
 import time
 
 import jieba
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 from rank_bm25 import BM25Okapi
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
@@ -26,6 +26,10 @@ from app.core.config import get_config
 
 config = get_config()
 logger = get_logger(__name__)
+
+# 预加载jieba，避免每次检索都重复加载
+jieba.initialize()
+logger.info("jieba分词器预加载完成")
 
 # === 配置常量 ===
 # 简单的中文停用词表 (实际项目中建议加载外部停用词文件)
@@ -193,13 +197,19 @@ class HybridRetriever(BaseRetriever):
             logger.info(f"🎯 L1缓存命中：{cache_query[:30]}... 使用缓存结果：{len(documents)} 个文档")
             return documents
 
+        # 优化：只计算一次embedding
+        query_embedding = None
+
         # L2：语义相似缓存（相似匹配）
         if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
             semantic_cache = get_semantic_cache()
-
             logger.info(f"🔍 L2语义缓存检查：{cache_query[:30]}...")
 
-            semantic_result = semantic_cache.get(cache_query)
+            # 获取embedding
+            query_embedding = semantic_cache._get_embedding(cache_query)
+
+            # 传入embedding，避免重复计算
+            semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
 
             if semantic_result:
                 documents, metadata = semantic_result
@@ -212,7 +222,7 @@ class HybridRetriever(BaseRetriever):
         # 原始的RAG文档检索
         start_time = time.time()
         # 1. Dense 检索
-        dense_results = self._dense_search(query)
+        dense_results, query_embedding = self._dense_search(query, query_embedding)
 
         # 2. Sparse 检索
         sparse_results = self._sparse_search(query)
@@ -272,20 +282,31 @@ class HybridRetriever(BaseRetriever):
             # 写入L2语义缓存
             if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
                 semantic_cache = get_semantic_cache()
-                semantic_cache.set(cache_query, final_docs)
+                semantic_cache.set(cache_query, final_docs, query_embedding=query_embedding)
                 logger.info(f"L2语义缓存已写入：{cache_query[:30]}...")
 
         return final_docs
 
-    def _dense_search(self, query: str) -> List[tuple]:
+    def _dense_search(self, query: str, query_embedding: List[float] = None) -> Tuple[List[tuple], List[float]]:
         """向量检索"""
         try:
-            docs = self.vector_store.similarity_search(query, k=self.k)
+            # 如果传入了embedding，使用similarity_search_by_vector
+            if query_embedding is not None:
+                docs=self.vector_store.similarity_search_by_vector(query_embedding, k=self.k*2)# 取更多候选，用于RRF融合
+            else:
+                docs=self.vector_store.similarity_search(query, k=self.k*2)
+                try:
+                    from app.core.embeddings import get_embeddings
+                    # 如果没传入embedding，自行获取
+                    embeddings=get_embeddings()
+                    query_embedding=embeddings.embed_query(query)
+                except:
+                    pass
             # 确保 doc 有 id 属性 (LangChain 新版本可能需要在 metadata 里找)
-            return [(doc, rank) for rank, doc in enumerate(docs)]
+            return [(doc, rank) for rank, doc in enumerate(docs)], query_embedding
         except Exception as e:
             logger.error(f"Dense 检索异常：{e}")
-            return []
+            return [], query_embedding
 
     def _sparse_search(self, query: str) -> List[tuple]:
         """BM25 检索"""

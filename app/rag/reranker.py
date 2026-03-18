@@ -8,6 +8,8 @@ import os
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+import numpy as np
 from langchain_core.documents import Document
 from pyexpat import features
 
@@ -67,30 +69,45 @@ class Reranker:
     def _load_model(self):
         """加载模型 (带自动降级)"""
         try:
-            from optimum.onnxruntime import ORTModelForSequenceClassification
+            # 优化：使用纯ONNX Runtime
+            import onnxruntime as ort
             from transformers import AutoTokenizer
 
             logger.info(f"正在加载 ONNX Reranker 模型：{self.model_name}")
 
             # 检查是否为本地路径
-            model_path=Path(self.model_name)
+            model_path = Path(self.model_name)
+
             if model_path.exists() and model_path.is_dir():
                 # 本地模型目录
-                self._model = ORTModelForSequenceClassification.from_pretrained(
-                    str(model_path),
-                    export=False
-                )
-                self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                onnx_files = list(model_path.glob("*.onnx"))
+                if not onnx_files:
+                    raise FileNotFoundError(f"未找到 ONNX 模型文件：{model_path}")
+
+                # 优先使用model.onnx 或 onnx/model.onnx
+                onnx_path = model_path / "model.onnx"
+                if not onnx_path.exists():
+                    onnx_path = model_path / "onnx" / "model.onnx"
+                if not onnx_path.exists():
+                    onnx_path = onnx_files[0]  # 使用找到的第一个
+
+                self._model = ort.InferenceSession(str(onnx_path), providers=['CPUExecutionProvider'])
+                self._tokenizer = AutoTokenizer.from_pretrained(str(model_path))
             else:
-                # HuggingFace 在线模型（自动下载 ONNX 版本）
-                self._model = ORTModelForSequenceClassification.from_pretrained(
-                    self.model_name,
-                    export=False
+                # HuggingFace 在线模型
+                from huggingface_hub import hf_hub_download
+                import tempfile
+
+                # 下载 ONNX 模型
+                onnx_path = hf_hub_download(
+                    repo_id=self.model_name,
+                    filename="onnx/model.onnx"
                 )
+                self._model = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
                 self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
             self._available = True
-            logger.info(f"ONNX Reranker模型加载成功")
+            logger.info(f"ONNX Reranker 模型加载成功")
 
         except ImportError as e:
             logger.error(f"缺少依赖库：{e}。请运行：pip install optimum[onnxruntime] transformers")
@@ -142,38 +159,37 @@ class Reranker:
                 return []
 
             # Tokenize
-            features=self._tokenizer(
+            features = self._tokenizer(
                 pairs,
                 padding=True,
                 truncation=True,
                 max_length=512,
-                return_tensors="pt",
+                return_tensors="np",
             )
 
-            # ONNX 推理
-            outputs = self._model(**features)
-            scores = outputs.logits.squeeze(-1)
+            # 🔥 ONNX 推理（纯 onnxruntime）
+            input_feed = {
+                "input_ids": features["input_ids"].astype(np.int64),
+                "attention_mask": features["attention_mask"].astype(np.int64),
+            }
 
-            # 转换为列表
-            if hasattr(scores, "tolist"):
-                scores = scores.tolist()
-            if not isinstance(scores, list):
-                scores = [scores]
+            outputs = self._model.run(None, input_feed)
+            scores = outputs[0].flatten().tolist()
 
             # 排序
-            scored_items=list(zip(valid_docs, scores))
+            scored_items = list(zip(valid_docs, scores))
             scored_items.sort(key=lambda x: x[1], reverse=True)
 
-            # 阈值过滤 与 截取top-k
-            final_docs=[]
+            # 阈值过滤与截取
+            final_docs = []
             for doc, score in scored_items:
                 if score >= score_threshold and len(final_docs) < top_k:
-                    doc.metadata["rerank_score"]=float(score)
+                    doc.metadata["rerank_score"] = float(score)
                     final_docs.append(doc)
                 elif len(final_docs) >= top_k:
                     break
 
-            logger.info(f"重排序完成：{len(documents)} -> {len(final_docs)} （最高分：{scored_items[0][1]:.4f}")
+            logger.info(f"重排序完成：{len(documents)} -> {len(final_docs)} （最高分：{scored_items[0][1]:.4f}）")
             return final_docs
 
         except Exception as e:

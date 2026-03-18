@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # ===== 语义缓存配置 =====
     ENABLE_SEMANTIC_CACHE: bool = True  # 是否启用语义相似缓存
-    SEMANTIC_CACHE_THRESHOLD: float = 0.80  # 语义相似度阈值（0.92 = 92% 相似）
+    SEMANTIC_CACHE_THRESHOLD: float = 0.75  # 语义相似度阈值（0.92 = 92% 相似）
 
     # ===== RERANKER_MODEL本地路径 =====
     RERANKER_MODEL_PATH: str = "/app/models/bge-reranker-onnx"

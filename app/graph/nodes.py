@@ -703,6 +703,20 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     question = state.get("question", "")
 
+    # 优化：对于明确的提问，直接跳过重写
+    medical_keywords=[
+        "炎", "病", "症", "治疗", "怎么办", "吃什么药",
+        "症状", "原因", "预防", "护理", "诊断", "检查",
+        "高血压", "糖尿病", "感冒", "发烧", "咳嗽", "头痛",
+        "支气管", "肺炎", "胃炎", "肝炎", "肾炎"
+    ]
+
+    if any(keyword in question for keyword in medical_keywords):
+        logger.info(f"问题包含明确的医疗关键词，跳过重写：{question}")
+        return {"rewrite_question": question}
+
+    # 优化：对于模糊的问题，调用llm进行重写，后续优化方向：本地部署小模型进行查询重写
+
     try:
         llm = get_llm()
         structured_llm = llm.with_structured_output(QueryRewriteOutput)

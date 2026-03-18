@@ -35,7 +35,7 @@ class SemanticCache:
 
     def __init__(
             self,
-            similarity_threshold: float = 0.92,  # 相似度阈值（0.92表示非常相似）
+            similarity_threshold: float = 0.75,  # 相似度阈值（0.92表示非常相似）
             prefix: str = "semantic_cache:",
             ttl: int = 3600,  # 默认一个小时过期
             enabled: bool = True,
@@ -197,7 +197,7 @@ class SemanticCache:
             logger.error(f"查找相似查询失败：{e}")
             return None
 
-    def get(self, query: str) -> Optional[Tuple[List[Document], Dict]]:
+    def get(self, query: str, query_embedding: List[float] = None) -> Optional[Tuple[List[Document], Dict]]:
         """获取语义相似度的缓存结果
         Args:
             query: 查询文本
@@ -210,8 +210,11 @@ class SemanticCache:
 
         self._stats["total_requests"] += 1
 
-        # 1、获取查询向量
-        query_embedding = self._get_embedding(query)
+        # 复用已经向量化好的结构，避免重复计算
+        if query_embedding is None:
+            query_embedding = self._get_embedding(query)
+
+
         if query_embedding is None:
             self._stats["misses"] += 1
             return None
