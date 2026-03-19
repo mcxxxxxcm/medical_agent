@@ -229,3 +229,19 @@
 For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/INVALID_GRAPH_NODE_RETURN_VALUE
 2026-03-18 23:24:40 - app.api.routes - ERROR - 流式处理失败：'async for' requires an object with __aiter__ method, got coroutine
 2026-03-18 23:30:52 - app.api.routes - ERROR - 流式处理失败：'async for' requires an object with __aiter__ method, got coroutine
+2026-03-19 02:30:31 - app.api.routes - ERROR - 流式处理失败：consuming input failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+2026-03-19 02:38:52 - app.api.routes - ERROR - 流式处理失败：the connection is closed
+2026-03-19 11:36:16 - app.rag.evaluation - ERROR - RAGAS 依赖未安装：cannot import name 'answer_relevance' from 'ragas.metrics' (D:\Agent\software\envs\my_medical_env\Lib\site-packages\ragas\metrics\__init__.py)
+2026-03-19 11:36:16 - app.rag.evaluation - ERROR - 请运行：pip install ragas datasets
+2026-03-19 11:40:50 - app.rag.evaluation - ERROR - RAGAS 依赖未安装：cannot import name 'context_relevancy' from 'ragas.metrics' (D:\Agent\software\envs\my_medical_env\Lib\site-packages\ragas\metrics\__init__.py)
+2026-03-19 11:40:50 - app.rag.evaluation - ERROR - 请运行：pip install ragas datasets
+2026-03-19 11:42:09 - app.rag.evaluation - ERROR - RAGAS 依赖未安装：cannot import name 'context_relevancy' from 'ragas.metrics' (D:\Agent\software\envs\my_medical_env\Lib\site-packages\ragas\metrics\__init__.py)
+2026-03-19 11:42:09 - app.rag.evaluation - ERROR - 请运行：pip install ragas datasets
+2026-03-19 11:45:41 - app.rag.evaluation - ERROR - RAGAS 评估失败：The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+2026-03-19 11:50:00 - app.rag.evaluation - ERROR - RAGAS 评估失败：The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+2026-03-19 11:51:39 - app.rag.evaluation - ERROR - RAGAS 评估失败：The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+2026-03-19 11:53:15 - app.rag.evaluation - ERROR - RAGAS 评估失败：evaluate() got an unexpected keyword argument 'evaluator_llm'
+2026-03-19 11:55:26 - app.rag.evaluation - ERROR - RAGAS 评估失败：The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+2026-03-19 12:01:03 - app.rag.evaluation - ERROR - RAGAS 评估失败：The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
