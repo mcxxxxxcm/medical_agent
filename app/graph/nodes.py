@@ -62,7 +62,7 @@ def timing_decorator(node_name: str):
     return decorator
 
 def async_timing_decorator(node_name: str):
-    """节点耗时记录装饰器"""
+    """异步节点耗时记录装饰器"""
 
     def decorator(func):
         @wraps(func)
@@ -71,7 +71,7 @@ def async_timing_decorator(node_name: str):
             logger.info(f"计时器：{node_name}开始执行")
 
             try:
-                result = func(*args, **kwargs)
+                result = await func(*args, **kwargs)
                 elapsed_time = (time.time() - start_time) * 1000
                 logger.info(f"计时器：{node_name}执行完成，耗时：{elapsed_time:.2f}ms")
                 return result
@@ -105,6 +105,13 @@ class SafetyCheckOutput(BaseModel):
     risk_level: Literal["low", "medium", "high"] = Field(description="风险等级")
     detected_issues: List[str] = Field(default_factory=list, description="检测到的问题")
     requires_medical_attention: bool = Field(description="是否需要就医")
+
+
+class GradeDocuments(BaseModel):
+    """文档相关性评分（Agentic RAG 模式）"""
+    binary_score: str = Field(
+        description="文档相关性评分：'yes' 表示相关，'no' 表示不相关"
+    )
 
 
 class QueryRewriteOutput(BaseModel):
@@ -260,7 +267,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     # 获取原始查询和重写查询
     original_query = state.get("question", "")
-    rewritten_query = state.get("rewriten_query", "")
+    rewritten_query = state.get("rewritten_query", "")
 
     # 检索时优先使用重写查询（提高检索质量）
     search_query = rewritten_query or original_query
@@ -298,20 +305,129 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "error": f"知识检索失败：{str(e)}"
         }
 
+
+@timing_decorator("文档评分")
+def grade_documents_node(state: MedicalAssistantState) -> Command:
+    """文档相关性评分节点（Agentic RAG 模式）
+
+    功能描述：
+        评估检索到的文档是否与用户问题相关
+        如果不相关，路由到 query_rewrite 重新检索
+        如果相关，路由到 answer_generation 生成答案
+
+    参考 LangChain Agentic RAG 教程中的 grade_documents 模式
+    """
+    logger.info("文档评分节点开始执行")
+
+    question = state.get("question", "")
+    retrieved_docs = state.get("retrieved_docs", [])
+
+    if not retrieved_docs:
+        logger.warning("无检索文档，路由到查询重写")
+        return Command(goto="query_rewrite")
+
+    try:
+        llm = get_llm()
+        structured_llm = llm.with_structured_output(GradeDocuments)
+
+        # 逐个文档评分，过滤不相关的
+        relevant_docs = []
+        for doc in retrieved_docs:
+            prompt = f"""你是一个文档相关性评估专家。请判断以下检索文档是否与用户问题相关。
+
+用户问题：{question}
+
+检索文档内容：
+{doc.page_content}
+
+如果文档包含与用户问题相关的关键词或语义，评为相关。只回答 'yes' 或 'no'。"""
+
+            result = structured_llm.invoke(prompt)
+            if result.binary_score.lower() == "yes":
+                relevant_docs.append(doc)
+            else:
+                logger.info(f"文档不相关，已过滤：{doc.page_content[:50]}...")
+
+        logger.info(f"文档评分结果：{len(retrieved_docs)} -> {len(relevant_docs)} 相关")
+
+        if not relevant_docs:
+            logger.info("所有文档不相关，路由到查询重写")
+            return Command(goto="query_rewrite")
+
+        # 更新状态并路由到答案生成
+        return Command(
+            goto="answer_generation",
+            update={"retrieved_docs": relevant_docs}
+        )
+
+    except Exception as e:
+        logger.error(f"文档评分失败：{str(e)}，直接生成答案")
+        return Command(goto="answer_generation")
+
+def get_user_context_prompt(user_profile: Optional[Dict[str, Any]]) -> str:
+    """构建用户上下文提示"""
+    if not user_profile:
+        return ""
+
+    context_parts = []
+    if user_profile.get("name"):
+        context_parts.append(f"姓名：{user_profile['name']}")
+    if user_profile.get("age"):
+        context_parts.append(f"年龄：{user_profile['age']}岁")
+    if user_profile.get("gender"):
+        context_parts.append(f"性别：{user_profile['gender']}")
+    if user_profile.get("allergies"):
+        context_parts.append(f"过敏史：{', '.join(user_profile['allergies'])}")
+
+    return f"【用户信息】\n{chr(10).join(context_parts)}\n" if context_parts else ""
+
+
+def get_conversation_history_text(state: MedicalAssistantState) -> str:
+    """构建带摘要的对话历史文本"""
+    context_messages = get_context_with_summary(state)
+    if not context_messages:
+        return ""
+
+    history_parts = []
+    for msg in context_messages:
+        if isinstance(msg, SystemMessage):
+            history_parts.append(f"{msg.content}")
+        elif isinstance(msg, HumanMessage):
+            history_parts.append(f"用户：{msg.content}")
+        else:
+            history_parts.append(f"助手：{msg.content}")
+    return "\n".join(history_parts)
+
+
+def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit: int = 200) -> List[Dict[str, str]]:
+    """格式化检索来源信息"""
+    if not retrieved_docs:
+        return []
+
+    return [
+        {
+            "source": doc.metadata.get("source", "未知来源"),
+            "file_path": doc.metadata.get("file_path", ""),
+            "content": doc.page_content[:content_limit],
+        }
+        for doc in retrieved_docs
+    ]
+
+
 @timing_decorator("答案生成")
 def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """答案生成节点
-    
+
     功能描述：
         基于检索到的文档生成用户友好的医疗答案
         这是RAG流程的生成节点，负责答案生成
-    
+
     Args：
         state：当前状态，包含question和retrieved_docs字段
-    
+
     Returns：
         Dict[str, Any]：需要更新的状态字段
-    
+
     设计理念：
         1、RAG生成：结合检索到的文档生成答案
         2、用户友好：生成易于理解的答案
@@ -321,140 +437,80 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     logger.info("答案生成节点开始执行")
 
     question = state.get("question", "")
-    user_profile = state.get("user_profile")
-    retrieved_docs = state.get("retrieved_docs")  # 使用已经检索到的文档
+    retrieved_docs = state.get("retrieved_docs")
+    context_prompt = get_user_context_prompt(state.get("user_profile"))
+    if context_prompt:
+        logger.info("已注入用户上下文")
 
-    # 自定义消息总结逻辑，如果使用自定义则需要将总结信息注入到prompt中
-    # 也可以使用消息列表调用llm，messages.extend(context_messages)，response=llm.invoke(messages)
-    context_messages = get_context_with_summary(state)
-    # 格式化对话历史为文本
-    conversation_history = ""
-    if context_messages:
-        history_parts = []
-        for msg in context_messages:
-            if isinstance(msg, SystemMessage):
-                history_parts.append(f"{msg.content}")
-            elif isinstance(msg, HumanMessage):
-                history_parts.append(f"用户：{msg.content}")
-            else:
-                history_parts.append(f"助手：{msg.content}")
-        conversation_history = "\n".join(history_parts)
+    conversation_history = get_conversation_history_text(state)
+    enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
 
-    # 构建用户上下文
-    context_prompt = ""
-    if user_profile:
-        context_parts = []
-        if user_profile.get("name"):
-            context_parts.append(f"姓名：{user_profile['name']}")
-        if user_profile.get("age"):
-            context_parts.append(f"年龄：{user_profile['age']}岁")
-        if user_profile.get("gender"):
-            context_parts.append(f"性别：{user_profile['gender']}")
-        if user_profile.get("allergies"):
-            context_parts.append(f"过敏史：{', '.join(user_profile['allergies'])}")
+    try:
+        if retrieved_docs:
+            formatted_docs = []
+            for i, doc in enumerate(retrieved_docs, 1):
+                source = doc.metadata.get("source", "未知来源")
+                content = doc.page_content
+                formatted_docs.append(f"[文档{i} 来源：{source}]\n{content}")
+            context = "\n\n".join(formatted_docs)
 
-        # if context_parts:
-        #     context_prompt = f"【用户信息】\n{chr(10).join(context_parts)}\n"
-        #     logger.info(f"已注入用户上下文：{context_parts}")
+            prompt = f"""你是一位专业的医疗健康助手，基于提供的医疗文档内容回答用户问题。
 
-    return {}
-    # enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
-    #
-    # logger.info(f"------------{enhanced_question}")
-    #
-    # try:
-    #     from app.core.llm import get_llm
-    #
-    #     # ✅ 使用已检索的文档，不再重复检索
-    #     if retrieved_docs:
-    #         # 格式化文档
-    #         formatted_docs = []
-    #         for i, doc in enumerate(retrieved_docs, 1):
-    #             source = doc.metadata.get("source", "未知来源")
-    #             content = doc.page_content
-    #             formatted_docs.append(f"[文档{i} 来源：{source}]\n{content}")
-    #         context = "\n\n".join(formatted_docs)
-    #
-    #         # 构建 prompt
-    #         prompt = f"""你是一位专业的医疗健康助手，基于提供的医疗文档内容回答用户问题。
-    #
-    # 【重要提醒】
-    # 1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
-    # 2. 如果问题涉及紧急医疗情况，请立即建议用户就医
-    # 3. 回答时要基于提供的文档内容，不要编造信息
-    #
-    # 【参考文档】
-    # {context}
-    #
-    # 【对话历史总结】
-    # {conversation_history if conversation_history else ""}\n
-    #
-    # {enhanced_question}
-    #
-    # 【回答要求】
-    # 1. 基于参考文档内容，准确回答用户问题
-    # 2. 如果文档中没有相关信息，请明确说明
-    # 3. 回答要清晰易懂，避免过于专业的术语
-    # 4. 必要时提供实用的家庭护理建议
-    # 5. 结尾加上安全提醒："如有疑问，请及时就医"
-    #
-    # 请用中文回答：
-    # """
-    #
-    #         llm = get_llm()
-    #         start_time = time.time()
-    #         response = llm.invoke(prompt)
-    #         answer = response.content.strip()
-    #         generation_time = (time.time() - start_time) * 1000
-    #
-    #         # 构建来源信息
-    #         sources = [
-    #             {
-    #                 "source": doc.metadata.get("source", "未知来源"),
-    #                 "file_path": doc.metadata.get("file_path", ""),
-    #                 "content": doc.page_content[:200]
-    #             }
-    #             for doc in retrieved_docs
-    #         ]
-    #
-    #         logger.info(f"生成答案完成，长度：{len(answer)}字符，耗时：{generation_time:.2f}ms")
-    #
-    #         return {
-    #             "final_answer": answer,
-    #             "sources": sources,
-    #             "messages": [  # ✅ 添加消息
-    #                 HumanMessage(content=question),
-    #                 AIMessage(content=answer)
-    #             ]
-    #         }
-    #
-    #     else:
-    #         # 没有检索到文档，使用 LLM 直接回答
-    #         llm = get_llm()
-    #         response = llm.invoke(f"请回答以下问题：\n{enhanced_question}")
-    #         answer = response.content.strip()
-    #
-    #         logger.info(f"生成答案完成（无检索文档），长度：{len(answer)}字符")
-    #
-    #         return {
-    #             "final_answer": answer,
-    #             "messages": [  # ✅ 添加消息
-    #                 HumanMessage(content=question),
-    #                 AIMessage(content=answer)
-    #             ]
-    #         }
-    #
-    # except Exception as e:
-    #     logger.error(f"答案生成失败：{str(e)}")
-    #     # return {"final_answer": "抱歉，生成答案时出现错误。", "error": str(e)}
-    #     return {
-    #         "final_answer": "抱歉，生成答案时出现错误。",
-    #         "error": str(e),
-    #         "messages": [  # ✅ 添加消息
-    #             HumanMessage(content=question),
-    #             AIMessage(content="抱歉，生成答案时出现错误。")
-    #         ]
-    #     }
+【重要提醒】
+1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
+2. 如果问题涉及紧急医疗情况，请立即建议用户就医
+3. 回答时要基于提供的文档内容，不要编造信息
+
+【参考文档】
+{context}
+
+【对话历史总结】
+{conversation_history if conversation_history else ""}
+
+{enhanced_question}
+
+【回答要求】
+1. 基于参考文档内容，准确回答用户问题
+2. 如果文档中没有相关信息，请明确说明
+3. 回答要清晰易懂，避免过于专业的术语
+4. 必要时提供实用的家庭护理建议
+5. 结尾加上安全提醒："如有疑问，请及时就医"
+
+请用中文回答："""
+        else:
+            prompt = f"请回答以下问题：\n{enhanced_question}"
+
+        llm = get_llm()
+        start_time = time.time()
+        response = llm.invoke(prompt)
+        answer = response.content.strip()
+        generation_time = (time.time() - start_time) * 1000
+
+        logger.info(f"生成答案完成，长度：{len(answer)}字符，耗时：{generation_time:.2f}ms")
+
+        result = {
+            "final_answer": answer,
+            "messages": [
+                HumanMessage(content=question),
+                AIMessage(content=answer)
+            ]
+        }
+
+        if retrieved_docs:
+            result["sources"] = format_retrieved_sources(retrieved_docs)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"答案生成失败：{str(e)}")
+        return {
+            "final_answer": "抱歉，生成答案时出现错误。",
+            "error": str(e),
+            "messages": [
+                HumanMessage(content=question),
+                AIMessage(content="抱歉，生成答案时出现错误。")
+            ]
+        }
 
 @timing_decorator("安全检查")
 def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
@@ -713,7 +769,7 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     if any(keyword in question for keyword in medical_keywords):
         logger.info(f"问题包含明确的医疗关键词，跳过重写：{question}")
-        return {"rewrite_question": question}
+        return {"rewritten_query": question}
 
     # 优化：对于模糊的问题，调用llm进行重写，后续优化方向：本地部署小模型进行查询重写
 
@@ -876,48 +932,14 @@ async def stream_answer_generation(state: MedicalAssistantState):
         str：每个token片段
     """
     logger.info(f"流式答案生成节点开始执行")
-    start_time=time.time()
+    start_time = time.time()
 
     question = state.get("question", "")
-    user_profile = state.get("user_profile")
     retrieved_docs = state.get("retrieved_docs")
-
-    # ✅ 优先使用准备好的上下文
-    context_prompt = state.get("context_prompt", "")
-    conversation_history = state.get("conversation_history", "")
-
-    # 构建上下文（类似于answer_generation_node）
-    context_messages = get_context_with_summary(state)
-    conversation_history = ""
-    if context_messages:
-        history_parts = []
-        for msg in context_messages:
-            if isinstance(msg, SystemMessage):
-                history_parts.append(f"{msg.content}")
-            elif isinstance(msg, HumanMessage):
-                history_parts.append(f"用户：{msg.content}")
-            else:
-                history_parts.append(f"助手：{msg.content}")
-        conversation_history = "\n".join(history_parts)
-
-    # 构建用户上下文
-    context_prompt = ""
-    if user_profile:
-        context_parts = []
-        if user_profile.get("name"):
-            context_parts.append(f"姓名：{user_profile['name']}")
-        if user_profile.get("age"):
-            context_parts.append(f"年龄：{user_profile['age']}岁")
-        if user_profile.get("gender"):
-            context_parts.append(f"性别：{user_profile['gender']}")
-        if user_profile.get("allergies"):
-            context_parts.append(f"过敏史：{', '.join(user_profile['allergies'])}")
-        if context_parts:
-            context_prompt = f"【用户信息】\n{chr(10).join(context_parts)}\n"
-
+    context_prompt = get_user_context_prompt(state.get("user_profile"))
+    conversation_history = get_conversation_history_text(state)
     enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
 
-    # 构建prompt
     if retrieved_docs:
         formatted_docs = []
         for i, doc in enumerate(retrieved_docs, 1):
@@ -952,7 +974,6 @@ async def stream_answer_generation(state: MedicalAssistantState):
     else:
         prompt = f"请回答以下问题：\n{enhanced_question}"
 
-    # 使用流式LLM
     llm = get_llm(streaming=True)
     full_answer = ""
 
@@ -961,7 +982,7 @@ async def stream_answer_generation(state: MedicalAssistantState):
             token = chunk.content
             if token:
                 full_answer += token
-                yield token  # 每个token立即返回
+                yield token
 
         elapsed_time = (time.time() - start_time) * 1000
         logger.info(f"流式生成完成，总长度：{len(full_answer)}字符，耗时：{elapsed_time:.2f}ms")

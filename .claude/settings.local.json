@@ -1,11 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__langchain_docs__search_docs_by_lang_chain",
+      "mcp__langchain_docs__query_docs_filesystem_docs_by_lang_chain",
+      "Bash(python *)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "langchain_docs"
-  ],
-  "permissions": {
-    "allow": [
-      "mcp__langchain_docs__search_docs_by_lang_chain"
-    ]
-  }
+  ]
 }

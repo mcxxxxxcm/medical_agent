@@ -20,7 +20,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import StreamingResponse
+from starlette.responses import JSONResponse, StreamingResponse
 
 from app.core.app_logging import get_logger
 from app.graph.graph import get_graph
@@ -55,7 +55,7 @@ class ChatResponse(BaseModel):
     """聊天响应模型"""
     answer: Optional[str] = Field(None, description="回答内容")
     sources: Optional[List[SourceInfo]] = Field(None, description="来源信息")
-    warnings: Optional[str] = Field(default_factory=list, description="警告信息")
+    warnings: List[str] = Field(default_factory=list, description="警告信息")
 
 
 class HealthResponse(BaseModel):
@@ -63,6 +63,8 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     vector_store: str
+    cache: str
+    reranker: str
 
 
 # 生命周期管理
@@ -134,9 +136,9 @@ async def root():
 async def global_exception_handler(request: Request, exc: Exception):
     """全局异常处理"""
     logger.error(f"未处理的异常：{exc}", exc_info=True)
-    return HTTPException(
+    return JSONResponse(
         status_code=500,
-        detail=f"服务器内部错误：{str(exc)}"
+        content={"detail": f"服务器内部错误：{str(exc)}"}
     )
 
 
@@ -317,28 +319,56 @@ async def health():
     """
     database_status = "healthy"
     vector_store_status = "healthy"
+    cache_status = "healthy"
+    reranker_status = "healthy"
 
     # 检查数据库连接
     try:
         memory = get_long_term_memory()
         if memory.store is None:
-            database_status = "unavailable"
+            database_status = "degraded"
     except Exception as e:
-        database_status = f"error: {str(e)[:50]}"
+        database_status = f"unhealthy: {str(e)[:50]}"
 
     # 检查向量库
     try:
         from app.rag.vector_store import get_vector_store
         vs = get_vector_store()
         if vs is None:
-            vector_store_status = "unavailable"
+            vector_store_status = "degraded"
     except Exception as e:
-        vector_store_status = f"error: {str(e)[:50]}"
+        vector_store_status = f"unhealthy: {str(e)[:50]}"
+
+    # 检查缓存
+    try:
+        from app.cache.redis_cache import get_cache
+        cache = get_cache()
+        cache_health_result = cache.health_check()
+        cache_status = cache_health_result.get("status", "unknown")
+    except Exception as e:
+        cache_status = f"unhealthy: {str(e)[:50]}"
+
+    # 检查 reranker
+    try:
+        reranker = get_reranker()
+        reranker_status = "healthy" if getattr(reranker, "_available", False) else "degraded"
+    except Exception as e:
+        reranker_status = f"unhealthy: {str(e)[:50]}"
+
+    component_statuses = [database_status, vector_store_status, cache_status, reranker_status]
+    if any(status.startswith("unhealthy") for status in component_statuses):
+        overall_status = "unhealthy"
+    elif any(status != "healthy" for status in component_statuses):
+        overall_status = "degraded"
+    else:
+        overall_status = "healthy"
 
     return HealthResponse(
-        status="healthy",
+        status=overall_status,
         database=database_status,
         vector_store=vector_store_status,
+        cache=cache_status,
+        reranker=reranker_status,
     )
 
 

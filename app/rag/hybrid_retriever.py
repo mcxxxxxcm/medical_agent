@@ -1,22 +1,23 @@
-# app/rag/hybrid_retriever.py
-"""混合检索模块 (生产优化版)
+"""混合检索模块 (LangChain EnsembleRetriever 版)
 改进点：
-    1. 安全的文档 ID 生成 (Hash 或 Metadata ID)
-    2. 中文停用词过滤
-    3. BM25 索引持久化 (可选，防止大内存占用)
-    4. 完善的异常降级处理
+    1. 使用 LangChain 官方 EnsembleRetriever 替代手动 RRF 融合
+    2. 使用 BM25Retriever 替代手写 BM25Okapi 封装
+    3. 保留缓存和 Reranker 逻辑
+    4. 保留 BM25 索引持久化
 """
 import os
 import pickle
-import hashlib
 import time
 
 import jieba
-from typing import List, Dict, Any, Optional, Set, Tuple
-from rank_bm25 import BM25Okapi
+from functools import lru_cache
+from typing import List, Dict, Any, Optional, Set
+
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
 
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.reranker import get_reranker
@@ -27,12 +28,6 @@ from app.core.config import get_config
 config = get_config()
 logger = get_logger(__name__)
 
-# 预加载jieba，避免每次检索都重复加载
-jieba.initialize()
-logger.info("jieba分词器预加载完成")
-
-# === 配置常量 ===
-# 简单的中文停用词表 (实际项目中建议加载外部停用词文件)
 STOPWORDS: Set[str] = {
     "的", "了", "是", "在", "我", "有", "和", "就", "不", "人",
     "都", "一", "一个", "上", "也", "很", "到", "说", "要", "去",
@@ -44,16 +39,44 @@ STOPWORDS: Set[str] = {
 BM25_CACHE_PATH = "data/bm25_index.pkl"
 
 
-class HybridRetriever(BaseRetriever):
-    """生产级混合检索器"""
+def _tokenize(text: str) -> List[str]:
+    """分词并过滤停用词"""
+    words = jieba.lcut(text)
+    return [w for w in words if w not in STOPWORDS and len(w.strip()) > 0]
 
+
+def _load_documents_from_store(vector_store) -> List[Document]:
+    """从向量库加载所有文档"""
+    try:
+        collection = vector_store._collection
+        results = collection.get(include=["documents", "metadatas"], limit=50000)
+        if not results["documents"]:
+            return []
+
+        documents = []
+        for i, content in enumerate(results["documents"]):
+            doc = Document(
+                page_content=content,
+                metadata=results["metadatas"][i] if results["metadatas"] else {}
+            )
+            if results.get("ids") and i < len(results["ids"]):
+                doc.id = results["ids"][i]
+            documents.append(doc)
+        return documents
+    except Exception as e:
+        logger.error(f"从向量库加载文档失败：{e}")
+        return []
+
+
+class HybridRetriever(BaseRetriever):
+    """基于 LangChain EnsembleRetriever 的混合检索器"""
+
+    ensemble_retriever: Any = None
     vector_store: Any = None
-    bm25: Optional[BM25Okapi] = None
-    documents: List[Document] = []
     k: int = 5
     alpha: float = 0.5
-    use_reranker: bool = True  # 是否引用Reranker
-    rerank_top_k: int = 20  # RRF融合后送入Reranker的数量
+    use_reranker: bool = True
+    rerank_top_k: int = 20
 
     def __init__(
             self,
@@ -62,131 +85,103 @@ class HybridRetriever(BaseRetriever):
             k: int = 5,
             alpha: float = 0.5,
             use_cache: bool = True,
-            use_reranker: bool = True,  # 新增参数
-            rerank_top_k: int = 20  # 新增参数
+            use_reranker: bool = True,
+            rerank_top_k: int = 20
     ):
         super().__init__()
         self.vector_store = vector_store or get_vector_store()
         self.k = k
         self.alpha = alpha
+        self.use_reranker = use_reranker
+        self.rerank_top_k = rerank_top_k
 
-        # 初始化 BM25
-        if documents:
-            self._init_bm25(documents)
-        else:
-            self._init_bm25_from_store(use_cache=use_cache)
+        # 初始化 EnsembleRetriever
+        self._init_ensemble_retriever(documents, use_cache)
 
-    def _tokenize(self, text: str) -> List[str]:
-        """分词并过滤停用词"""
-        words = jieba.lcut(text)
-        return [w for w in words if w not in STOPWORDS and len(w.strip()) > 0]
+    def _init_ensemble_retriever(self, documents: List[Document] = None, use_cache: bool = True):
+        """构建 EnsembleRetriever（向量检索 + BM25 检索）"""
+        # 1. 向量检索器
+        vector_retriever = self.vector_store.as_retriever(
+            search_kwargs={"k": self.k * 2}
+        )
 
-    def _get_doc_id(self, doc: Document) -> str:
-        """生成安全的文档唯一 ID"""
-        # 优先使用 metadata 中的 ID (Chroma/Faiss 通常会有)
-        if hasattr(doc, 'id') and doc.id:
-            return str(doc.id)
-        if doc.metadata.get('id'):
-            return str(doc.metadata['id'])
-        if doc.metadata.get('source') and doc.metadata.get('start_index'):
-            return f"{doc.metadata['source']}:{doc.metadata['start_index']}"
+        # 2. 加载文档用于 BM25
+        if documents is None:
+            documents = self._load_bm25_documents(use_cache)
 
-        # 兜底：对全文做 MD5 哈希 (比截取前 100 字安全得多)
-        content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
-        return content_hash
-
-    def _init_bm25(self, documents: List[Document]):
-        """初始化 BM25 索引"""
-        self.documents = documents
-        logger.info(f"开始构建 BM25 索引，文档数：{len(documents)}...")
-
-        # 分词 (带停用词过滤)
-        tokenized_docs = [self._tokenize(doc.page_content) for doc in documents]
-
-        if not tokenized_docs or all(len(t) == 0 for t in tokenized_docs):
-            logger.error("BM25 分词结果为空，请检查停用词表或文档内容")
-            self.bm25 = None
+        if not documents:
+            logger.warning("无可用文档，仅使用向量检索")
+            self.ensemble_retriever = vector_retriever
             return
 
-        self.bm25 = BM25Okapi(tokenized_docs)
-        logger.info("BM25 索引构建完成")
+        # 3. 构建 BM25Retriever（使用 langchain_community 提供的实现）
+        try:
+            bm25_retriever = BM25Retriever.from_documents(
+                documents,
+                k=self.k * 2,
+            )
+            # 自定义分词函数
+            bm25_retriever.k = self.k * 2
+            bm25_retriever.vectorizer = _tokenize
+        except Exception as e:
+            logger.error(f"BM25Retriever 初始化失败：{e}，仅使用向量检索")
+            self.ensemble_retriever = vector_retriever
+            return
 
-    def _init_bm25_from_store(self, use_cache: bool = True):
-        """从向量库加载文档并初始化 BM25 (支持缓存)"""
-        # 1. 尝试加载缓存
+        # 4. 使用 EnsembleRetriever 进行 RRF 融合
+        # weights=[alpha, 1-alpha] 对应 dense/sparse 的权重
+        self.ensemble_retriever = EnsembleRetriever(
+            retrievers=[vector_retriever, bm25_retriever],
+            weights=[self.alpha, 1 - self.alpha],
+            c=60,  # RRF 常数，与原实现一致
+        )
+        logger.info(f"EnsembleRetriever 初始化完成 (alpha={self.alpha}, c=60)")
+
+    def _load_bm25_documents(self, use_cache: bool = True) -> List[Document]:
+        """加载 BM25 所需的文档（支持缓存）"""
         if use_cache and os.path.exists(BM25_CACHE_PATH):
             try:
                 logger.info(f"从磁盘加载 BM25 缓存：{BM25_CACHE_PATH}")
                 with open(BM25_CACHE_PATH, 'rb') as f:
                     data = pickle.load(f)
-                    self.documents = data['documents']
-                    self.bm25 = data['bm25']
-                    logger.info("BM25 缓存加载成功")
-                    return
+                    documents = data['documents']
+                    logger.info(f"BM25 缓存加载成功，文档数：{len(documents)}")
+                    return documents
             except Exception as e:
                 logger.warning(f"加载 BM25 缓存失败，将重新构建：{e}")
 
-        # 2. 重新构建
+        documents = _load_documents_from_store(self.vector_store)
+        if not documents:
+            logger.warning("向量库中未找到文档")
+            return []
+
+        # 保存缓存
         try:
-            collection = self.vector_store._collection
-            # 注意：如果文档量巨大，这里需要分页获取 (limit/offset)
-            # ChromaDB 默认 limit 最大可能是几万，视配置而定
-            results = collection.get(include=["documents", "metadatas"], limit=50000)
-
-            if not results["documents"]:
-                logger.warning("向量库中未找到文档，无法构建 BM25 索引")
-                self.bm25 = None
-                return
-
-            documents = []
-            for i, content in enumerate(results["documents"]):
-                doc = Document(
-                    page_content=content,
-                    metadata=results["metadatas"][i] if results["metadatas"] else {}
-                )
-                # 如果有 ID，尽量保留
-                if results.get("ids") and i < len(results["ids"]):
-                    doc.id = results["ids"][i]
-                documents.append(doc)
-
-            self._init_bm25(documents)
-
-            # 3. 保存缓存
-            if self.bm25:
-                try:
-                    os.makedirs(os.path.dirname(BM25_CACHE_PATH), exist_ok=True)
-                    with open(BM25_CACHE_PATH, 'wb') as f:
-                        pickle.dump({'documents': self.documents, 'bm25': self.bm25}, f)
-                    logger.info(f"BM25 索引已缓存到：{BM25_CACHE_PATH}")
-                except Exception as e:
-                    logger.warning(f"保存 BM25 缓存失败：{e}")
-
+            os.makedirs(os.path.dirname(BM25_CACHE_PATH), exist_ok=True)
+            with open(BM25_CACHE_PATH, 'wb') as f:
+                pickle.dump({'documents': documents}, f)
+            logger.info(f"BM25 文档已缓存到：{BM25_CACHE_PATH}")
         except Exception as e:
-            logger.error(f"从向量库初始化 BM25 严重失败：{e}")
-            self.bm25 = None
+            logger.warning(f"保存 BM25 缓存失败：{e}")
+
+        return documents
 
     def _get_relevant_documents(
             self,
             query: str,
             *,
             run_manager: CallbackManagerForRetrieverRun,
-            original_query: str = None  # 新增：原始查询参数，用于缓存
+            original_query: str = None
     ) -> List[Document]:
-        """混合检索主流程
-        三层缓存架构：
-            L1：基于原始查询的查询结果缓存
-            L2：语义相似缓存
-            L3：热点访问文档缓存
-        """
-        # 确定缓存键，优先使用原始查询
+        """混合检索主流程"""
         cache_query = original_query if original_query else query
 
-        # L1：基于原始查询的查询结果缓存
+        # L1：Redis 查询缓存
         from app.cache.redis_cache import get_cache
         cache = get_cache()
 
         cached_result = cache.get(
-            cache_query,  # 使用原始查询作为缓存键
+            cache_query,
             k=self.k,
             use_reranker=self.use_reranker,
             rerank_top_k=self.rerank_top_k
@@ -194,21 +189,17 @@ class HybridRetriever(BaseRetriever):
 
         if cached_result:
             documents, metadata = cached_result
-            logger.info(f"🎯 L1缓存命中：{cache_query[:30]}... 使用缓存结果：{len(documents)} 个文档")
+            logger.info(f"L1缓存命中：{cache_query[:30]}... 使用缓存结果：{len(documents)} 个文档")
             return documents
 
-        # 优化：只计算一次embedding
+        # L2：语义相似缓存
         query_embedding = None
 
-        # L2：语义相似缓存（相似匹配）
         if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
             semantic_cache = get_semantic_cache()
-            logger.info(f"🔍 L2语义缓存检查：{cache_query[:30]}...")
+            logger.info(f"L2语义缓存检查：{cache_query[:30]}...")
 
-            # 获取embedding
             query_embedding = semantic_cache._get_embedding(cache_query)
-
-            # 传入embedding，避免重复计算
             semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
 
             if semantic_result:
@@ -219,53 +210,39 @@ class HybridRetriever(BaseRetriever):
                 )
                 return documents
 
-        # 原始的RAG文档检索
+        # 执行 EnsembleRetriever 检索
         start_time = time.time()
-        # 1. Dense 检索
-        dense_results, query_embedding = self._dense_search(query, query_embedding)
 
-        # 2. Sparse 检索
-        sparse_results = self._sparse_search(query)
+        try:
+            candidates = self.ensemble_retriever.invoke(query)
+        except Exception as e:
+            logger.error(f"EnsembleRetriever 检索异常：{e}")
+            candidates = []
 
-        # 3. 降级处理：如果 BM25 不可用，直接返回向量结果
-        if not sparse_results:
-            logger.warning("BM25 不可用，降级为纯向量检索")
-            candidates = [doc for doc, _ in dense_results][:self.rerank_top_k]
-        else:
-            # 4. RRF融合（取更多候选送入Reranker）
-            candidates = self._rrf_fusion(
-                dense_results,
-                sparse_results,
-                top_k=self.rerank_top_k
-            )
-
-        # 5. Reranker重排序
+        # Reranker 重排序
         if self.use_reranker and candidates:
             try:
                 reranker = get_reranker()
                 final_docs = reranker.rerank(
                     query=query,
-                    documents=candidates,
+                    documents=candidates[:self.rerank_top_k],
                     top_k=self.k,
-                    score_threshold=config.RERANKER_THRESHOLD  # 文档阈值，如果相关性小于0.3则不会返回文档，即RAG失效了
+                    score_threshold=config.RERANKER_THRESHOLD
                 )
                 logger.info(f"Reranker 重排序：{len(candidates)} -> {len(final_docs)}")
-                # return final_docs
             except Exception as e:
-                logger.warning(f"Reranker 失败，使用 RRF 结果：{e}")
+                logger.warning(f"Reranker 失败，使用 EnsembleRetriever 结果：{e}")
                 final_docs = candidates[:self.k]
-
         else:
             final_docs = candidates[:self.k]
 
         retrieval_time = (time.time() - start_time) * 1000
         logger.info(f"检索完成，耗时：{retrieval_time:.2f}ms")
 
-        # 3. 写入缓存
+        # 写入缓存
         if final_docs:
-            # 写入L1查询结果缓存
             cache.set(
-                cache_query,  # 使用原始查询作为缓存键
+                cache_query,
                 final_docs,
                 metadata={
                     "retrieval_time_ms": retrieval_time,
@@ -277,9 +254,8 @@ class HybridRetriever(BaseRetriever):
                 use_reranker=self.use_reranker,
                 rerank_top_k=self.rerank_top_k
             )
-            logger.info(f"📝 L1缓存已写入：{cache_query[:30]}...)")
+            logger.info(f"L1缓存已写入：{cache_query[:30]}...")
 
-            # 写入L2语义缓存
             if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
                 semantic_cache = get_semantic_cache()
                 semantic_cache.set(cache_query, final_docs, query_embedding=query_embedding)
@@ -287,84 +263,8 @@ class HybridRetriever(BaseRetriever):
 
         return final_docs
 
-    def _dense_search(self, query: str, query_embedding: List[float] = None) -> Tuple[List[tuple], List[float]]:
-        """向量检索"""
-        try:
-            # 如果传入了embedding，使用similarity_search_by_vector
-            if query_embedding is not None:
-                docs=self.vector_store.similarity_search_by_vector(query_embedding, k=self.k*2)# 取更多候选，用于RRF融合
-            else:
-                docs=self.vector_store.similarity_search(query, k=self.k*2)
-                try:
-                    from app.core.embeddings import get_embeddings
-                    # 如果没传入embedding，自行获取
-                    embeddings=get_embeddings()
-                    query_embedding=embeddings.embed_query(query)
-                except:
-                    pass
-            # 确保 doc 有 id 属性 (LangChain 新版本可能需要在 metadata 里找)
-            return [(doc, rank) for rank, doc in enumerate(docs)], query_embedding
-        except Exception as e:
-            logger.error(f"Dense 检索异常：{e}")
-            return [], query_embedding
 
-    def _sparse_search(self, query: str) -> List[tuple]:
-        """BM25 检索"""
-        if self.bm25 is None or not self.documents:
-            return []
-
-        try:
-            tokens = self._tokenize(query)
-            if not tokens:
-                return []
-
-            scores = self.bm25.get_scores(tokens)
-
-            # 获取 Top-K 索引
-            # 注意：这里取 k*2 参与融合，给 RRF 更多选择空间
-            top_k_count = min(self.k * 2, len(scores))
-            top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k_count]
-
-            results = []
-            for rank, idx in enumerate(top_indices):
-                if scores[idx] > 0:  # 只取有分数的
-                    results.append((self.documents[idx], rank))
-
-            return results
-        except Exception as e:
-            logger.error(f"Sparse 检索异常：{e}")
-            return []
-
-    def _rrf_fusion(
-            self,
-            dense_results: List[tuple],
-            sparse_results: List[tuple],
-            rrf_k: int = 60,
-            top_k: int = None
-    ) -> List[Document]:
-        """RRF 融合算法"""
-        doc_scores: Dict[str, float] = {}
-        doc_map: Dict[str, Document] = {}
-
-        # Dense 得分
-        for doc, rank in dense_results:
-            doc_id = self._get_doc_id(doc)
-            score = self.alpha / (rrf_k + rank + 1)
-            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + score
-            doc_map[doc_id] = doc
-
-        # Sparse 得分
-        for doc, rank in sparse_results:
-            doc_id = self._get_doc_id(doc)
-            score = (1 - self.alpha) / (rrf_k + rank + 1)
-            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + score
-            doc_map[doc_id] = doc
-
-        # 排序并截取
-        sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
-        return [doc_map[doc_id] for doc_id, _ in sorted_docs[:self.k]]
-
-
+@lru_cache(maxsize=8)
 def get_hybrid_retriever(
         vector_store=None,
         k: int = 5,

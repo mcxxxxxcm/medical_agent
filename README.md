@@ -174,4 +174,218 @@ curl -X POST http://localhost:8000/api/chat \
       "content": "..."
     }
   ],
-  "warnings": ["本
+  "warnings": ["本回答仅供参考，不能替代专业医生的诊断和治疗建议"]
+}
+```
+
+### 流式聊天
+
+```bash
+curl -X POST http://localhost:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "糖尿病的早期症状有哪些？",
+    "user_id": "user_001"
+  }'
+```
+
+**响应**：SSE 流式输出
+```
+data: "糖尿病的早期症状包括..."
+data: "多饮、多尿、多食..."
+data: [DONE]
+```
+
+### 图片分析
+
+```bash
+curl -X POST http://localhost:8000/api/upload/analyze \
+  -F "file=@report.jpg" \
+  -F "question=这份报告有什么问题？" \
+  -F "use_ocr=true"
+```
+
+**响应**：
+```json
+{
+  "ocr_text": "血常规检查...",
+  "analysis": "根据报告分析...",
+  "suggestions": ["建议复查..."],
+  "warnings": ["本分析仅供参考..."]
+}
+```
+
+### 健康检查
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+## 🧪 评估测试
+
+### RAGAS 评估
+
+```bash
+# 使用默认测试集
+python scripts/evaluate_rag.py
+
+# 使用自定义测试数据
+python scripts/evaluate_rag.py \
+  --test-data data/evaluation/test_data.json \
+  --metrics faithfulness,answer_correctness
+```
+
+### 性能测试
+
+```bash
+# 测试检索性能
+python scripts/test_vector_store.py
+
+# 测试 LLM 连接
+python scripts/test_llm.py
+```
+
+## ⚙️ 配置说明
+
+### 核心配置项
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `MODEL_NAME` | LLM 模型名称 | gpt-4o |
+| `MODEL_URL` | LLM API 地址 | - |
+| `MODEL_API_KEY` | LLM API 密钥 | - |
+| `EMBEDDING_MODEL` | Embedding 模型 | text-embedding-3-small |
+| `RERANKER_THRESHOLD` | Reranker 阈值 | 0.0 |
+| `ENABLE_SEMANTIC_CACHE` | 启用语义缓存 | true |
+| `SEMANTIC_CACHE_THRESHOLD` | 语义相似度阈值 | 0.75 |
+
+### 路径配置
+
+| 路径 | 说明 |
+|------|------|
+| `docs/medical/` | 医疗文档目录 |
+| `data/chroma_db/` | 向量数据库 |
+| `data/uploads/` | 上传图片存储 |
+| `logs/` | 日志文件 |
+
+## 📊 性能指标
+
+### 响应时间
+
+| 场景 | 优化前 | 优化后 | 优化措施 |
+|------|--------|--------|----------|
+| 缓存命中 | ~8秒 | ~3秒 | Embedding 复用、查询重写跳过 |
+| 缓存未命中 | ~21秒 | ~11秒 | Jieba 预加载、条件化 LLM 调用 |
+| 首次响应 | ~3秒 | ~1.5秒 | Reranker 预加载、异步处理 |
+
+### 缓存命中率
+
+| 缓存层级 | 命中率 | 作用 |
+|----------|--------|------|
+| L1 (Redis) | ~30% | 完全相同的查询 |
+| L2 (Semantic) | ~20% | 语义相似的查询 |
+| 合计 | ~50% | - |
+
+## 🔧 常见问题
+
+### Q: Docker 启动失败？
+
+**A**: 检查端口占用：
+```bash
+# 检查端口
+netstat -ano | findstr :8000
+netstat -ano | findstr :5432
+netstat -ano | findstr :6379
+
+# 清理旧容器
+docker-compose down -v
+docker-compose up -d
+```
+
+### Q: Reranker 返回空结果？
+
+**A**: 降低阈值：
+```python
+# app/core/config.py
+RERANKER_THRESHOLD = 0.0  # 从 0.3 改为 0.0
+```
+
+### Q: PostgreSQL 连接断开？
+
+**A**: 添加连接池配置：
+```python
+# 在连接字符串中添加
+DATABASE_URL=postgresql://...?pool_size=5&max_overflow=10&pool_recycle=1800
+```
+
+### Q: 如何添加新的医疗文档？
+
+**A**: 
+```bash
+# 1. 放入文档目录
+cp new_document.pdf docs/medical/
+
+# 2. 重建向量库
+python scripts/rebuild_vector_store.py
+```
+
+## 📁 项目结构
+
+```
+medical_assistant_agent/
+├── app/
+│   ├── api/              # API 路由
+│   ├── cache/            # 缓存模块（Redis、语义缓存）
+│   ├── core/             # 核心配置（LLM、Embedding）
+│   ├── graph/            # LangGraph 工作流
+│   ├── memory/           # 记忆管理（PostgreSQL）
+│   ├── rag/              # RAG 检索（向量库、BM25、Reranker）
+│   ├── vision/           # 视觉识别（OCR、图片分析）
+│   └── static/           # 静态文件
+├── data/                 # 数据存储
+├── docs/medical/         # 医疗文档
+├── scripts/              # 工具脚本
+├── tests/                # 测试用例
+├── docker-compose.yml    # Docker 编排
+├── Dockerfile            # 容器镜像
+└── requirements.txt      # Python 依赖
+```
+
+## 🛣️ 路线图
+
+- [x] 基础 RAG 问答
+- [x] 多轮对话支持
+- [x] 流式响应
+- [x] 混合检索（Dense + Sparse）
+- [x] Reranker 重排序
+- [x] 三层缓存架构
+- [x] Docker 容器化
+- [x] 图片识别功能
+- [ ] RAGAS 自动评估
+- [ ] 多语言支持
+- [ ] 语音输入输出
+- [ ] 移动端适配
+
+## 🤝 贡献指南
+
+1. Fork 项目
+2. 创建分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
+
+## 📄 许可证
+
+[MIT License](LICENSE)
+
+## 🙏 致谢
+
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM 应用框架
+- [LangGraph](https://github.com/langchain-ai/langgraph) - 工作流编排
+- [FastAPI](https://github.com/tiangolo/fastapi) - Web 框架
+- [ChromaDB](https://github.com/chroma-core/chroma) - 向量数据库
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) - OCR 引擎
+
+---
+
+**⚠️ 免责声明**：本系统提供的医疗建议仅供参考，不能替代专业医生的诊断和治疗。如有健康问题，请及时就医。

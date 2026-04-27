@@ -1,10 +1,13 @@
 # app/core/llm.py
+from functools import lru_cache
+
 from app.core.config import get_config
 from langchain_openai import ChatOpenAI
 
 
+@lru_cache(maxsize=8)
 def get_llm(model_name: str = None, model_url: str = None, streaming: bool = False) -> ChatOpenAI:
-    """获取 LLM 实例
+    """获取 LLM 实例（带缓存）
 
     Args:
         model_name: 模型名称（可选，默认使用配置）

@@ -43,6 +43,7 @@ from app.graph.nodes import (
     profile_extraction_node,
     direct_answer_node,
     query_rewrite_node,
+    grade_documents_node,
     should_summarize,
     summarize_conversation_node
 )
@@ -86,6 +87,7 @@ def build_graph() -> StateGraph:
     builder.add_node("router", router_node)
     builder.add_node("symptom_analysis", symptom_analysis_node)
     builder.add_node("knowledge_retrieval", knowledge_retrieval_node)
+    builder.add_node("grade_documents", grade_documents_node)
     builder.add_node("direct_answer", direct_answer_node)
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("safety_check", safety_check_node)
@@ -100,19 +102,18 @@ def build_graph() -> StateGraph:
     builder.add_edge("memory_load", "profile_extraction")
     builder.add_edge("profile_extraction", "router")
 
-    # ✅ router 使用 Command.goto，不需要 add_edge
-
     # symptom 路径：router -> symptom_analysis -> query_rewrite -> knowledge_retrieval
     builder.add_edge("symptom_analysis", "query_rewrite")
     builder.add_edge("query_rewrite", "knowledge_retrieval")
 
     # knowledge 路径：router -> query_rewrite -> knowledge_retrieval
-    # 注意：query_rewrite -> knowledge_retrieval 已经在上面定义了
 
     # general 路径：router -> direct_answer
 
-    # 汇聚路径
-    builder.add_edge("knowledge_retrieval", "answer_generation")
+    # 检索后先评分，grade_documents 使用 Command.goto 决定去向：
+    #   相关 -> answer_generation
+    #   不相关 -> query_rewrite（自纠正循环）
+    builder.add_edge("knowledge_retrieval", "grade_documents")
 
     # 根据配置决定是否启用 safety_check
     from app.core.config import get_config
