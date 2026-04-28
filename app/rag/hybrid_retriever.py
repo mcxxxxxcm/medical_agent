@@ -16,8 +16,12 @@ from typing import List, Dict, Any, Optional, Set
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
+
+try:
+    from langchain.retrievers import EnsembleRetriever
+except ImportError:
+    from langchain_classic.retrievers import EnsembleRetriever
 
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.reranker import get_reranker

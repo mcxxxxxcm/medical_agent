@@ -20,15 +20,15 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # ===== LLM 配置 =====
-    MODEL_NAME: str = "gpt-4-turbo"
+    MODEL_NAME: str = "glm-4.5-air"
     # MODEL_NAME: str = "glm-4"
     MODEL_URL: Optional[str] = None
     MODEL_API_KEY: Optional[str] = None
     MODEL_TEMPERATURE: float = 0.2
 
     # ===== Embedding 配置 =====
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    # EMBEDDING_MODEL: str = "embedding-3"
+    # EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_MODEL: str = "embedding-3"
     EMBEDDING_DIMENSION: int = 1536
 
     # ===== 数据库配置 =====

@@ -3,7 +3,8 @@
     "allow": [
       "mcp__langchain_docs__search_docs_by_lang_chain",
       "mcp__langchain_docs__query_docs_filesystem_docs_by_lang_chain",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe *)"
     ]
   },
   "enableAllProjectMcpServers": true,

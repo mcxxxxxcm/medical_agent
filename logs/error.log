@@ -249,3 +249,235 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/erro
 2026-03-29 18:20:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 403 - {'error': {'message': '用户额度不足, 剩余额度: ＄-1.338802 (request id: 202603291020159303046029F4Sj6Mz)', 'type': 'new_api_error', 'param': '', 'code': 'insufficient_user_quota'}}
 2026-03-29 18:20:16 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 403 - {'error': {'message': '用户额度不足, 剩余额度: ＄-1.338802 (request id: 20260329102016533180430kXRWrRT2)', 'type': 'new_api_error', 'param': '', 'code': 'insufficient_user_quota'}}
 2026-03-29 18:20:17 - app.rag.hybrid_retriever - ERROR - Dense 检索异常：Error code: 403 - {'error': {'message': '用户额度不足, 剩余额度: ＄-1.338802 (request id: 20260329102018155409701T47jCfNO)', 'type': 'new_api_error', 'param': '', 'code': 'insufficient_user_quota'}}
+2026-04-28 23:28:28 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:29:57 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:58 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:29:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:30:01 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:33:03 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:33:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:08 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:09 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:09 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:09 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:09 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:33:09 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:35:21 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:35:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:22 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:22 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:25 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:25 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:35:25 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:36:11 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:36:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:16 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:16 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:16 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:16 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:17 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:36:18 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:37:51 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:37:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:55 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:37:55 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:38:48 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:38:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:51 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:54 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:55 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:38:55 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:39:50 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:39:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:51 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:52 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:53 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:39:54 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:40:22 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:40:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:24 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
+2026-04-28 23:40:26 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
