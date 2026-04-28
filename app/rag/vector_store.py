@@ -7,8 +7,10 @@ from langchain_core.retrievers import BaseRetriever
 
 from app.core.embeddings import get_embeddings
 from app.core.config import get_config
+from app.core.app_logging import get_logger
 
 config = get_config()
+logger = get_logger(__name__)
 
 
 class VectorStoreManager:
@@ -103,7 +105,6 @@ class VectorStoreManager:
         if self.vector_store is None:
             raise ValueError(f"向量数据库未初始化，请先调用create_vector_store")
         try:
-            # ???
             collection_info = self.vector_store._collection
             return {
                 "name": collection_info.name,
@@ -112,6 +113,33 @@ class VectorStoreManager:
             }
         except Exception as e:
             return {"error": str(e)}
+
+    def load_all_documents(self, limit: int = 50000) -> List[Document]:
+        """从向量库加载全部文档，供 BM25 等离线检索组件使用"""
+        if self.vector_store is None:
+            raise ValueError("向量数据库未初始化，请先调用create_vector_store")
+
+        try:
+            collection = self.vector_store._collection
+            results = collection.get(include=["documents", "metadatas"], limit=limit)
+            documents = results.get("documents") or []
+            metadatas = results.get("metadatas") or []
+            ids = results.get("ids") or []
+
+            loaded_documents = []
+            for i, content in enumerate(documents):
+                doc = Document(
+                    page_content=content,
+                    metadata=metadatas[i] if i < len(metadatas) else {},
+                )
+                if i < len(ids):
+                    doc.id = ids[i]
+                loaded_documents.append(doc)
+
+            return loaded_documents
+        except Exception as e:
+            logger.error(f"从向量库加载文档失败：{e}")
+            return []
 
 
 # 全局向量库管理器实例
@@ -168,6 +196,20 @@ def get_retriever(
         search_type=search_type or config.DEFAULT_SEARCH_TYPE,
         search_kwargs={"k": k or config.DEFAULT_K},
     )
+
+
+def load_documents_from_store(
+        vector_store: Optional[Chroma] = None,
+        limit: int = 50000,
+) -> List[Document]:
+    """通过向量库管理器统一加载全部文档"""
+    manager = get_vector_store_manager()
+    if vector_store is not None:
+        manager.vector_store = vector_store
+    elif manager.vector_store is None:
+        manager.vector_store = get_vector_store()
+
+    return manager.load_all_documents(limit=limit)
 
 
 def add_documents_to_store(

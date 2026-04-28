@@ -414,6 +414,65 @@ def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit:
     ]
 
 
+def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:
+    """构建 RAG 问答提示词"""
+    context_prompt = get_user_context_prompt(user_profile)
+    conversation_history = get_conversation_history_text(state)
+    enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
+
+    if not retrieved_docs:
+        return f"请回答以下问题：\n{enhanced_question}"
+
+    formatted_docs = []
+    for i, doc in enumerate(retrieved_docs, 1):
+        source = doc.metadata.get("source", "未知来源")
+        content = doc.page_content
+        formatted_docs.append(f"[文档{i} 来源：{source}]\n{content}")
+    context = "\n\n".join(formatted_docs)
+
+    return f"""你是一位专业的医疗健康助手，基于提供的医疗文档内容回答用户问题。
+
+【重要提醒】
+1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
+2. 如果问题涉及紧急医疗情况，请立即建议用户就医
+3. 回答时要基于提供的文档内容，不要编造信息
+
+【参考文档】
+{context}
+
+【对话历史总结】
+{conversation_history if conversation_history else ""}
+
+{enhanced_question}
+
+【回答要求】
+1. 基于参考文档内容，准确回答用户问题
+2. 如果文档中没有相关信息，请明确说明
+3. 回答要清晰易懂，避免过于专业的术语
+4. 必要时提供实用的家庭护理建议
+5. 结尾加上安全提醒："如有疑问，请及时就医"
+
+请用中文回答："""
+
+
+def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:
+    """构建直接回答提示词"""
+    context_prompt = get_user_context_prompt(user_profile)
+    conversation_history = get_conversation_history_text(state)
+    enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
+
+    return f"""你是一个友好的医疗助手。
+
+【对话历史总结】
+{conversation_history if conversation_history else ""}
+
+{enhanced_question}
+
+请简洁友好地回复用户。如果是问候语，请热情回复。如果是感谢，请礼貌回应。
+回复要简短，不要超过50个字。
+"""
+
+
 @timing_decorator("答案生成")
 def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """答案生成节点
@@ -442,43 +501,13 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     if context_prompt:
         logger.info("已注入用户上下文")
 
-    conversation_history = get_conversation_history_text(state)
-    enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
-
     try:
-        if retrieved_docs:
-            formatted_docs = []
-            for i, doc in enumerate(retrieved_docs, 1):
-                source = doc.metadata.get("source", "未知来源")
-                content = doc.page_content
-                formatted_docs.append(f"[文档{i} 来源：{source}]\n{content}")
-            context = "\n\n".join(formatted_docs)
-
-            prompt = f"""你是一位专业的医疗健康助手，基于提供的医疗文档内容回答用户问题。
-
-【重要提醒】
-1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
-2. 如果问题涉及紧急医疗情况，请立即建议用户就医
-3. 回答时要基于提供的文档内容，不要编造信息
-
-【参考文档】
-{context}
-
-【对话历史总结】
-{conversation_history if conversation_history else ""}
-
-{enhanced_question}
-
-【回答要求】
-1. 基于参考文档内容，准确回答用户问题
-2. 如果文档中没有相关信息，请明确说明
-3. 回答要清晰易懂，避免过于专业的术语
-4. 必要时提供实用的家庭护理建议
-5. 结尾加上安全提醒："如有疑问，请及时就医"
-
-请用中文回答："""
-        else:
-            prompt = f"请回答以下问题：\n{enhanced_question}"
+        prompt = build_rag_prompt(
+            question=question,
+            retrieved_docs=retrieved_docs,
+            user_profile=state.get("user_profile"),
+            state=state,
+        )
 
         llm = get_llm()
         start_time = time.time()
@@ -695,33 +724,12 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
     question = state.get("question", "")
     user_profile = state.get("user_profile")
 
-    # 构建上下文：
-    context = ""
-    if user_profile:
-        if user_profile.get("name"):
-            context += f"用户名：{user_profile['name']}\n"
-
-    # 获取summary
-    conversation_history = get_context_with_summary(state)
-    history_text = ""
-    if conversation_history:
-        history_parts = []
-        for msg in conversation_history:
-            if isinstance(msg, HumanMessage):
-                history_parts.append(f"用户：{msg.content}")
-            elif not isinstance(msg, SystemMessage):
-                history_parts.append(f"助手：{msg.content}")
-        history_text = "\n".join(history_parts)
-
     try:
-        prompt = f"""你是一个友好的医疗助手。
-{context}
-{f"【对话历史总结】"}\n{history_text if history_text else ""}\n 
-用户说：{question}
-
-请简洁友好地回复用户。如果是问候语，请热情回复。如果是感谢，请礼貌回应。
-回复要简短，不要超过50个字。
-"""
+        prompt = build_direct_answer_prompt(
+            question=question,
+            user_profile=user_profile,
+            state=state,
+        )
         llm = get_llm()
         response = llm.invoke(prompt)
         answer = response.content.strip()
@@ -937,42 +945,15 @@ async def stream_answer_generation(state: MedicalAssistantState):
     question = state.get("question", "")
     retrieved_docs = state.get("retrieved_docs")
     context_prompt = get_user_context_prompt(state.get("user_profile"))
-    conversation_history = get_conversation_history_text(state)
-    enhanced_question = f"{context_prompt}【用户问题】\n{question}" if context_prompt else question
+    if context_prompt:
+        logger.info("已注入用户上下文")
 
-    if retrieved_docs:
-        formatted_docs = []
-        for i, doc in enumerate(retrieved_docs, 1):
-            source = doc.metadata.get("source", "未知来源")
-            content = doc.page_content
-            formatted_docs.append(f"[文档{i} 来源：{source}]\n{content}")
-        context = "\n\n".join(formatted_docs)
-
-        prompt = f"""你是一位专业的医疗健康助手，基于提供的医疗文档内容回答用户问题。
-
-【重要提醒】
-1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
-2. 如果问题涉及紧急医疗情况，请立即建议用户就医
-3. 回答时要基于提供的文档内容，不要编造信息
-
-【参考文档】
-{context}
-
-【对话历史总结】
-{conversation_history if conversation_history else ""}
-
-{enhanced_question}
-
-【回答要求】
-1. 基于参考文档内容，准确回答用户问题
-2. 如果文档中没有相关信息，请明确说明
-3. 回答要清晰易懂，避免过于专业的术语
-4. 必要时提供实用的家庭护理建议
-5. 结尾加上安全提醒："如有疑问，请及时就医"
-
-请用中文回答："""
-    else:
-        prompt = f"请回答以下问题：\n{enhanced_question}"
+    prompt = build_rag_prompt(
+        question=question,
+        retrieved_docs=retrieved_docs,
+        user_profile=state.get("user_profile"),
+        state=state,
+    )
 
     llm = get_llm(streaming=True)
     full_answer = ""
@@ -1000,30 +981,11 @@ async def stream_direct_answer(state: MedicalAssistantState):
     question = state.get("question", "")
     user_profile = state.get("user_profile")
 
-    context = ""
-    if user_profile and user_profile.get("name"):
-        context = f"用户名：{user_profile['name']}\n"
-
-    conversation_history = get_context_with_summary(state)
-    history_text = ""
-    if conversation_history:
-        history_parts = []
-        for msg in conversation_history:
-            if isinstance(msg, HumanMessage):
-                history_parts.append(f"用户：{msg.content}")
-            elif not isinstance(msg, SystemMessage):
-                history_parts.append(f"助手：{msg.content}")
-        history_text = "\n".join(history_parts)
-
-    prompt = f"""你是一个友好的医疗助手。
-{context}
-【对话历史总结】
-{history_text if history_text else ""}
-
-用户说：{question}
-
-请简洁友好地回复用户。回复要简短，不要超过50个字。
-"""
+    prompt = build_direct_answer_prompt(
+        question=question,
+        user_profile=user_profile,
+        state=state,
+    )
 
     llm = get_llm(streaming=True)
     full_answer = ""

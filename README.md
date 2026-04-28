@@ -5,7 +5,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.0.10-orange)](https://langchain-ai.github.io/langgraph/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://www.docker.com/)
 
-基于 RAG（检索增强生成）技术的医疗领域智能问答系统，支持多轮对话、知识检索、图片识别等功能。
+基于 RAG（检索增强生成）技术的医疗领域智能问答系统，支持多轮对话、知识检索与流式响应等能力。
 
 ## ✨ 核心特性
 
@@ -19,17 +19,16 @@
 - **Dense + Sparse**：向量检索 + BM25 混合
 - **RRF 融合**：Reciprocal Rank Fusion 算法融合结果
 - **Reranker 重排序**：bge-reranker 提升相关性
-- **三层缓存**：L1 精确匹配、L2 语义缓存、L3 热点缓存
+- **两级缓存**：L1 精确匹配、L2 语义缓存
 
 ### 💾 持久化存储
 - **PostgreSQL**：对话检查点持久化，支持断点续聊
 - **Redis**：查询结果缓存，加速响应
 - **ChromaDB**：向量数据库存储医疗文档
 
-### 🖼️ 图片识别（新增）
-- **OCR 预处理**：PaddleOCR 提取报告文字
-- **多模态分析**：支持 GPT-4o 等视觉模型
-- **报告解析**：自动分析检查单、化验单
+### 🖼️ 图片识别（规划中）
+- 当前主服务 `app/api/routes.py` 未暴露图片分析接口
+- 如需保留该能力，建议以独立模块或实验性接口形式补充并在文档中单独标注
 
 ### 🐳 容器化部署
 - **Docker Compose**：一键启动所有服务
@@ -46,10 +45,10 @@
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                      API 网关层                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ /api/chat   │  │/api/chat/   │  │ /api/upload/analyze │  │
-│  │   同步聊天   │  │   stream    │  │     图片分析        │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐                           │
+│  │ /api/chat   │  │/api/chat/   │                           │
+│  │   同步聊天   │  │   stream    │                           │
+│  └─────────────┘  └─────────────┘                           │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
@@ -146,8 +145,14 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 安装依赖
 pip install -r requirements.txt
 
-# 启动服务
-python app/api/routes.py
+# 启动服务（开发模式）
+uvicorn app.api.routes:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 5. 生产启动建议
+
+```bash
+uvicorn app.api.routes:app --host 0.0.0.0 --port 8000 --workers 2
 ```
 
 ## 📖 API 文档
@@ -219,6 +224,17 @@ curl -X POST http://localhost:8000/api/upload/analyze \
 
 ```bash
 curl http://localhost:8000/api/health
+```
+
+**响应示例**：
+```json
+{
+  "status": "healthy",
+  "database": "healthy",
+  "vector_store": "healthy",
+  "cache": "healthy",
+  "reranker": "healthy"
+}
 ```
 
 ## 🧪 评估测试
@@ -360,7 +376,7 @@ medical_assistant_agent/
 - [x] Reranker 重排序
 - [x] 三层缓存架构
 - [x] Docker 容器化
-- [x] 图片识别功能
+- [ ] 图片识别功能（主服务未开放）
 - [ ] RAGAS 自动评估
 - [ ] 多语言支持
 - [ ] 语音输入输出

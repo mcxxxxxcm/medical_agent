@@ -21,7 +21,7 @@ from langchain_community.retrievers import BM25Retriever
 
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.reranker import get_reranker
-from app.rag.vector_store import get_vector_store
+from app.rag.vector_store import get_vector_store, load_documents_from_store
 from app.core.app_logging import get_logger
 from app.core.config import get_config
 
@@ -47,25 +47,7 @@ def _tokenize(text: str) -> List[str]:
 
 def _load_documents_from_store(vector_store) -> List[Document]:
     """从向量库加载所有文档"""
-    try:
-        collection = vector_store._collection
-        results = collection.get(include=["documents", "metadatas"], limit=50000)
-        if not results["documents"]:
-            return []
-
-        documents = []
-        for i, content in enumerate(results["documents"]):
-            doc = Document(
-                page_content=content,
-                metadata=results["metadatas"][i] if results["metadatas"] else {}
-            )
-            if results.get("ids") and i < len(results["ids"]):
-                doc.id = results["ids"][i]
-            documents.append(doc)
-        return documents
-    except Exception as e:
-        logger.error(f"从向量库加载文档失败：{e}")
-        return []
+    return load_documents_from_store(vector_store=vector_store, limit=50000)
 
 
 class HybridRetriever(BaseRetriever):
