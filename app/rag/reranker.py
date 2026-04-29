@@ -189,6 +189,15 @@ class Reranker:
                 elif len(final_docs) >= top_k:
                     break
 
+            if not final_docs and scored_items:
+                logger.warning(
+                    f"重排序后无文档达到阈值 {score_threshold}，降级返回 Top {min(top_k, len(scored_items))} 原始高分文档"
+                )
+                for doc, score in scored_items[:top_k]:
+                    doc.metadata["rerank_score"] = float(score)
+                    doc.metadata["rerank_threshold_fallback"] = True
+                    final_docs.append(doc)
+
             logger.info(f"重排序完成：{len(documents)} -> {len(final_docs)} （最高分：{scored_items[0][1]:.4f}）")
             return final_docs
 

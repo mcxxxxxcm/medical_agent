@@ -126,26 +126,184 @@ class ProfileExtractionOutput(BaseModel):
     gender: Optional[str] = Field(default=None, description="性别")
     allergies: Optional[List[str]] = Field(default=None, description="过敏史")
 
+
+def extract_json_block(raw_text: str) -> Optional[Dict[str, Any]]:
+    """从模型文本输出中尽量提取 JSON 对象"""
+    if not raw_text:
+        return None
+
+    text = raw_text.strip()
+    candidates = [text]
+
+    fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+    if fenced_match:
+        candidates.insert(0, fenced_match.group(1).strip())
+
+    brace_match = re.search(r"\{[\s\S]*\}", text)
+    if brace_match:
+        candidates.append(brace_match.group(0).strip())
+
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            continue
+
+    return None
+
+
+def invoke_structured_with_fallback(llm, prompt: str, schema: type[BaseModel]) -> BaseModel:
+    """优先结构化输出，失败时回退到纯文本+JSON提取，避免重复多次调用模型"""
+    try:
+        structured_llm = llm.with_structured_output(schema)
+        return structured_llm.invoke(prompt)
+    except Exception as structured_error:
+        logger.warning(f"{schema.__name__} 结构化解析失败，退回单次文本解析：{structured_error}")
+        raw_response = llm.invoke(prompt)
+        raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+        parsed = extract_json_block(raw_text)
+        if parsed is not None:
+            return schema.model_validate(parsed)
+        raise ValueError(f"{schema.__name__} 回退解析失败，模型原始输出：{raw_text}")
+
+
+def detect_rule_based_route(question: str) -> Optional[str]:
+    """优先使用规则快速判断路由，减少不必要的 LLM 调用"""
+    text = (question or "").strip().lower()
+    if not text:
+        return "general"
+
+    general_patterns = [
+        "你好", "您好", "hello", "hi", "hey", "谢谢", "thanks", "thank you",
+        "再见", "拜拜", "早上好", "晚上好", "你是谁", "你能做什么",
+    ]
+    if any(pattern in text for pattern in general_patterns):
+        return "general"
+
+    symptom_keywords = [
+        "怎么办", "吃什么药", "挂什么科", "严不严重", "缓解", "疼", "痛", "痒", "肿",
+        "发烧", "咳嗽", "流鼻涕", "头痛", "头疼", "嗓子疼", "喉咙痛", "腹痛", "肚子疼",
+        "恶心", "呕吐", "腹泻", "拉肚子", "胸闷", "胸痛", "呼吸困难", "发炎", "不舒服",
+    ]
+    if any(keyword in text for keyword in symptom_keywords):
+        return "symptom"
+
+    knowledge_keywords = [
+        "是什么", "什么是", "原因", "症状", "治疗", "预防", "护理", "诊断", "检查",
+        "高血压", "糖尿病", "感冒", "肺炎", "胃炎", "肝炎", "肾炎", "支气管炎",
+    ]
+    if any(keyword in text for keyword in knowledge_keywords):
+        return "knowledge"
+
+    return None
+
+
+def parse_router_output(raw_text: str) -> Optional[str]:
+    """兼容 JSON 和纯文本标签的路由结果解析"""
+    text = (raw_text or "").strip()
+    if not text:
+        return None
+
+    parsed = extract_json_block(text)
+    if parsed and isinstance(parsed.get("question_type"), str):
+        return normalize_router_label(parsed.get("question_type"))
+
+    plain_text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).replace("```", "").strip()
+    plain_text = plain_text.strip(" \n\t\"'：:")
+    return normalize_router_label(plain_text)
+
+
+def parse_symptom_text(raw_text: str) -> Dict[str, Any]:
+    """兼容非 JSON 的症状提取结果"""
+    text = (raw_text or "").strip()
+    if not text:
+        return {}
+
+    def extract_list(field_names: List[str]) -> Optional[List[str]]:
+        for field_name in field_names:
+            match = re.search(rf"{field_name}\s*[:：]\s*(.+)", text, re.IGNORECASE)
+            if match:
+                value = match.group(1).splitlines()[0].strip()
+                items = [item.strip(" ，,、；;。") for item in re.split(r"[，,、；;\s]+", value) if item.strip(" ，,、；;。")]
+                return items or None
+        return None
+
+    def extract_value(field_names: List[str]) -> Optional[str]:
+        for field_name in field_names:
+            match = re.search(rf"{field_name}\s*[:：]\s*(.+)", text, re.IGNORECASE)
+            if match:
+                return match.group(1).splitlines()[0].strip(" 。")
+        return None
+
+    severity = extract_value(["severity", "严重程度"]) or next(
+        (level for level in ["轻微", "中等", "严重"] if level in text),
+        None,
+    )
+
+    return {
+        "symptoms": extract_list(["symptoms", "症状"]),
+        "severity": severity,
+        "body_parts": extract_list(["body_parts", "身体部位", "部位"]),
+        "duration": extract_value(["duration", "持续时间"]),
+        "additional_info": extract_value(["additional_info", "附加信息", "补充信息"]),
+    }
+
+
+def normalize_query_text(raw_text: str, original_question: str) -> str:
+    """规范化查询重写结果"""
+    text = (raw_text or "").strip()
+    if not text:
+        return original_question
+
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+    text = text.replace("```", "").strip()
+
+    parsed = extract_json_block(text)
+    if parsed and isinstance(parsed.get("rewritten_query"), str):
+        text = parsed["rewritten_query"].strip()
+
+    text = re.sub(r"^(rewritten_query|query|重写后查询|重写查询)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
+    text = text.strip(" \n\t\"'。")
+    return text or original_question
+
+
+def is_same_query(left: Optional[str], right: Optional[str]) -> bool:
+    """判断两个查询是否等价，避免无意义重试"""
+    normalize = lambda value: re.sub(r"\s+", "", (value or "")).strip("。？！?!，,；;")
+    return normalize(left) == normalize(right)
+
+
+def build_no_results_answer(question: str) -> str:
+    """构建无检索结果时的兜底回复"""
+    return (
+        f"暂时没有在知识库中检索到与“{question}”直接相关的可靠资料。"
+        "建议补充更具体的信息，例如症状持续时间、伴随表现、既往病史或想了解的疾病名称。"
+        "如症状明显加重、持续不缓解或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
+    )
+
+
 @timing_decorator("路由")
 def router_node(state: MedicalAssistantState) -> Command:
     """路由节点
-    
+
     功能描述：
         根据用户问题判断问题类型，使用Command.goto决定后续执行路径
         这是工作流的第一个节点，负责问题分类和路由决策
-    
+
     Args：
         state：当前状态，包含question字段
-    
+
     Returns：
         Command：包含路由目标的Command对象
-    
+
     设计理念：
         1、智能分类：使用LLM进行问题类型分类
         2、Command路由：使用Command.goto控制流程，不存储route_decision
         3、容错处理：分类失败时使用默认路由
         4、日志记录：记录分类结果和路由决策
-    
+
     路由类型：
         symptom：症状咨询，需要症状解析
         knowledge：知识查询，直接检索
@@ -154,11 +312,14 @@ def router_node(state: MedicalAssistantState) -> Command:
     logger.info("路由节点开始执行")
 
     question = state.get("question", "")
-
-    try:
-        llm = get_llm()
-        structured_llm = llm.with_structured_output(RouterOutput)
-        prompt = f"""请判断以下问题的类型，只返回类型名称：
+    rule_based_route = detect_rule_based_route(question)
+    if rule_based_route:
+        logger.info(f"规则路由命中：question_type={rule_based_route}")
+        question_type = rule_based_route
+    else:
+        try:
+            llm = get_llm()
+            prompt = f"""请判断以下问题的类型，只返回类型名称：
 问题：{question}
 
 类型选项：
@@ -168,22 +329,35 @@ def router_node(state: MedicalAssistantState) -> Command:
 
 请只返回类型名称（symptom/knowledge/general）："""
 
-        result: RouterOutput = structured_llm.invoke(prompt)
-        question_type = result.question_type
+            raw_text: Optional[str] = None
+            try:
+                structured_llm = llm.with_structured_output(RouterOutput)
+                result = structured_llm.invoke(prompt)
+                question_type = result.question_type
+            except Exception as structured_error:
+                logger.warning(f"RouterOutput 结构化解析失败，尝试单次纯文本解析：{structured_error}")
+                raw_response = llm.invoke(prompt)
+                raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+                parsed_route = parse_router_output(raw_text)
+                if parsed_route:
+                    question_type = parsed_route
+                else:
+                    raise ValueError(f"RouterOutput 回退解析失败，模型原始输出：{raw_text}")
 
-        logger.info(f"问题类型：{question_type}")
+        except Exception as fallback_error:
+            logger.warning(f"路由结构化输出失败，使用 knowledge 兜底：{fallback_error}")
+            question_type = "knowledge"
 
-        # 常规类型general就直接使用llm进行回复，不用调用RAG
-        if question_type == "symptom":
-            return Command(goto="symptom_analysis")
-        elif question_type == "knowledge":
-            return Command(goto="query_rewrite")
-        else:
-            return Command(goto="direct_answer")
+    question_type = normalize_router_label(question_type)
+    logger.info(f"问题类型：{question_type}")
 
-    except Exception as e:
-        logger.error(f"路由节点执行失败：{str(e)}")
-        return Command(goto="knowledge_retrieval")
+    # 常规类型general就直接使用llm进行回复，不用调用RAG
+    if question_type == "symptom":
+        return Command(goto="symptom_analysis")
+    elif question_type == "knowledge":
+        return Command(goto="query_rewrite")
+    else:
+        return Command(goto="direct_answer")
 
 @timing_decorator("症状解析")
 def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
@@ -220,7 +394,6 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     try:
         llm = get_llm()
-        structured_llm = llm.with_structured_output(SymptomAnalysisOutput)
 
         prompt = f"""你是一位专业的症状分析助手，负责从用户描述中提取结构化的症状信息。
 
@@ -228,12 +401,20 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 {question}
 
 请提取症状名称、严重程度、身体部位、持续时间等信息。
+请优先返回 JSON 对象，字段包含：symptoms、severity、body_parts、duration、additional_info。
 如果无法提取某项信息，该字段设为 null。"""
-        result: SymptomAnalysisOutput = structured_llm.invoke(prompt)
+        try:
+            result: SymptomAnalysisOutput = invoke_structured_with_fallback(llm, prompt, SymptomAnalysisOutput)
+            payload = result.model_dump()
+        except Exception as fallback_error:
+            logger.warning(f"症状结构化提取失败，尝试规则解析：{fallback_error}")
+            raw_response = llm.invoke(prompt)
+            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+            payload = parse_symptom_text(raw_text)
 
-        logger.info(f"成功提取症状：{result.symptoms}")
+        logger.info(f"成功提取症状：{payload.get('symptoms')}")
 
-        return {"symptoms": result.model_dump()}
+        return {"symptoms": payload}
 
     except Exception as e:
         logger.error(f"症状解析失败：{str(e)}")
@@ -268,6 +449,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     # 获取原始查询和重写查询
     original_query = state.get("question", "")
     rewritten_query = state.get("rewritten_query", "")
+    retrieval_attempts = int(state.get("retrieval_attempts") or 0) + 1
 
     # 检索时优先使用重写查询（提高检索质量）
     search_query = rewritten_query or original_query
@@ -290,11 +472,12 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 "content": doc.page_content[:100]
             })
 
-        logger.info(f"检索到{len(docs)}个相关文档，耗时：{retrieval_time:.2f}ms")
+        logger.info(f"检索到{len(docs)}个相关文档，耗时：{retrieval_time:.2f}ms，第 {retrieval_attempts} 次检索")
 
         return {
             "retrieved_docs": docs,
-            "sources": sources
+            "sources": sources,
+            "retrieval_attempts": retrieval_attempts,
         }
 
     except Exception as e:
@@ -302,67 +485,63 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {
             "retrieved_docs": [],
             "sources": [],
+            "retrieval_attempts": retrieval_attempts,
             "error": f"知识检索失败：{str(e)}"
         }
 
 
 @timing_decorator("文档评分")
 def grade_documents_node(state: MedicalAssistantState) -> Command:
-    """文档相关性评分节点（Agentic RAG 模式）
+    """文档相关性评分节点（轻量启发式版）
 
     功能描述：
-        评估检索到的文档是否与用户问题相关
-        如果不相关，路由到 query_rewrite 重新检索
-        如果相关，路由到 answer_generation 生成答案
-
-    参考 LangChain Agentic RAG 教程中的 grade_documents 模式
+        基于检索结果和轻量启发式过滤文档
+        避免逐文档调用 LLM 导致首 token 延迟过高
     """
     logger.info("文档评分节点开始执行")
 
     question = state.get("question", "")
     retrieved_docs = state.get("retrieved_docs", [])
+    retrieval_attempts = int(state.get("retrieval_attempts") or 0)
+    rewritten_query = state.get("rewritten_query") or question
 
     if not retrieved_docs:
+        if retrieval_attempts >= 2 or is_same_query(rewritten_query, question):
+            logger.warning("无检索文档且已达到重试上限/查询未变化，直接生成兜底答案")
+            return Command(
+                goto="answer_generation",
+                update={
+                    "retrieved_docs": [],
+                    "final_answer": build_no_results_answer(question),
+                    "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                },
+            )
+
         logger.warning("无检索文档，路由到查询重写")
         return Command(goto="query_rewrite")
 
-    try:
-        llm = get_llm()
-        structured_llm = llm.with_structured_output(GradeDocuments)
+    relevant_docs = filter_relevant_docs(question, retrieved_docs)
+    logger.info(f"文档启发式过滤结果：{len(retrieved_docs)} -> {len(relevant_docs)} 相关")
 
-        # 逐个文档评分，过滤不相关的
-        relevant_docs = []
-        for doc in retrieved_docs:
-            prompt = f"""你是一个文档相关性评估专家。请判断以下检索文档是否与用户问题相关。
+    if not relevant_docs:
+        if retrieval_attempts >= 2 or is_same_query(rewritten_query, question):
+            logger.warning("文档过滤后为空且不再重试，直接生成兜底答案")
+            return Command(
+                goto="answer_generation",
+                update={
+                    "retrieved_docs": [],
+                    "final_answer": build_no_results_answer(question),
+                    "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                },
+            )
+        logger.info("所有文档被启发式过滤，路由到查询重写")
+        return Command(goto="query_rewrite")
 
-用户问题：{question}
+    return Command(
+        goto="answer_generation",
+        update={"retrieved_docs": relevant_docs}
+    )
 
-检索文档内容：
-{doc.page_content}
-
-如果文档包含与用户问题相关的关键词或语义，评为相关。只回答 'yes' 或 'no'。"""
-
-            result = structured_llm.invoke(prompt)
-            if result.binary_score.lower() == "yes":
-                relevant_docs.append(doc)
-            else:
-                logger.info(f"文档不相关，已过滤：{doc.page_content[:50]}...")
-
-        logger.info(f"文档评分结果：{len(retrieved_docs)} -> {len(relevant_docs)} 相关")
-
-        if not relevant_docs:
-            logger.info("所有文档不相关，路由到查询重写")
-            return Command(goto="query_rewrite")
-
-        # 更新状态并路由到答案生成
-        return Command(
-            goto="answer_generation",
-            update={"retrieved_docs": relevant_docs}
-        )
-
-    except Exception as e:
-        logger.error(f"文档评分失败：{str(e)}，直接生成答案")
-        return Command(goto="answer_generation")
 
 def get_user_context_prompt(user_profile: Optional[Dict[str, Any]]) -> str:
     """构建用户上下文提示"""
@@ -380,6 +559,22 @@ def get_user_context_prompt(user_profile: Optional[Dict[str, Any]]) -> str:
         context_parts.append(f"过敏史：{', '.join(user_profile['allergies'])}")
 
     return f"【用户信息】\n{chr(10).join(context_parts)}\n" if context_parts else ""
+
+
+def normalize_router_label(raw_label: str) -> str:
+    """规范化路由分类标签"""
+    label = (raw_label or "").strip().lower()
+    if label in {"symptom", "knowledge", "general"}:
+        return label
+
+    if "symptom" in label or "症状" in label:
+        return "symptom"
+    if "knowledge" in label or "知识" in label:
+        return "knowledge"
+    if "general" in label or "一般" in label or "问候" in label:
+        return "general"
+
+    return "knowledge"
 
 
 def get_conversation_history_text(state: MedicalAssistantState) -> str:
@@ -412,6 +607,36 @@ def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit:
         }
         for doc in retrieved_docs
     ]
+
+
+def has_query_overlap(question: str, doc_content: str) -> bool:
+    """基于关键词重叠的轻量相关性判断"""
+    tokens = [token for token in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower()) if len(token) >= 2]
+    if not tokens:
+        return True
+
+    content = (doc_content or "").lower()
+    return any(token in content for token in tokens)
+
+
+def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
+    """使用 rerank 分数和关键词重叠做轻量过滤，替代逐文档 LLM 评分"""
+    if not retrieved_docs:
+        return []
+
+    filtered_docs = []
+    for index, doc in enumerate(retrieved_docs):
+        rerank_score = doc.metadata.get("rerank_score")
+        threshold_fallback = bool(doc.metadata.get("rerank_threshold_fallback"))
+        overlap = has_query_overlap(question, doc.page_content)
+
+        keep_doc = index == 0 or overlap or rerank_score is not None or threshold_fallback
+        if keep_doc:
+            filtered_docs.append(doc)
+        else:
+            logger.info(f"文档启发式过滤：{doc.page_content[:50]}...")
+
+    return filtered_docs or retrieved_docs[:1]
 
 
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:
@@ -497,11 +722,25 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     question = state.get("question", "")
     retrieved_docs = state.get("retrieved_docs")
+    existing_answer = state.get("final_answer")
     context_prompt = get_user_context_prompt(state.get("user_profile"))
     if context_prompt:
         logger.info("已注入用户上下文")
 
     try:
+        if existing_answer:
+            logger.info("检测到预生成兜底答案，跳过 LLM 再生成")
+            result = {
+                "final_answer": existing_answer,
+                "messages": [
+                    HumanMessage(content=question),
+                    AIMessage(content=existing_answer)
+                ]
+            }
+            if retrieved_docs:
+                result["sources"] = format_retrieved_sources(retrieved_docs)
+            return result
+
         prompt = build_rag_prompt(
             question=question,
             retrieved_docs=retrieved_docs,
@@ -783,7 +1022,6 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     try:
         llm = get_llm()
-        structured_llm = llm.with_structured_output(QueryRewriteOutput)
 
         prompt = f"""你一个查询优化专家，负责将用户问题重写为更合适检索的查询。
 原始问题：{question}
@@ -792,10 +1030,15 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 1、保留原始问题的核心意图
 2、添加相关的医术术语或同义词
 3、拓展查询范围以提高召回率
-4、保持简洁，不超过50个字"""
+4、保持简洁，不超过50个字
+5、优先返回 JSON：{"rewritten_query": "..."}"""
 
-        result = structured_llm.invoke(prompt)
-        rewritten_query = result.rewritten_query
+        try:
+            result = invoke_structured_with_fallback(llm, prompt, QueryRewriteOutput)
+            rewritten_query = normalize_query_text(result.rewritten_query, question)
+        except Exception as fallback_error:
+            logger.warning(f"查询重写结构化输出失败，使用原始问题：{fallback_error}")
+            rewritten_query = question
 
         logger.info(f"查询重写：{question}--->{rewritten_query}")
 

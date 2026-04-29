@@ -16,6 +16,9 @@ API接口：
 """
 from contextlib import asynccontextmanager
 from typing import Optional, List
+import json
+import time
+import uuid
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -24,7 +27,17 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from app.core.app_logging import get_logger
 from app.graph.graph import get_graph
-from app.graph.nodes import stream_answer_generation
+from app.graph.nodes import (
+    stream_answer_generation,
+    stream_direct_answer,
+    memory_load_node,
+    profile_extraction_node,
+    router_node,
+    symptom_analysis_node,
+    query_rewrite_node,
+    knowledge_retrieval_node,
+    grade_documents_node,
+)
 from app.memory import get_checkpointer, get_long_term_memory
 from app.memory.checkpointer import close_checkpointer
 from app.rag.hybrid_retriever import get_hybrid_retriever
@@ -115,6 +128,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    """记录请求级耗时与 request_id。"""
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    request.state.request_start_time = time.time()
+
+    response = await call_next(request)
+
+    elapsed_ms = (time.time() - request.state.request_start_time) * 1000
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time-MS"] = f"{elapsed_ms:.2f}"
+    logger.info(f"请求完成：request_id={request_id}, path={request.url.path}, status={response.status_code}, elapsed_ms={elapsed_ms:.2f}")
+    return response
+
 
 # 在 app 定义后添加
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -208,7 +238,7 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/api/chat/stream")
-async def stream(request: ChatRequest):
+async def stream(request: ChatRequest, http_request: Request):
     """流式聊天接口
     功能描述：
         接受用户问题，以SSE流式返回回答
@@ -219,83 +249,113 @@ async def stream(request: ChatRequest):
     Returns：
         StreamResponse：SSE流式响应
     """
-    logger.info(f"收到流式聊天请求：user_id={request.user_id}")
+    request_id = getattr(http_request.state, "request_id", str(uuid.uuid4()))
+    request_start_time = getattr(http_request.state, "request_start_time", time.time())
+    thread_id = request.thread_id or f"thread_{request.user_id or 'default'}"
+
+    logger.info(
+        f"收到流式聊天请求：request_id={request_id}, thread_id={thread_id}, user_id={request.user_id}"
+    )
 
     async def event_generator():
+        first_token_sent = False
+        current_state = {
+            "question": request.question,
+            "user_id": request.user_id,
+            "thread_id": thread_id,
+            "request_id": request_id,
+            "warnings": [],
+            "sources": [],
+            "retrieval_attempts": 0,
+        }
+
+        async def emit_data(payload):
+            nonlocal first_token_sent
+            if not first_token_sent:
+                first_token_latency_ms = (time.time() - request_start_time) * 1000
+                logger.info(
+                    f"首个 token 已发送：request_id={request_id}, thread_id={thread_id}, latency_ms={first_token_latency_ms:.2f}"
+                )
+                first_token_sent = True
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
         try:
-            graph = await get_graph()
+            memory_state = memory_load_node(current_state)
+            if memory_state:
+                current_state.update(memory_state)
 
-            config = {
-                "configurable": {
-                    "thread_id": request.thread_id or f"thread_{request.user_id or 'default'}",
-                }
-            }
+            profile_state = profile_extraction_node(current_state)
+            if profile_state:
+                current_state.update(profile_state)
 
-            input_state = {
-                "question": request.question,
-                "user_id": request.user_id,
-            }
+            route_command = router_node(current_state)
+            next_node = getattr(route_command, "goto", "direct_answer")
+            logger.info(
+                f"流式请求路由完成：request_id={request_id}, thread_id={thread_id}, next_node={next_node}"
+            )
 
-            # 储存中间状态
-            state_snapshot = {}
-            answer_generated = False
+            if next_node == "direct_answer":
+                async for token in stream_direct_answer(current_state):
+                    yield await emit_data(token)
 
-            async for event in graph.astream_events(
-                    input_state,
-                    config,
-                    version="v2"
-            ):
-                kind = event["event"]
-                name = event.get("name", "")
+            else:
+                if next_node == "symptom_analysis":
+                    symptom_state = symptom_analysis_node(current_state)
+                    if symptom_state:
+                        current_state.update(symptom_state)
 
-                # 捕获检索完成后的状态
-                if kind == "on_chain_end" and name == "knowledge_retrieval":
-                    output = event.get("data", {}).get("output", {})
-                    if output:
-                        state_snapshot.update(output)
+                rewrite_state = query_rewrite_node(current_state)
+                if rewrite_state:
+                    current_state.update(rewrite_state)
 
-                # 捕获direct_answer完成后的状态
-                if kind == "on_chain_end" and name == "direct_answer":
-                    output = event.get("data", {}).get("output", {})
-                    answer = output.get("final_answer", "")
-                    if answer:
-                        state_snapshot.update(output)
-                        answer_generated = True
+                retrieval_state = knowledge_retrieval_node(current_state)
+                if retrieval_state:
+                    current_state.update(retrieval_state)
 
-                # 捕获用户档案
-                if kind == "on_chain_end" and name == "memory_load":
-                    output = event.get("data", {}).get("output", {})
-                    if output:
-                        state_snapshot.update(output)  # ✅ 使用 update
+                grade_command = grade_documents_node(current_state)
+                grade_update = getattr(grade_command, "update", None) or {}
+                if grade_update:
+                    current_state.update(grade_update)
 
-                # 流程结束
-                if kind == "on_chain_end" and name == "LangGraph":
-                    import json
+                grade_next_node = getattr(grade_command, "goto", "answer_generation")
+                logger.info(
+                    f"文档评分完成：request_id={request_id}, thread_id={thread_id}, next_node={grade_next_node}, docs={len(current_state.get('retrieved_docs') or [])}"
+                )
 
-                    full_state = {**input_state, **state_snapshot}
+                if grade_next_node == "query_rewrite":
+                    rewrite_state = query_rewrite_node(current_state)
+                    if rewrite_state:
+                        current_state.update(rewrite_state)
 
-                    # 判断路径类型
-                    if answer_generated and state_snapshot.get("final_answer"):
-                        # direct_answer 路径：已经有答案，直接返回
-                        yield f"data: {json.dumps(state_snapshot['final_answer'], ensure_ascii=False)}\n\n"
+                    retrieval_state = knowledge_retrieval_node(current_state)
+                    if retrieval_state:
+                        current_state.update(retrieval_state)
 
-                    elif state_snapshot.get("retrieved_docs"):
-                        # RAG 路径：有检索结果，流式生成答案
-                        logger.info("开始流式生成答案...")
-                        async for token in stream_answer_generation(full_state):
-                            yield f"data: {json.dumps(token, ensure_ascii=False)}\n\n"
+                    grade_command = grade_documents_node(current_state)
+                    grade_update = getattr(grade_command, "update", None) or {}
+                    if grade_update:
+                        current_state.update(grade_update)
+                    grade_next_node = getattr(grade_command, "goto", "answer_generation")
 
-                    else:
-                        # 兜底：直接回答路径
-                        from app.graph.nodes import stream_direct_answer
-                        async for token in stream_direct_answer(full_state):
-                            yield f"data: {json.dumps(token, ensure_ascii=False)}\n\n"
+                if grade_next_node == "answer_generation" and current_state.get("final_answer"):
+                    yield await emit_data(current_state["final_answer"])
+                elif current_state.get("retrieved_docs"):
+                    logger.info(f"开始流式生成 RAG 答案：request_id={request_id}, thread_id={thread_id}")
+                    async for token in stream_answer_generation(current_state):
+                        yield await emit_data(token)
+                else:
+                    logger.info(f"无检索文档，降级为流式直接回答：request_id={request_id}, thread_id={thread_id}")
+                    async for token in stream_direct_answer(current_state):
+                        yield await emit_data(token)
 
-                    logger.info("流程结束，发送 DONE")
-                    yield "data: [DONE]\n\n"
+            total_elapsed_ms = (time.time() - request_start_time) * 1000
+            logger.info(
+                f"流式请求完成：request_id={request_id}, thread_id={thread_id}, total_elapsed_ms={total_elapsed_ms:.2f}"
+            )
+            yield "data: [DONE]\n\n"
 
         except Exception as e:
-            logger.error(f"流式处理失败：{e}")
+            logger.error(f"流式处理失败：request_id={request_id}, error={e}", exc_info=True)
             yield f"data: [ERROR] {str(e)}\n\n"
 
     return StreamingResponse(
@@ -304,6 +364,7 @@ async def stream(request: ChatRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Request-ID": request_id,
         }
     )
 

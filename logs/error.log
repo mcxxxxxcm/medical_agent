@@ -481,3 +481,82 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/erro
 2026-04-28 23:40:26 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 400 - {'error': {'code': '1211', 'message': '模型不存在，请检查模型代码。'}}
 2026-04-28 23:40:26 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
 For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-28 23:41:48 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-28 23:41:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:41:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:41:56 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:41:58 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:02 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:03 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:05 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:07 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:09 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:11 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:12 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:16 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:18 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:19 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:21 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:23 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:25 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:27 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:29 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:30 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:32 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:34 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-04-28 23:42:34 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-29 00:01:06 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-29 00:01:09 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:10 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:11 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:11 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:12 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:12 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:13 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:14 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:01:14 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-29 00:03:38 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-29 00:03:41 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:42 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:43 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:43 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:44 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:44 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:45 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:46 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：Collection expecting embedding with dimension of 1536, got 2048
+2026-04-29 00:03:46 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-29 00:07:14 - app.graph.nodes - ERROR - 路由节点执行失败：1 validation error for RouterOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='symptom', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-29 00:07:17 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:18 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:19 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:19 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:20 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:21 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:21 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:22 - app.rag.hybrid_retriever - ERROR - EnsembleRetriever 检索异常：'function' object has no attribute 'get_top_n'
+2026-04-29 00:07:22 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-29 00:14:24 - app.graph.nodes - ERROR - 症状解析失败：1 validation error for SymptomAnalysisOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='根据用户描述“头...一步优化分析。', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-29 00:18:55 - app.graph.nodes - ERROR - 症状解析失败：1 validation error for SymptomAnalysisOutput
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='根据您的描述“头...一步优化分析。', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid
+2026-04-29 00:20:27 - app.api.routes - ERROR - 流式处理失败：Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-04-29 00:30:56 - app.graph.nodes - ERROR - 文档评分失败：1 validation error for GradeDocuments
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='yes', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid，直接生成答案

@@ -97,6 +97,10 @@ class SemanticCache:
             logger.error(f"获取embedding失败：{e}")
             return None
 
+    def get_embedding(self, query: str) -> Optional[List[float]]:
+        """对外暴露 embedding 计算，便于上层复用同一 query 向量。"""
+        return self._get_embedding(query)
+
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度
         公式：cos(θ) = (A·B) / (|A| × |B|)

@@ -26,6 +26,7 @@ except ImportError:
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.reranker import get_reranker
 from app.rag.vector_store import get_vector_store, load_documents_from_store
+from app.core.embeddings import get_embeddings
 from app.core.app_logging import get_logger
 from app.core.config import get_config
 
@@ -63,6 +64,7 @@ class HybridRetriever(BaseRetriever):
     alpha: float = 0.5
     use_reranker: bool = True
     rerank_top_k: int = 20
+    bm25_retriever: Any = None
 
     def __init__(
             self,
@@ -98,6 +100,7 @@ class HybridRetriever(BaseRetriever):
         if not documents:
             logger.warning("无可用文档，仅使用向量检索")
             self.ensemble_retriever = vector_retriever
+            self.bm25_retriever = None
             return
 
         # 3. 构建 BM25Retriever（使用 langchain_community 提供的实现）
@@ -105,13 +108,13 @@ class HybridRetriever(BaseRetriever):
             bm25_retriever = BM25Retriever.from_documents(
                 documents,
                 k=self.k * 2,
+                preprocess_func=_tokenize,
             )
-            # 自定义分词函数
-            bm25_retriever.k = self.k * 2
-            bm25_retriever.vectorizer = _tokenize
+            self.bm25_retriever = bm25_retriever
         except Exception as e:
             logger.error(f"BM25Retriever 初始化失败：{e}，仅使用向量检索")
             self.ensemble_retriever = vector_retriever
+            self.bm25_retriever = None
             return
 
         # 4. 使用 EnsembleRetriever 进行 RRF 融合
@@ -152,6 +155,49 @@ class HybridRetriever(BaseRetriever):
 
         return documents
 
+    def _dense_search(self, query: str, query_embedding: Optional[List[float]] = None) -> List[Document]:
+        """执行 dense 检索；若已提供 embedding，则直接复用。"""
+        top_k = self.k * 2
+        try:
+            if query_embedding is not None and hasattr(self.vector_store, "similarity_search_by_vector"):
+                return self.vector_store.similarity_search_by_vector(query_embedding, k=top_k)
+            return self.vector_store.similarity_search(query, k=top_k)
+        except Exception as e:
+            logger.error(f"Dense 检索失败：{e}")
+            return []
+
+    def _sparse_search(self, query: str) -> List[Document]:
+        """执行 BM25 稀疏检索。"""
+        if self.bm25_retriever is None:
+            return []
+        try:
+            return self.bm25_retriever.invoke(query)
+        except Exception as e:
+            logger.error(f"BM25 检索失败：{e}")
+            return []
+
+    def _reciprocal_rank_fusion(self, dense_docs: List[Document], sparse_docs: List[Document]) -> List[Document]:
+        """对 dense / sparse 结果做轻量 RRF 融合。"""
+        if not dense_docs and not sparse_docs:
+            return []
+
+        score_map: Dict[str, float] = {}
+        doc_map: Dict[str, Document] = {}
+        fusion_constant = 60
+        weighted_results = [
+            (dense_docs, self.alpha),
+            (sparse_docs, 1 - self.alpha),
+        ]
+
+        for docs, weight in weighted_results:
+            for rank, doc in enumerate(docs, start=1):
+                doc_key = getattr(doc, "id", None) or f"{doc.metadata.get('source', '')}:{doc.metadata.get('file_path', '')}:{hash(doc.page_content)}"
+                doc_map[doc_key] = doc
+                score_map[doc_key] = score_map.get(doc_key, 0.0) + weight / (fusion_constant + rank)
+
+        ranked_keys = sorted(score_map.keys(), key=lambda key: score_map[key], reverse=True)
+        return [doc_map[key] for key in ranked_keys]
+
     def _get_relevant_documents(
             self,
             query: str,
@@ -178,15 +224,27 @@ class HybridRetriever(BaseRetriever):
             logger.info(f"L1缓存命中：{cache_query[:30]}... 使用缓存结果：{len(documents)} 个文档")
             return documents
 
-        # L2：语义相似缓存
         query_embedding = None
+        semantic_cache = None
+        semantic_lookup_ms = 0.0
+        query_embedding_ms = 0.0
 
+        # L2：语义相似缓存
         if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
             semantic_cache = get_semantic_cache()
             logger.info(f"L2语义缓存检查：{cache_query[:30]}...")
 
-            query_embedding = semantic_cache._get_embedding(cache_query)
+            embedding_start = time.time()
+            query_embedding = semantic_cache.get_embedding(cache_query)
+            query_embedding_ms = (time.time() - embedding_start) * 1000
+
+            semantic_lookup_start = time.time()
             semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
+            semantic_lookup_ms = (time.time() - semantic_lookup_start) * 1000
+
+            logger.info(
+                f"L2语义缓存耗时：embedding_ms={query_embedding_ms:.2f}, lookup_ms={semantic_lookup_ms:.2f}"
+            )
 
             if semantic_result:
                 documents, metadata = semantic_result
@@ -196,25 +254,41 @@ class HybridRetriever(BaseRetriever):
                 )
                 return documents
 
-        # 执行 EnsembleRetriever 检索
-        start_time = time.time()
+        elif query_embedding is None:
+            embedding_start = time.time()
+            try:
+                query_embedding = get_embeddings().embed_query(query)
+            except Exception as e:
+                logger.warning(f"查询向量预计算失败，将回退到文本检索：{e}")
+                query_embedding = None
+            query_embedding_ms = (time.time() - embedding_start) * 1000
 
-        try:
-            candidates = self.ensemble_retriever.invoke(query)
-        except Exception as e:
-            logger.error(f"EnsembleRetriever 检索异常：{e}")
-            candidates = []
+        retrieval_start = time.time()
+        dense_start = time.time()
+        dense_docs = self._dense_search(query, query_embedding=query_embedding)
+        dense_ms = (time.time() - dense_start) * 1000
 
+        sparse_start = time.time()
+        sparse_docs = self._sparse_search(query)
+        sparse_ms = (time.time() - sparse_start) * 1000
+
+        fusion_start = time.time()
+        candidates = self._reciprocal_rank_fusion(dense_docs, sparse_docs)
+        fusion_ms = (time.time() - fusion_start) * 1000
+
+        rerank_ms = 0.0
         # Reranker 重排序
         if self.use_reranker and candidates:
             try:
                 reranker = get_reranker()
+                rerank_start = time.time()
                 final_docs = reranker.rerank(
                     query=query,
                     documents=candidates[:self.rerank_top_k],
                     top_k=self.k,
                     score_threshold=config.RERANKER_THRESHOLD
                 )
+                rerank_ms = (time.time() - rerank_start) * 1000
                 logger.info(f"Reranker 重排序：{len(candidates)} -> {len(final_docs)}")
             except Exception as e:
                 logger.warning(f"Reranker 失败，使用 EnsembleRetriever 结果：{e}")
@@ -222,8 +296,17 @@ class HybridRetriever(BaseRetriever):
         else:
             final_docs = candidates[:self.k]
 
-        retrieval_time = (time.time() - start_time) * 1000
-        logger.info(f"检索完成，耗时：{retrieval_time:.2f}ms")
+        retrieval_time = (time.time() - retrieval_start) * 1000
+        logger.info(
+            "检索完成，耗时：%.2fms（query_embedding=%.2fms, semantic_lookup=%.2fms, dense=%.2fms, sparse=%.2fms, fusion=%.2fms, rerank=%.2fms）",
+            retrieval_time,
+            query_embedding_ms,
+            semantic_lookup_ms,
+            dense_ms,
+            sparse_ms,
+            fusion_ms,
+            rerank_ms,
+        )
 
         # 写入缓存
         if final_docs:
@@ -242,8 +325,7 @@ class HybridRetriever(BaseRetriever):
             )
             logger.info(f"L1缓存已写入：{cache_query[:30]}...")
 
-            if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
-                semantic_cache = get_semantic_cache()
+            if semantic_cache is not None:
                 semantic_cache.set(cache_query, final_docs, query_embedding=query_embedding)
                 logger.info(f"L2语义缓存已写入：{cache_query[:30]}...")
 

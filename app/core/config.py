@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # ===== Embedding 配置 =====
     # EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_MODEL: str = "embedding-3"
-    EMBEDDING_DIMENSION: int = 1536
+    EMBEDDING_DIMENSION: int = 2048
 
     # ===== 数据库配置 =====
     DATABASE_URL: Optional[str] = None

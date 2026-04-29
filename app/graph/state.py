@@ -77,6 +77,7 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 查询重写 =====
     rewritten_query: Optional[str]
+    retrieval_attempts: Optional[int]
 
     # ===== 对话摘要 =====
     conversation_summary: Optional[str]
@@ -109,6 +110,7 @@ def create_initial_state(question: str, user_id: Optional[str] = None) -> Medica
         "error": None,
         "user_profile": None,
         "rewritten_query": None,
+        "retrieval_attempts": 0,
         "conversation_summary": None,
     }
 
