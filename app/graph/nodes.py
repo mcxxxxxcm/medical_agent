@@ -169,6 +169,30 @@ def invoke_structured_with_fallback(llm, prompt: str, schema: type[BaseModel]) -
         raise ValueError(f"{schema.__name__} 回退解析失败，模型原始输出：{raw_text}")
 
 
+def invoke_json_once_with_fallback(
+        llm,
+        prompt: str,
+        schema: type[BaseModel],
+        fallback_parser=None,
+) -> BaseModel:
+    """单次模型调用后在本地完成 JSON / 文本回退解析。"""
+    raw_response = llm.invoke(prompt)
+    raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+
+    parsed = extract_json_block(raw_text)
+    if parsed is not None:
+        try:
+            return schema.model_validate(parsed)
+        except Exception as schema_error:
+            logger.warning(f"{schema.__name__} JSON 校验失败，尝试本地规则解析：{schema_error}")
+
+    if fallback_parser is not None:
+        payload = fallback_parser(raw_text)
+        return schema.model_validate(payload)
+
+    raise ValueError(f"{schema.__name__} 单次调用本地解析失败，模型原始输出：{raw_text}")
+
+
 def detect_rule_based_route(question: str) -> Optional[str]:
     """优先使用规则快速判断路由，减少不必要的 LLM 调用"""
     text = (question or "").strip().lower()
@@ -401,16 +425,16 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 {question}
 
 请提取症状名称、严重程度、身体部位、持续时间等信息。
-请优先返回 JSON 对象，字段包含：symptoms、severity、body_parts、duration、additional_info。
+请仅返回 JSON 对象，不要输出解释，不要输出 Markdown 代码块以外的说明。
+字段包含：symptoms、severity、body_parts、duration、additional_info。
 如果无法提取某项信息，该字段设为 null。"""
-        try:
-            result: SymptomAnalysisOutput = invoke_structured_with_fallback(llm, prompt, SymptomAnalysisOutput)
-            payload = result.model_dump()
-        except Exception as fallback_error:
-            logger.warning(f"症状结构化提取失败，尝试规则解析：{fallback_error}")
-            raw_response = llm.invoke(prompt)
-            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
-            payload = parse_symptom_text(raw_text)
+        result: SymptomAnalysisOutput = invoke_json_once_with_fallback(
+            llm,
+            prompt,
+            SymptomAnalysisOutput,
+            fallback_parser=parse_symptom_text,
+        )
+        payload = result.model_dump()
 
         logger.info(f"成功提取症状：{payload.get('symptoms')}")
 

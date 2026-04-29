@@ -40,6 +40,7 @@ RERANKER_MODELS = {
     "bce-base": "maidalun1020/bce-reranker-base_v1",
 }
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
+MAX_RERANK_DOC_CHARS = 600
 
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)
@@ -49,6 +50,14 @@ def clean_text(text: str) -> str:
     if len(text) < 5:
         return ""
     return text
+
+
+def truncate_for_rerank(text: str, max_chars: int = MAX_RERANK_DOC_CHARS) -> str:
+    """对重排序输入文档做轻量截断，降低 tokenizer / ONNX 推理开销。"""
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
 
 
 class Reranker:
@@ -151,12 +160,17 @@ class Reranker:
 
             for doc in documents:
                 clean_content = clean_text(doc.page_content)
+                clean_content = truncate_for_rerank(clean_content)
                 if clean_content:
                     pairs.append((clean_query, clean_content))
                     valid_docs.append(doc)
 
             if not pairs:
                 return []
+
+            logger.info(
+                f"Reranker 输入：docs={len(documents)}, valid_docs={len(valid_docs)}, top_k={top_k}, max_doc_chars={MAX_RERANK_DOC_CHARS}"
+            )
 
             # Tokenize
             features = self._tokenizer(

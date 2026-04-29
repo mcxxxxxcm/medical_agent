@@ -55,6 +55,19 @@ def _load_documents_from_store(vector_store) -> List[Document]:
     return load_documents_from_store(vector_store=vector_store, limit=50000)
 
 
+def _looks_clear_medical_query(query: str) -> bool:
+    """判断是否为语义明确、通常无需 rerank 的医疗问题。"""
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+
+    clear_patterns = [
+        "什么是", "是什么意思", "有哪些症状", "什么症状", "原因", "治疗", "如何治疗", "怎么治疗",
+        "预防", "护理", "诊断", "检查", "高血压", "糖尿病", "感冒", "肺炎", "胃炎", "鼻炎",
+    ]
+    return any(pattern in text for pattern in clear_patterns)
+
+
 class HybridRetriever(BaseRetriever):
     """基于 LangChain EnsembleRetriever 的混合检索器"""
 
@@ -63,7 +76,7 @@ class HybridRetriever(BaseRetriever):
     k: int = 5
     alpha: float = 0.5
     use_reranker: bool = True
-    rerank_top_k: int = 20
+    rerank_top_k: int = 5
     bm25_retriever: Any = None
 
     def __init__(
@@ -74,7 +87,7 @@ class HybridRetriever(BaseRetriever):
             alpha: float = 0.5,
             use_cache: bool = True,
             use_reranker: bool = True,
-            rerank_top_k: int = 20
+            rerank_top_k: int = 5
     ):
         super().__init__()
         self.vector_store = vector_store or get_vector_store()
@@ -198,6 +211,23 @@ class HybridRetriever(BaseRetriever):
         ranked_keys = sorted(score_map.keys(), key=lambda key: score_map[key], reverse=True)
         return [doc_map[key] for key in ranked_keys]
 
+    def _should_skip_reranker(self, query: str, candidates: List[Document]) -> bool:
+        """在候选很少或问题已足够明确时跳过 rerank，降低首 token 延迟。"""
+        if not candidates:
+            return True
+
+        candidate_count = len(candidates)
+        if candidate_count <= min(self.k, 3):
+            return True
+
+        if candidate_count <= self.k:
+            return True
+
+        if _looks_clear_medical_query(query) and candidate_count <= max(self.k, self.rerank_top_k):
+            return True
+
+        return False
+
     def _get_relevant_documents(
             self,
             query: str,
@@ -277,8 +307,10 @@ class HybridRetriever(BaseRetriever):
         fusion_ms = (time.time() - fusion_start) * 1000
 
         rerank_ms = 0.0
+        should_skip_reranker = self._should_skip_reranker(query, candidates)
+
         # Reranker 重排序
-        if self.use_reranker and candidates:
+        if self.use_reranker and candidates and not should_skip_reranker:
             try:
                 reranker = get_reranker()
                 rerank_start = time.time()
@@ -294,6 +326,10 @@ class HybridRetriever(BaseRetriever):
                 logger.warning(f"Reranker 失败，使用 EnsembleRetriever 结果：{e}")
                 final_docs = candidates[:self.k]
         else:
+            if self.use_reranker and candidates and should_skip_reranker:
+                logger.info(
+                    f"跳过 Reranker：candidate_count={len(candidates)}, k={self.k}, rerank_top_k={self.rerank_top_k}, query={query[:50]}"
+                )
             final_docs = candidates[:self.k]
 
         retrieval_time = (time.time() - retrieval_start) * 1000
@@ -339,7 +375,7 @@ def get_hybrid_retriever(
         alpha: float = 0.5,
         use_cache: bool = True,
         use_reranker: bool = True,
-        rerank_top_k: int = 20
+        rerank_top_k: int = 5
 ) -> HybridRetriever:
     """工厂函数"""
     return HybridRetriever(
