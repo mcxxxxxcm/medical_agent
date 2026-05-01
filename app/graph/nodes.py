@@ -353,20 +353,14 @@ def router_node(state: MedicalAssistantState) -> Command:
 
 请只返回类型名称（symptom/knowledge/general）："""
 
-            raw_text: Optional[str] = None
-            try:
-                structured_llm = llm.with_structured_output(RouterOutput)
-                result = structured_llm.invoke(prompt)
-                question_type = result.question_type
-            except Exception as structured_error:
-                logger.warning(f"RouterOutput 结构化解析失败，尝试单次纯文本解析：{structured_error}")
-                raw_response = llm.invoke(prompt)
-                raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
-                parsed_route = parse_router_output(raw_text)
-                if parsed_route:
-                    question_type = parsed_route
-                else:
-                    raise ValueError(f"RouterOutput 回退解析失败，模型原始输出：{raw_text}")
+            raw_response = llm.invoke(prompt)
+            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+            parsed_route = parse_router_output(raw_text)
+            if parsed_route:
+                question_type = parsed_route
+            else:
+                logger.warning(f"路由解析失败，使用 knowledge 兜底，模型原始输出：{raw_text}")
+                question_type = "knowledge"
 
         except Exception as fallback_error:
             logger.warning(f"路由结构化输出失败，使用 knowledge 兜底：{fallback_error}")
@@ -442,7 +436,7 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"症状解析失败：{str(e)}")
-        return {"symptoms": None}
+        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "additional_info": None}}
 
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
@@ -1018,6 +1012,42 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
 @timing_decorator("查询重写")
 def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
+    """查询重写节点
+
+    功能描述：
+        对原始问题进行检索友好的重写
+        目标是提升后续知识检索召回率
+    """
+    logger.info("查询重写节点开始执行")
+
+    question = state.get("question", "")
+    try:
+        llm = get_llm()
+        prompt = f"""你是一位医疗检索查询优化助手，请将用户问题重写为更适合知识库检索的短查询。
+
+用户问题：
+{question}
+
+要求：
+1. 只输出重写后的查询
+2. 保留核心医学实体和症状词
+3. 不要解释，不要列出步骤，不要输出 JSON
+4. 如果无需重写，直接返回原问题"""
+
+        raw_response = llm.invoke(prompt)
+        raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+        rewritten_query = normalize_query_text(raw_text, question)
+
+        if is_same_query(rewritten_query, question):
+            logger.info("查询重写结果与原问题一致，直接复用原问题")
+        else:
+            logger.info(f"查询重写完成：{question[:30]} -> {rewritten_query[:30]}")
+
+        return {"rewritten_query": rewritten_query}
+
+    except Exception as e:
+        logger.error(f"查询重写失败：{str(e)}")
+        return {"rewritten_query": question, "error": f"查询重写失败：{str(e)}"}
     """查询重写节点
     功能描述：
         将用户模糊问题重写为更精确的检索查询
