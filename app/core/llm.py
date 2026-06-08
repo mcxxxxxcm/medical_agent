@@ -26,3 +26,26 @@ def get_llm(model_name: str = None, model_url: str = None, streaming: bool = Fal
         temperature=config.MODEL_TEMPERATURE,
         streaming=streaming,
     )
+
+
+@lru_cache(maxsize=2)
+def get_rewrite_llm() -> ChatOpenAI:
+    """获取查询重写专用的轻量 LLM 实例
+
+    查询重写不需要复杂推理，使用轻量模型即可：
+        - 响应更快（降低首token延迟）
+        - Token消耗更少
+        - 可通过 REWRITE_MODEL_NAME 环境变量配置
+
+    Returns:
+        ChatOpenAI: 轻量 LLM 实例
+    """
+    config = get_config()
+    rewrite_model = getattr(config, 'REWRITE_MODEL_NAME', None) or config.MODEL_NAME
+
+    return ChatOpenAI(
+        model=rewrite_model,
+        base_url=config.MODEL_URL,
+        api_key=config.MODEL_API_KEY,
+        temperature=0.0,  # 查询重写不需要创造性，温度设为0
+    )

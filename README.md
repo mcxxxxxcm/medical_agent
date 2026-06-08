@@ -12,14 +12,23 @@
 ### 🤖 智能问答
 - **多轮对话**：支持上下文感知的连续对话
 - **流式响应**：SSE 实时推送，无需等待完整生成
-- **智能路由**：根据问题类型自动选择处理路径（症状/知识/一般问题）
-- **查询重写**：HyDE 技术优化检索质量
+- **智能路由**：规则优先 + LLM 降级的多级路由（symptom > knowledge > general）
+- **查询重写**：轻量模型 + 关键词跳过，优化检索质量
+- **问候直达**：简单问候/寒暄直接返回预设回复，零延迟
 
 ### 🔍 混合检索
 - **Dense + Sparse**：向量检索 + BM25 混合
 - **RRF 融合**：Reciprocal Rank Fusion 算法融合结果
-- **Reranker 重排序**：bge-reranker 提升相关性
-- **两级缓存**：L1 精确匹配、L2 语义缓存
+- **Reranker 重排序**：bge-reranker-onnx 轻量推理，条件跳过优化
+- **两级缓存**：L1 Redis 精确匹配、L2 语义缓存
+
+### ⚡ 性能优化
+- **规则优先路由**：symptom > knowledge > general 优先级，避免误判
+- **规则优先症状提取**：关键词匹配直接提取，跳过 LLM 调用
+- **档案提取后置**：用户档案提取移至回答生成之后，不阻塞首 token
+- **Redis 超时保护**：连接/读写超时 2 秒，故障自动降级
+- **Reranker 智能跳过**：候选数 <= k 或简单问候直接跳过重排序
+- **查询重写轻量化**：支持配置独立轻量模型（`REWRITE_MODEL_NAME`）
 
 ### 💾 持久化存储
 - **PostgreSQL**：对话检查点持久化，支持断点续聊
@@ -53,10 +62,13 @@
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                    LangGraph 工作流                          │
-│  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐  │
-│  │  Memory │───→│  Router │───→│Retrieve │───→│ Generate│  │
-│  │  Load   │    │  路由   │    │  检索   │    │  生成   │  │
-│  └─────────┘    └─────────┘    └─────────┘    └─────────┘  │
+│                                                              │
+│  ┌──────────┐   规则优先路由                                  │
+│  │  Memory  │   symptom > knowledge > general               │
+│  │  Load    │        │                                      │
+│  └──────────┘        ├─→ direct_answer (问候直达/LLM)        │
+│                      ├─→ symptom_analysis (规则/LLM)        │
+│                      └─→ query_rewrite → retrieve → generate│
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
@@ -65,6 +77,7 @@
 │  │ Vector Store│  │   BM25      │  │    Reranker         │  │
 │  │  (ChromaDB) │  │ (稀疏检索)   │  │  (bge-reranker-onnx)│  │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+│         ↓ RRF 融合 → 条件跳过 Reranker → 缓存写入           │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
@@ -107,6 +120,9 @@ MODEL_URL=https://api.openai.com/v1
 MODEL_API_KEY=your-api-key
 MODEL_TEMPERATURE=0.2
 
+# 查询重写专用模型（可选，留空则使用 MODEL_NAME）
+REWRITE_MODEL_NAME=
+
 # Embedding 配置
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
@@ -120,6 +136,10 @@ ENABLE_QUERY_CACHE=true
 CACHE_TTL_SECONDS=3600
 ENABLE_SEMANTIC_CACHE=true
 SEMANTIC_CACHE_THRESHOLD=0.75
+
+# Reranker 配置
+RERANKER_THRESHOLD=0.0
+RERANKER_MODEL_PATH=/app/models/bge-reranker-onnx
 ```
 
 ### 3. Docker 部署（推荐）
@@ -267,13 +287,16 @@ python scripts/test_llm.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `MODEL_NAME` | LLM 模型名称 | gpt-4o |
+| `MODEL_NAME` | LLM 模型名称 | glm-4.5-air |
 | `MODEL_URL` | LLM API 地址 | - |
 | `MODEL_API_KEY` | LLM API 密钥 | - |
-| `EMBEDDING_MODEL` | Embedding 模型 | text-embedding-3-small |
+| `REWRITE_MODEL_NAME` | 查询重写专用模型 | 空（使用 MODEL_NAME） |
+| `EMBEDDING_MODEL` | Embedding 模型 | embedding-3 |
 | `RERANKER_THRESHOLD` | Reranker 阈值 | 0.0 |
+| `RERANKER_MODEL_PATH` | Reranker 模型路径 | /app/models/bge-reranker-onnx |
 | `ENABLE_SEMANTIC_CACHE` | 启用语义缓存 | true |
 | `SEMANTIC_CACHE_THRESHOLD` | 语义相似度阈值 | 0.75 |
+| `REDIS_URL` | Redis 连接地址 | redis://localhost:6379/0 |
 
 ### 路径配置
 
@@ -285,6 +308,14 @@ python scripts/test_llm.py
 | `logs/` | 日志文件 |
 
 ## 📊 性能指标
+
+### 三种典型请求场景
+
+| 场景 | 请求示例 | 处理路径 | 优化前 | 优化后 | 优化措施 |
+|------|----------|----------|--------|--------|----------|
+| 简单问候 | "你好" | 问候直达 | ~8s | **<100ms** | 预设回复，跳过 LLM |
+| 自我介绍 | "你好，我是王艺涵" | direct_answer + 档案后置 | ~18s | **~3s** | 问候检测 + 档案提取后置 |
+| 症状咨询 | "我是王艺涵，我有芒果过敏" | symptom(规则) → RAG | ~49s | **~15s** | 规则提取 + Reranker跳过 + 重写跳过 |
 
 ### 响应时间
 
@@ -320,11 +351,15 @@ docker-compose up -d
 
 ### Q: Reranker 返回空结果？
 
-**A**: 降低阈值：
+**A**: ONNX Reranker 分数范围与原生模型不同，阈值应设为 0.0：
 ```python
 # app/core/config.py
-RERANKER_THRESHOLD = 0.0  # 从 0.3 改为 0.0
+RERANKER_THRESHOLD = 0.0
 ```
+
+### Q: Redis 连接超时导致响应慢？
+
+**A**: 已添加连接超时保护（2秒），Redis 不可用时自动降级为内存缓存。
 
 ### Q: PostgreSQL 连接断开？
 
@@ -336,13 +371,21 @@ DATABASE_URL=postgresql://...?pool_size=5&max_overflow=10&pool_recycle=1800
 
 ### Q: 如何添加新的医疗文档？
 
-**A**: 
+**A**:
 ```bash
 # 1. 放入文档目录
 cp new_document.pdf docs/medical/
 
 # 2. 重建向量库
 python scripts/rebuild_vector_store.py
+```
+
+### Q: 如何配置查询重写专用模型？
+
+**A**: 在 `.env` 中设置 `REWRITE_MODEL_NAME`，留空则使用主模型：
+```bash
+# 使用更轻量的模型加速查询重写
+REWRITE_MODEL_NAME=glm-4-flash
 ```
 
 ## 📁 项目结构
@@ -352,8 +395,8 @@ medical_assistant_agent/
 ├── app/
 │   ├── api/              # API 路由
 │   ├── cache/            # 缓存模块（Redis、语义缓存）
-│   ├── core/             # 核心配置（LLM、Embedding）
-│   ├── graph/            # LangGraph 工作流
+│   ├── core/             # 核心配置（LLM、Embedding、Config）
+│   ├── graph/            # LangGraph 工作流（节点、状态、图）
 │   ├── memory/           # 记忆管理（PostgreSQL）
 │   ├── rag/              # RAG 检索（向量库、BM25、Reranker）
 │   ├── vision/           # 视觉识别（OCR、图片分析）
@@ -376,8 +419,14 @@ medical_assistant_agent/
 - [x] Reranker 重排序
 - [x] 三层缓存架构
 - [x] Docker 容器化
+- [x] 规则优先路由 + 症状提取
+- [x] 问候直达 + 档案提取后置
+- [x] Redis 超时保护 + Reranker 智能跳过
+- [x] 查询重写轻量化
 - [ ] 图片识别功能（主服务未开放）
 - [ ] RAGAS 自动评估
+- [ ] 并行检索架构
+- [ ] 全节点异步化
 - [ ] 多语言支持
 - [ ] 语音输入输出
 - [ ] 移动端适配

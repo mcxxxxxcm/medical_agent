@@ -40,7 +40,7 @@ RERANKER_MODELS = {
     "bce-base": "maidalun1020/bce-reranker-base_v1",
 }
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
-MAX_RERANK_DOC_CHARS = 600
+MAX_RERANK_DOC_CHARS = 400  # 从600降到400，减少token数量加速推理
 
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)
@@ -172,12 +172,12 @@ class Reranker:
                 f"Reranker 输入：docs={len(documents)}, valid_docs={len(valid_docs)}, top_k={top_k}, max_doc_chars={MAX_RERANK_DOC_CHARS}"
             )
 
-            # Tokenize
+            # Tokenize（max_length=128：400字符中文约100-128 tokens，足够覆盖）
             features = self._tokenizer(
                 pairs,
                 padding=True,
                 truncation=True,
-                max_length=512,
+                max_length=128,
                 return_tensors="np",
             )
 

@@ -66,20 +66,19 @@ class RedisCache:
             self._connect()
 
     def _connect(self):
-        """连接 Redis"""
+        """连接 Redis（带超时，避免连接失败时阻塞）"""
         try:
-
-            from redis.connection import ConnectionPool
-
-            # 使用连接池
-            pool = ConnectionPool.from_url(
+            # 使用 redis.from_url 直接创建，确保超时参数生效
+            self._redis = redis.Redis.from_url(
                 self.redis_url,
                 max_connections=10,
-                decode_responses=True
+                decode_responses=True,
+                socket_timeout=2,           # 读写超时 2秒
+                socket_connect_timeout=2,   # 连接超时 2秒
+                retry_on_timeout=False,     # 超时不重试，快速失败
             )
-            self._redis = redis.Redis(connection_pool=pool)
 
-            # 测试连接
+            # 测试连接（带超时保护）
             self._redis.ping()
             self._available = True
             logger.info(f"✅ Redis 连接成功：{self.redis_url}")
@@ -161,8 +160,14 @@ class RedisCache:
 
         try:
             if self._available:
-                # Redis 获取
-                data = self._redis.get(key)
+                # Redis 获取（带超时保护）
+                try:
+                    data = self._redis.get(key)
+                except (redis.ConnectionError, redis.TimeoutError) as conn_err:
+                    logger.warning(f"Redis 读取超时/断连，临时降级：{conn_err}")
+                    self._available = False
+                    self._stats.errors += 1
+                    return None
                 if data:
                     cached = json.loads(data)
                     documents = self._deserialize_documents(cached["documents"])

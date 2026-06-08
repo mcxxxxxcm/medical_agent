@@ -7,6 +7,7 @@
 """
 import os
 import pickle
+import re
 import time
 
 import jieba
@@ -212,18 +213,33 @@ class HybridRetriever(BaseRetriever):
         return [doc_map[key] for key in ranked_keys]
 
     def _should_skip_reranker(self, query: str, candidates: List[Document]) -> bool:
-        """在候选很少或问题已足够明确时跳过 rerank，降低首 token 延迟。"""
+        """在候选很少或问题已足够明确时跳过 rerank，降低首 token 延迟。
+
+        优化策略：
+            1. 无候选文档 → 跳过
+            2. 候选数 <= k → 无需重排序
+            3. 候选数 <= rerank_top_k * 2 → RRF排序已足够，rerank收益低
+            4. 简单问候/寒暄类查询 → 跳过
+        注意：语义明确的医疗查询不应跳过Reranker，因为RRF排序质量不够，
+              Reranker能过滤掉不相关文档，对检索质量至关重要。
+        """
         if not candidates:
             return True
 
         candidate_count = len(candidates)
-        if candidate_count <= min(self.k, 3):
-            return True
-
+        # 候选数 <= k，无需重排序
         if candidate_count <= self.k:
             return True
 
-        if _looks_clear_medical_query(query) and candidate_count <= max(self.k, self.rerank_top_k):
+        # 候选数不超过 rerank_top_k 的2倍，RRF排序已足够
+        if candidate_count <= self.rerank_top_k * 2:
+            return True
+
+        # 简单问候/寒暄类查询直接跳过Reranker
+        simple_patterns = ["你好", "您好", "hello", "hi", "hey", "谢谢", "再见", "拜拜"]
+        query_lower = (query or "").strip().lower()
+        query_no_punct = re.sub(r"[，。！？,.!?\s]", "", query_lower) if query_lower else ""
+        if query_no_punct in simple_patterns or len(query_no_punct) <= 4:
             return True
 
         return False
@@ -259,8 +275,8 @@ class HybridRetriever(BaseRetriever):
         semantic_lookup_ms = 0.0
         query_embedding_ms = 0.0
 
-        # L2：语义相似缓存
-        if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
+        # L2：语义相似缓存（Redis不可用时跳过，避免超时阻塞）
+        if getattr(config, 'ENABLE_SEMANTIC_CACHE', False) and cache._available:
             semantic_cache = get_semantic_cache()
             logger.info(f"L2语义缓存检查：{cache_query[:30]}...")
 

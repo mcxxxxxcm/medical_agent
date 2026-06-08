@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     MODEL_URL: Optional[str] = None
     MODEL_API_KEY: Optional[str] = None
     MODEL_TEMPERATURE: float = 0.2
+    REWRITE_MODEL_NAME: Optional[str] = None  # 查询重写专用模型（留空则使用MODEL_NAME）
 
     # ===== Embedding 配置 =====
     # EMBEDDING_MODEL: str = "text-embedding-3-small"
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50
     DEFAULT_K: int = 5
     DEFAULT_SEARCH_TYPE: str = "similarity"
-    RERANKER_THRESHOLD: float = 0.3
+    RERANKER_THRESHOLD: float = 0.0  # ONNX Reranker分数范围与原生不同，0.3会过滤所有文档
 
     # ===== 路径配置 =====
     DOCS_DIR: Path = PROJECT_ROOT / "docs" / "medical"

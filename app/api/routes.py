@@ -284,9 +284,8 @@ async def stream(request: ChatRequest, http_request: Request):
             if memory_state:
                 current_state.update(memory_state)
 
-            profile_state = profile_extraction_node(current_state)
-            if profile_state:
-                current_state.update(profile_state)
+            # 优化：档案提取移到回答生成之后，避免阻塞首token
+            # profile_extraction_node 会在回答完成后异步执行
 
             route_command = router_node(current_state)
             next_node = getattr(route_command, "goto", "direct_answer")
@@ -353,6 +352,15 @@ async def stream(request: ChatRequest, http_request: Request):
                 f"流式请求完成：request_id={request_id}, thread_id={thread_id}, total_elapsed_ms={total_elapsed_ms:.2f}"
             )
             yield "data: [DONE]\n\n"
+
+            # 优化：档案提取移到回答完成之后，异步执行不阻塞用户
+            try:
+                profile_state = profile_extraction_node(current_state)
+                if profile_state:
+                    current_state.update(profile_state)
+                    logger.info(f"档案提取完成（回答后）：request_id={request_id}")
+            except Exception as profile_err:
+                logger.warning(f"档案提取失败（不影响回答）：{profile_err}")
 
         except Exception as e:
             logger.error(f"流式处理失败：request_id={request_id}, error={e}", exc_info=True)

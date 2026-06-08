@@ -560,3 +560,5 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/erro
 2026-04-29 00:30:56 - app.graph.nodes - ERROR - 文档评分失败：1 validation error for GradeDocuments
   Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='yes', input_type=str]
     For further information visit https://errors.pydantic.dev/2.12/v/json_invalid，直接生成答案
+2026-06-08 22:48:37 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-06-08 23:23:26 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Timeout connecting to server

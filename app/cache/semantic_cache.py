@@ -141,8 +141,13 @@ class SemanticCache:
             return None
 
         try:
-            # 获取所有语义缓存键
-            all_keys = self._cache._redis.keys(f"{self.prefix}*")
+            # 获取所有语义缓存键（带超时保护）
+            try:
+                all_keys = self._cache._redis.keys(f"{self.prefix}*")
+            except Exception as e:
+                logger.warning(f"语义缓存查询Redis失败，跳过：{e}")
+                self._cache._available = False
+                return None
 
             # ✅ 添加调试日志
             logger.info(f"📊 L2缓存键数量：{len(all_keys)}")
@@ -269,6 +274,10 @@ class SemanticCache:
         if not documents:
             return False
 
+        # Redis不可用时跳过写入
+        if not self._cache._available:
+            return False
+
         # 获取向量
         if query_embedding is None:
             query_embedding = self._get_embedding(query)
@@ -291,13 +300,14 @@ class SemanticCache:
         }
 
         try:
-            # 写入Redis
+            # 写入Redis（带超时保护）
             self._cache._redis.setex(key, self.ttl, json.dumps(data, ensure_ascii=False))
             logger.info(f"语义缓存已写入：'{query[:20]}...' ({len(documents)}个文档)")
             return True
 
         except Exception as e:
-            logger.error(f"语义缓存写入失败：{e}")
+            logger.warning(f"语义缓存写入失败，跳过：{e}")
+            self._cache._available = False
             return False
 
     def get_stats(self) -> Dict:

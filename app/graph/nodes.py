@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_config
 from app.graph.state import MedicalAssistantState
-from app.core.llm import get_llm
+from app.core.llm import get_llm, get_rewrite_llm
 from app.memory import get_long_term_memory
 from app.core.app_logging import get_logger
 from app.rag.hybrid_retriever import get_hybrid_retriever
@@ -194,26 +194,29 @@ def invoke_json_once_with_fallback(
 
 
 def detect_rule_based_route(question: str) -> Optional[str]:
-    """优先使用规则快速判断路由，减少不必要的 LLM 调用"""
+    """优先使用规则快速判断路由（优先级：symptom > knowledge > general）
+
+    设计理念：
+        1. 先检查症状关键词（最高优先级），避免 "你好我是王艺涵发烧了" 被误判为 general
+        2. 再检查知识关键词
+        3. 最后检查 general（精确匹配，避免误判）
+        4. 无法匹配时返回 None，交给 LLM 判断
+    """
     text = (question or "").strip().lower()
     if not text:
         return "general"
 
-    general_patterns = [
-        "你好", "您好", "hello", "hi", "hey", "谢谢", "thanks", "thank you",
-        "再见", "拜拜", "早上好", "晚上好", "你是谁", "你能做什么",
-    ]
-    if any(pattern in text for pattern in general_patterns):
-        return "general"
-
+    # 1. 先检查症状关键词（最高优先级）
     symptom_keywords = [
         "怎么办", "吃什么药", "挂什么科", "严不严重", "缓解", "疼", "痛", "痒", "肿",
         "发烧", "咳嗽", "流鼻涕", "头痛", "头疼", "嗓子疼", "喉咙痛", "腹痛", "肚子疼",
         "恶心", "呕吐", "腹泻", "拉肚子", "胸闷", "胸痛", "呼吸困难", "发炎", "不舒服",
+        "过敏",  # 过敏是重要症状信号
     ]
     if any(keyword in text for keyword in symptom_keywords):
         return "symptom"
 
+    # 2. 再检查知识关键词
     knowledge_keywords = [
         "是什么", "什么是", "原因", "症状", "治疗", "预防", "护理", "诊断", "检查",
         "高血压", "糖尿病", "感冒", "肺炎", "胃炎", "肝炎", "肾炎", "支气管炎",
@@ -221,7 +224,122 @@ def detect_rule_based_route(question: str) -> Optional[str]:
     if any(keyword in text for keyword in knowledge_keywords):
         return "knowledge"
 
+    # 3. 最后检查 general（精确匹配，避免误判）
+    # 纯问候：整句话就是问候（长度很短 或 以问候开头且无实质内容）
+    general_greetings = ["你好", "您好", "hello", "hi", "hey", "谢谢", "thanks", "再见", "拜拜",
+                         "早上好", "晚上好"]
+    general_questions = ["你是谁", "你能做什么", "你叫什么"]
+
+    text_no_punct = re.sub(r"[，。！？,.!?\s]", "", text)
+    is_pure_greeting = (
+        text_no_punct in general_greetings
+        or (len(text_no_punct) <= 6 and any(text_no_punct.startswith(g) for g in general_greetings))
+    )
+    is_general_question = any(q in text for q in general_questions)
+
+    if is_pure_greeting or is_general_question:
+        return "general"
+
+    # 4. 无法匹配时返回 None，交给 LLM 判断
     return None
+
+
+def _extract_symptoms_by_rules(question: str) -> Optional[Dict[str, Any]]:
+    """基于规则的症状提取（快速路径，避免LLM调用）
+
+    当用户描述中包含明确的症状关键词时，直接提取结构化信息。
+    返回 None 表示规则无法处理，需要交给 LLM。
+    """
+    text = (question or "").strip()
+    if not text:
+        return None
+
+    # 症状关键词映射（关键词 -> 标准症状名）
+    symptom_map = {
+        "发烧": "发烧", "发热": "发烧",
+        "咳嗽": "咳嗽", "咳": "咳嗽",
+        "感冒": "感冒", "伤风": "感冒",
+        "流鼻涕": "流鼻涕", "鼻塞": "鼻塞",
+        "头痛": "头痛", "头疼": "头痛",
+        "嗓子疼": "嗓子疼", "喉咙痛": "嗓子疼", "咽痛": "嗓子疼",
+        "腹痛": "腹痛", "肚子疼": "腹痛", "胃疼": "腹痛", "胃痛": "腹痛",
+        "恶心": "恶心",
+        "呕吐": "呕吐", "吐": "呕吐",
+        "腹泻": "腹泻", "拉肚子": "腹泻",
+        "胸闷": "胸闷",
+        "胸痛": "胸痛",
+        "呼吸困难": "呼吸困难",
+        "过敏": "过敏",
+        "痒": "瘙痒", "瘙痒": "瘙痒",
+        "肿": "肿胀", "肿胀": "肿胀",
+        "发炎": "发炎", "炎症": "发炎",
+        "头晕": "头晕", "眩晕": "头晕", "晕": "头晕",
+        "乏力": "乏力", "没力气": "乏力", "疲劳": "乏力",
+        "失眠": "失眠", "睡不着": "失眠",
+        "出血": "出血", "流血": "出血",
+        "麻木": "麻木", "发麻": "麻木",
+        "抽筋": "抽筋", "痉挛": "抽筋",
+        "皮疹": "皮疹", "起疹子": "皮疹",
+        "水肿": "水肿", "浮肿": "水肿",
+    }
+
+    # 严重程度关键词
+    severity_map = {
+        "很严重": "严重", "非常严重": "严重", "剧痛": "严重", "剧烈": "严重",
+        "有点": "轻微", "轻微": "轻微", "稍微": "轻微", "一点": "轻微",
+        "严重": "严重",
+    }
+
+    # 身体部位关键词
+    body_part_map = {
+        "头": "头部", "脑袋": "头部",
+        "嗓子": "咽喉", "喉咙": "咽喉", "咽": "咽喉",
+        "胸": "胸部",
+        "肚子": "腹部", "胃": "胃部", "腹": "腹部",
+        "背": "背部", "腰": "腰部",
+        "腿": "腿部", "脚": "足部", "手": "手部", "臂": "手臂",
+        "眼": "眼部", "眼睛": "眼部",
+        "耳": "耳部", "耳朵": "耳部",
+        "鼻": "鼻部",
+        "皮肤": "皮肤",
+    }
+
+    # 提取症状
+    found_symptoms = []
+    for keyword, symptom_name in symptom_map.items():
+        if keyword in text:
+            found_symptoms.append(symptom_name)
+
+    if not found_symptoms:
+        return None
+
+    # 去重
+    found_symptoms = list(dict.fromkeys(found_symptoms))
+
+    # 提取严重程度
+    severity = None
+    for keyword, level in severity_map.items():
+        if keyword in text:
+            severity = level
+            break
+
+    # 提取身体部位
+    body_parts = []
+    for keyword, part in body_part_map.items():
+        if keyword in text:
+            body_parts.append(part)
+    body_parts = list(dict.fromkeys(body_parts))
+
+    # 构建结果
+    result = {
+        "symptoms": found_symptoms,
+        "severity": severity,
+        "body_parts": body_parts if body_parts else None,
+        "duration": None,
+        "additional_info": None,
+    }
+
+    return result
 
 
 def parse_router_output(raw_text: str) -> Optional[str]:
@@ -380,23 +498,24 @@ def router_node(state: MedicalAssistantState) -> Command:
 @timing_decorator("症状解析")
 def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """症状解析节点
-    
+
     功能描述：
         从用户问题中提取结构化的症状信息
         包括症状名称、严重程度、持续时间等
-    
+        优化：规则优先提取，LLM超时降级
+
     Args：
         state：当前状态，包含question字段
-    
+
     Returns：
         Dict[str, Any]：需要更新的状态字段
-    
+
     设计理念：
-        1、结构化输出
-        2、置信度评估
-        3、容错处理
-        4、JSON格式
-    
+        1、规则优先：先尝试关键词匹配提取症状，命中则跳过LLM
+        2、LLM超时降级：LLM调用设置超时，超时后使用规则结果
+        3、结构化输出
+        4、容错处理
+
     症状信息结构：
         {
             "symptoms": ["症状1", "症状2"],
@@ -409,6 +528,12 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     logger.info("症状解析节点开始执行")
 
     question = state.get("question", "")
+
+    # 优化：规则优先提取症状，命中则跳过LLM调用
+    rule_result = _extract_symptoms_by_rules(question)
+    if rule_result:
+        logger.info(f"规则提取症状成功，跳过LLM：{rule_result}")
+        return {"symptoms": rule_result}
 
     try:
         llm = get_llm()
@@ -436,6 +561,12 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"症状解析失败：{str(e)}")
+        # 降级：使用规则提取结果（即使不完整）
+        if rule_result is None:
+            rule_result = _extract_symptoms_by_rules(question)
+        if rule_result:
+            logger.info(f"LLM失败后降级使用规则提取：{rule_result}")
+            return {"symptoms": rule_result}
         return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "additional_info": None}}
 
 @timing_decorator("知识检索")
@@ -967,11 +1098,54 @@ def profile_extraction_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.warning(f"用户档案提取失败{str(e)}")
         return {}
 
+def _is_simple_greeting(question: str) -> Optional[str]:
+    """判断是否为简单问候/寒暄，如果是则返回预设回复，否则返回 None"""
+    text = (question or "").strip()
+    text_lower = text.lower()
+    text_no_punct = re.sub(r"[，。！？,.!?\s]", "", text_lower)
+
+    # 精确匹配问候映射表
+    greeting_map = {
+        "你好": "你好！我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "您好": "您好！我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "hello": "Hello! 我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "hi": "Hi! 我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "hey": "Hey! 我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "谢谢": "不客气！如果还有其他健康问题，随时可以问我。",
+        "thanks": "不客气！如果还有其他健康问题，随时可以问我。",
+        "再见": "再见！祝您身体健康，有问题随时来找我。",
+        "拜拜": "再见！祝您身体健康，有问题随时来找我。",
+        "早上好": "早上好！我是医疗助手，有什么健康问题可以帮你解答吗？",
+        "晚上好": "晚上好！我是医疗助手，有什么健康问题可以帮你解答吗？",
+    }
+    if text_no_punct in greeting_map:
+        return greeting_map[text_no_punct]
+
+    # 短文本且以问候开头（如"你好！"、"您好~"）
+    if len(text_no_punct) <= 6:
+        for greet in greeting_map:
+            if text_no_punct.startswith(greet) and len(text_no_punct) == len(greet):
+                return greeting_map[greet]
+
+    # 通用问题
+    general_questions = {
+        "你是谁": "我是医疗助手，可以为你提供健康咨询、症状分析和医疗知识问答。请告诉我你的问题！",
+        "你能做什么": "我可以为你提供：1. 症状分析与就医建议 2. 医疗健康知识问答 3. 用药指导参考。请告诉我你需要什么帮助！",
+        "你叫什么": "我是医疗助手，专注于健康咨询和医疗知识问答。有什么可以帮你的吗？",
+    }
+    for q, answer in general_questions.items():
+        if q in text:
+            return answer
+
+    return None
+
+
 @timing_decorator("同步直接回答")
 def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """直接回答节点
     功能描述：
         对于一般性问题，不需要检索知识库，直接调用llm回复
+        优化：简单问候/寒暄直接返回预设回复，不调用LLM
 
     Agrs：
         state：当前状态，包含question字段
@@ -980,6 +1154,18 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     question = state.get("question", "")
     user_profile = state.get("user_profile")
+
+    # 优化：简单问候直接返回，不调用LLM
+    quick_answer = _is_simple_greeting(question)
+    if quick_answer:
+        logger.info(f"简单问候直接返回，跳过LLM调用：{question}")
+        return {
+            "final_answer": quick_answer,
+            "messages": [
+                HumanMessage(content=question),
+                AIMessage(content=quick_answer)
+            ]
+        }
 
     try:
         prompt = build_direct_answer_prompt(
@@ -995,7 +1181,7 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
         return {
             "final_answer": answer,
-            "messages": [  # ✅ 添加消息
+            "messages": [
                 HumanMessage(content=question),
                 AIMessage(content=answer)
             ]
@@ -1004,7 +1190,7 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"直接回答失败{str(e)}")
         return {
             "final_answer": "您好，有什么可以帮助你的吗？",
-            "messages": [  # ✅ 添加消息
+            "messages": [
                 HumanMessage(content=question),
                 AIMessage(content="您好，有什么可以帮助你的吗？")
             ]
@@ -1017,12 +1203,27 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     功能描述：
         对原始问题进行检索友好的重写
         目标是提升后续知识检索召回率
+        优化：明确医疗关键词直接跳过重写，模糊问题使用轻量模型重写
     """
     logger.info("查询重写节点开始执行")
 
     question = state.get("question", "")
+
+    # 优化：对于明确的医疗提问，直接跳过重写
+    medical_keywords = [
+        "炎", "病", "症", "治疗", "怎么办", "吃什么药",
+        "症状", "原因", "预防", "护理", "诊断", "检查",
+        "高血压", "糖尿病", "感冒", "发烧", "咳嗽", "头痛",
+        "支气管", "肺炎", "胃炎", "肝炎", "肾炎", "过敏",
+    ]
+
+    if any(keyword in question for keyword in medical_keywords):
+        logger.info(f"问题包含明确的医疗关键词，跳过重写：{question}")
+        return {"rewritten_query": question}
+
     try:
-        llm = get_llm()
+        # 优化：使用轻量模型进行查询重写，降低延迟
+        llm = get_rewrite_llm()
         prompt = f"""你是一位医疗检索查询优化助手，请将用户问题重写为更适合知识库检索的短查询。
 
 用户问题：
@@ -1047,59 +1248,6 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"查询重写失败：{str(e)}")
-        return {"rewritten_query": question, "error": f"查询重写失败：{str(e)}"}
-    """查询重写节点
-    功能描述：
-        将用户模糊问题重写为更精确的检索查询
-        提高检索准确率
-    示例：
-        "感冒了怎么办" -> "普通感冒的家庭护理建议 感冒症状处理"
-        "头疼吃什么药" -> "头痛止痛药物 头痛用药指导"
-    """
-    logger.info("查询重写节点开始执行")
-
-    question = state.get("question", "")
-
-    # 优化：对于明确的提问，直接跳过重写
-    medical_keywords=[
-        "炎", "病", "症", "治疗", "怎么办", "吃什么药",
-        "症状", "原因", "预防", "护理", "诊断", "检查",
-        "高血压", "糖尿病", "感冒", "发烧", "咳嗽", "头痛",
-        "支气管", "肺炎", "胃炎", "肝炎", "肾炎"
-    ]
-
-    if any(keyword in question for keyword in medical_keywords):
-        logger.info(f"问题包含明确的医疗关键词，跳过重写：{question}")
-        return {"rewritten_query": question}
-
-    # 优化：对于模糊的问题，调用llm进行重写，后续优化方向：本地部署小模型进行查询重写
-
-    try:
-        llm = get_llm()
-
-        prompt = f"""你一个查询优化专家，负责将用户问题重写为更合适检索的查询。
-原始问题：{question}
-
-请将问题重写为更精确的检索查询，要求：
-1、保留原始问题的核心意图
-2、添加相关的医术术语或同义词
-3、拓展查询范围以提高召回率
-4、保持简洁，不超过50个字
-5、优先返回 JSON：{"rewritten_query": "..."}"""
-
-        try:
-            result = invoke_structured_with_fallback(llm, prompt, QueryRewriteOutput)
-            rewritten_query = normalize_query_text(result.rewritten_query, question)
-        except Exception as fallback_error:
-            logger.warning(f"查询重写结构化输出失败，使用原始问题：{fallback_error}")
-            rewritten_query = question
-
-        logger.info(f"查询重写：{question}--->{rewritten_query}")
-
-        return {"rewritten_query": rewritten_query}
-
-    except Exception as e:
-        logger.warning(f"查询重写失败：{str(e)}，使用原始查询")
         return {"rewritten_query": question}
 
 
@@ -1271,12 +1419,21 @@ async def stream_answer_generation(state: MedicalAssistantState):
 
 
 async def stream_direct_answer(state: MedicalAssistantState):
-    """流式直接回答节点"""
+    """流式直接回答节点
+    优化：简单问候/寒暄直接返回预设回复，不调用LLM
+    """
     logger.info("流式直接回答节点开始执行")
     start_time=time.time()
 
     question = state.get("question", "")
     user_profile = state.get("user_profile")
+
+    # 优化：简单问候直接返回，不调用LLM
+    quick_answer = _is_simple_greeting(question)
+    if quick_answer:
+        logger.info(f"简单问候直接返回，跳过LLM调用：{question}")
+        yield quick_answer
+        return
 
     prompt = build_direct_answer_prompt(
         question=question,
