@@ -55,6 +55,7 @@ class MedicalAssistantState(TypedDict):
     # ===== 输入字段 =====
     question: str
     user_id: Optional[str]
+    image_base64: Optional[str]  # 图片base64编码（多模态问诊）
 
     # ===== LangGraph标准字段 =====
     messages: Annotated[List[BaseMessage], add_messages]
@@ -79,14 +80,15 @@ class MedicalAssistantState(TypedDict):
     rewritten_query: Optional[str]
     retrieval_attempts: Optional[int]
 
-    # ===== 对话摘要 =====
-    conversation_summary: Optional[str]
+    # ===== 临床状态快照（结构化JSON）=====
+    clinical_checkpoint: Optional[Dict[str, Any]]
 
 
 class InputSchema(TypedDict):
     """输入Schema - 用户调用时传入"""
     question: str
     user_id: Optional[str]
+    image_base64: Optional[str]  # 图片base64编码
 
 
 class OutputSchema(TypedDict):
@@ -96,11 +98,12 @@ class OutputSchema(TypedDict):
     warnings: List[str]
 
 
-def create_initial_state(question: str, user_id: Optional[str] = None) -> MedicalAssistantState:
+def create_initial_state(question: str, user_id: Optional[str] = None, image_base64: Optional[str] = None) -> MedicalAssistantState:
     """创建初始状态"""
     return {
         "question": question,
         "user_id": user_id,
+        "image_base64": image_base64,
         "messages": [],
         "final_answer": None,
         "warnings": [],
@@ -111,7 +114,7 @@ def create_initial_state(question: str, user_id: Optional[str] = None) -> Medica
         "user_profile": None,
         "rewritten_query": None,
         "retrieval_attempts": 0,
-        "conversation_summary": None,
+        "clinical_checkpoint": None,
     }
 
 

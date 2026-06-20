@@ -271,6 +271,64 @@ class RedisCache:
             logger.error(f"缓存删除失败：{e}")
             return False
 
+    # ===== 文档缓存（MicroCompact doc_id 存储） =====
+
+    DOC_CACHE_PREFIX = "doc_cache:"
+    DOC_CACHE_TTL = 7200  # 2小时
+
+    def store_doc(self, doc_id: str, content: str, source: str = "") -> bool:
+        """存储文档内容到缓存，供后续通过 doc_id 恢复
+
+        Args:
+            doc_id: 文档唯一标识
+            content: 文档原文
+            source: 文档来源
+
+        Returns:
+            是否成功
+        """
+        try:
+            data = json.dumps({"content": content, "source": source}, ensure_ascii=False)
+            if self._available:
+                key = f"{self.prefix}{self.DOC_CACHE_PREFIX}{doc_id}"
+                self._redis.setex(key, self.DOC_CACHE_TTL, data)
+            else:
+                self._fallback_cache[f"{self.DOC_CACHE_PREFIX}{doc_id}"] = (
+                    data, time.time() + self.DOC_CACHE_TTL
+                )
+            return True
+        except Exception as e:
+            logger.warning(f"文档缓存写入失败：{e}")
+            return False
+
+    def get_doc(self, doc_id: str) -> Optional[Dict[str, str]]:
+        """通过 doc_id 获取缓存的文档内容
+
+        Args:
+            doc_id: 文档唯一标识
+
+        Returns:
+            {"content": ..., "source": ...} 或 None
+        """
+        try:
+            if self._available:
+                key = f"{self.prefix}{self.DOC_CACHE_PREFIX}{doc_id}"
+                data = self._redis.get(key)
+                if data:
+                    return json.loads(data)
+            else:
+                cache_key = f"{self.DOC_CACHE_PREFIX}{doc_id}"
+                if cache_key in self._fallback_cache:
+                    data, expires_at = self._fallback_cache[cache_key]
+                    if time.time() < expires_at:
+                        return json.loads(data)
+                    else:
+                        del self._fallback_cache[cache_key]
+            return None
+        except Exception as e:
+            logger.warning(f"文档缓存读取失败：{e}")
+            return None
+
     def clear(self) -> int:
         """清空缓存
 

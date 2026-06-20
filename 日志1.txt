@@ -1,0 +1,133 @@
+D:\Agent\software\envs\my_medical_env\python.exe D:\Agent\medical_assistant_agent\app\api\routes.py 
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+INFO:     Will watch for changes in these directories: ['D:\\Agent\\medical_assistant_agent\\app\\api']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [13776] using WatchFiles
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-06-20 03:34:05 - app.api.routes - INFO - 应用启动中...
+2026-06-20 03:34:05 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
+INFO:     Started server process [11488]
+INFO:     Waiting for application startup.
+Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
+2026-06-20 03:34:05 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
+2026-06-20 03:34:05 - app.api.routes - INFO - 检查点保存器初始化完成
+2026-06-20 03:34:05 - app.api.routes - INFO - 预加载 jieba 分词器...
+Loading model cost 0.513 seconds.
+Prefix dict has been built successfully.
+2026-06-20 03:34:05 - app.api.routes - INFO - jieba 分词器预加载完成
+2026-06-20 03:34:05 - app.api.routes - INFO - 预加载 Reranker 模型...
+2026-06-20 03:34:08 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-06-20 03:34:10 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+2026-06-20 03:34:10 - app.api.routes - INFO - Reranker 模型预加载完成
+2026-06-20 03:34:10 - app.api.routes - INFO - 预热混合检索器...
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
+从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
+2026-06-20 03:34:10 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-06-20 03:34:10 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：213
+2026-06-20 03:34:10 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-06-20 03:34:10 - app.api.routes - INFO - 混合检索器预热完成
+2026-06-20 03:34:10 - app.api.routes - INFO - 预热缓存连接...
+2026-06-20 03:34:10 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-06-20 03:34:10 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
+2026-06-20 03:34:10 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.8
+2026-06-20 03:34:10 - app.api.routes - INFO - 语义缓存预热成功
+2026-06-20 03:34:10 - app.api.routes - INFO - 缓存预热完成
+INFO:     Application startup complete.
+2026-06-20 03:35:10 - app.api.routes - INFO - 收到流式聊天请求：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user, user_id=test_user
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [长期记忆加载] 开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 长期记忆加载节点开始执行
+2026-06-20 03:35:10 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
+2026-06-20 03:35:10 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
+2026-06-20 03:35:10 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 用户档案不存在：user_id=test_user
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [长期记忆加载] 执行完成，耗时：109.07ms
+2026-06-20 03:35:10 - app.api.routes - INFO - 请求完成：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, path=/api/chat/stream, status=200, elapsed_ms=114.13
+INFO:     127.0.0.1:58599 - "POST /api/chat/stream HTTP/1.1" 200 OK
+2026-06-20 03:35:10 - app.api.routes - INFO - L2语义缓存为空，跳过Embedding计算
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [路由] 开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 路由节点开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 规则路由命中：question_type=symptom
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 问题类型：symptom
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [路由] 执行完成，耗时：1.51ms
+2026-06-20 03:35:10 - app.api.routes - INFO - 并行（缓存+路由）耗时：1.51ms
+2026-06-20 03:35:10 - app.api.routes - INFO - 流式请求路由完成：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user, next_node=symptom_analysis
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [症状解析] 开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 症状解析节点开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 规则提取症状成功，跳过LLM：{'symptoms': ['头痛', '恶心'], 'severity': '轻微', 'body_parts': ['头部'], 'duration': None, 'additional_info': None}
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [症状解析] 执行完成，耗时：0.00ms
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [查询重写] 开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 查询重写节点开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 问题包含明确的医疗关键词且自包含，跳过重写：我头痛了3天，今天开始有点恶心
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [查询重写] 执行完成，耗时：0.00ms
+2026-06-20 03:35:10 - app.graph.nodes - INFO - ⏱️ [知识检索] 开始执行
+2026-06-20 03:35:10 - app.graph.nodes - INFO - 知识检索节点开始执行
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
+从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
+2026-06-20 03:35:10 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-06-20 03:35:10 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：213
+2026-06-20 03:35:10 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-06-20 03:35:10 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：我头痛了3天，今天开始有点恶心...
+2026-06-20 03:35:10 - app.rag.hybrid_retriever - INFO - L2语义缓存为空，跳过Embedding计算
+2026-06-20 03:35:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-06-20 03:35:10 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=400
+2026-06-20 03:35:13 - app.rag.reranker - INFO - 重排序完成：10 -> 1 （最高分：0.3521）
+2026-06-20 03:35:13 - app.rag.hybrid_retriever - INFO - Reranker 重排序：18 -> 1
+2026-06-20 03:35:13 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3660.06ms（query_embedding=0.00ms, semantic_lookup=0.00ms, dense=570.72ms, sparse=0.00ms, fusion=0.00ms, rerank=3087.84ms）
+2026-06-20 03:35:14 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-06-20 03:35:14 - app.cache.semantic_cache - INFO - 语义缓存已写入：'我头痛了3天，今天开始有点恶心...' (1个文档)
+2026-06-20 03:35:14 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：我头痛了3天，今天开始有点恶心...
+2026-06-20 03:35:14 - app.graph.nodes - INFO - 检索到1个相关文档，耗时：3931.91ms，第 1 次检索
+2026-06-20 03:35:14 - app.graph.nodes - INFO - ⏱️ [知识检索] 执行完成，耗时：4053.58ms
+2026-06-20 03:35:14 - app.graph.nodes - INFO - ⏱️ [文档评分] 开始执行
+2026-06-20 03:35:14 - app.graph.nodes - INFO - 文档评分节点开始执行
+2026-06-20 03:35:14 - app.graph.nodes - INFO - 文档启发式过滤结果：1 -> 1 相关
+2026-06-20 03:35:14 - app.graph.nodes - INFO - ⏱️ [文档评分] 执行完成，耗时：1.10ms
+2026-06-20 03:35:14 - app.api.routes - INFO - 文档评分完成：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user, next_node=answer_generation, docs=1
+2026-06-20 03:35:14 - app.api.routes - INFO - 开始流式生成 RAG 答案：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user
+2026-06-20 03:35:14 - app.graph.nodes - INFO - 流式答案生成节点开始执行
+2026-06-20 03:35:14 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-06-20 03:35:22 - app.api.routes - INFO - 首个 token 已发送：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user, latency_ms=12497.04
+2026-06-20 03:35:27 - app.graph.nodes - INFO - 流式生成完成，总长度：699字符，耗时：13390.97ms
+2026-06-20 03:35:27 - app.api.routes - INFO - L0答案缓存已写入：我头痛了3天，今天开始有点恶心...
+2026-06-20 03:35:27 - app.api.routes - INFO - 流式请求完成：request_id=7b4fec78-0a28-49a9-bc56-a108bc9678f4, thread_id=thread_test_user, total_elapsed_ms=17563.29
+2026-06-20 03:35:27 - app.graph.nodes - INFO - ⏱️ [用户档案提取] 开始执行
+2026-06-20 03:35:27 - app.graph.nodes - INFO - 用户档案提取节点开始执行
+2026-06-20 03:35:27 - app.graph.nodes - INFO - 问题不包含个人信息，跳过档案提取
+2026-06-20 03:35:27 - app.graph.nodes - INFO - ⏱️ [用户档案提取] 执行完成，耗时：0.00ms
+
+
+我头痛了3天，今天开始有点恶心
+根据您描述的头痛3天并伴有恶心的情况，我基于提供的医疗文档为您分析如下：
+
+## 可能的头痛类型
+
+根据您的症状，可能的情况包括：
+
+1. 偏头痛：偏头痛通常持续4-72小时，可伴有恶心、呕吐，且活动后加重。[来源：神经系统症状鉴别指南.txt]
+
+2. 高血压性头痛：血压急剧升高时可能出现头痛并伴有恶心。[来源：神经系统症状鉴别指南.txt]
+
+3. 继发性头痛：如颅内感染或颅内占位也可能出现头痛伴恶心症状，但通常伴有其他警示信号。
+
+## 家庭护理建议
+
+1. 休息：保证充足休息，避免过度疲劳 [证据等级：C]
+2. 保持水分：适量饮水，避免脱水 [证据等级：C]
+3. 记录症状：记录头痛的具体部位、性质、加重或缓解因素 [证据等级：C]
+4. 避免诱因：避免可能诱发头痛的因素，如强光、噪音、特定食物等 [证据等级：C]
+
+## 需要立即就医的情况
+
+如果出现以下任何症状，请立即就医或拨打120：
+- 头痛突然且极其剧烈（"雷击样"头痛）[来源：神经系统症状鉴别指南.txt]
+- 伴有发热、颈项强直 [来源：神经系统症状鉴别指南.txt]
+- 伴有意识障碍、言语不清、肢体无力 [来源：神经系统症状鉴别指南.txt]
+- 头痛进行性加重，尤其是清晨加重 [来源：神经系统症状鉴别指南.txt]
+
+💡 为了更准确地帮助您，您可以补充以下信息：头痛的具体部位（单侧还是双侧）、疼痛性质（搏动性还是压迫感）、是否有其他伴随症状（如畏光、畏声等）。这些信息有助于我给出更有针对性的建议。
+
+⚠️ 以上建议仅供参考，如有疑问请及时就医

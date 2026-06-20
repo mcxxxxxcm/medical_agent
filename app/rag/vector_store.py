@@ -39,12 +39,21 @@ class VectorStoreManager:
             print(f"向量库位于：{abs_path}")
             # 如果要求强制重建向量数据库或者当前不存在向量库
             print(f"正在创建向量库，文档数量：{len(documents)}")
-            # print(f"正在创建向量库，文档数量：???")
-            self.vector_store = Chroma.from_documents(
-                documents=documents,
-                embedding=self.embeddings,
-                persist_directory=str(self.persist_directory),
-            )
+            # 分批写入，避免 Embedding API 单次请求限制（智谱API最多64条/批）
+            batch_size = 60
+            for i in range(0, len(documents), batch_size):
+                batch = documents[i:i + batch_size]
+                if i == 0:
+                    # 第一批：创建向量库
+                    self.vector_store = Chroma.from_documents(
+                        documents=batch,
+                        embedding=self.embeddings,
+                        persist_directory=str(self.persist_directory),
+                    )
+                else:
+                    # 后续批次：追加到已有向量库
+                    self.vector_store.add_documents(batch)
+                print(f"  已写入 {min(i + batch_size, len(documents))}/{len(documents)} 个文档")
             print(f"向量数据库已保存到：{self.persist_directory}")
         else:
             abs_path = self.persist_directory.resolve()

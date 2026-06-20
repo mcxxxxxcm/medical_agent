@@ -42,7 +42,7 @@ STOPWORDS: Set[str] = {
     "什么", "怎么", "为什么", "如何", "哪些", "哪里", "多少"
 }
 
-BM25_CACHE_PATH = "data/bm25_index.pkl"
+BM25_CACHE_PATH = str(config.BM25_CACHE_PATH)
 
 
 def _tokenize(text: str) -> List[str]:
@@ -218,8 +218,7 @@ class HybridRetriever(BaseRetriever):
         优化策略：
             1. 无候选文档 → 跳过
             2. 候选数 <= k → 无需重排序
-            3. 候选数 <= rerank_top_k * 2 → RRF排序已足够，rerank收益低
-            4. 简单问候/寒暄类查询 → 跳过
+            3. 简单问候/寒暄类查询 → 跳过
         注意：语义明确的医疗查询不应跳过Reranker，因为RRF排序质量不够，
               Reranker能过滤掉不相关文档，对检索质量至关重要。
         """
@@ -229,10 +228,6 @@ class HybridRetriever(BaseRetriever):
         candidate_count = len(candidates)
         # 候选数 <= k，无需重排序
         if candidate_count <= self.k:
-            return True
-
-        # 候选数不超过 rerank_top_k 的2倍，RRF排序已足够
-        if candidate_count <= self.rerank_top_k * 2:
             return True
 
         # 简单问候/寒暄类查询直接跳过Reranker
@@ -254,51 +249,48 @@ class HybridRetriever(BaseRetriever):
         """混合检索主流程"""
         cache_query = original_query if original_query else query
 
-        # L1：Redis 查询缓存
-        from app.cache.redis_cache import get_cache
-        cache = get_cache()
-
-        cached_result = cache.get(
-            cache_query,
-            k=self.k,
-            use_reranker=self.use_reranker,
-            rerank_top_k=self.rerank_top_k
-        )
-
-        if cached_result:
-            documents, metadata = cached_result
-            logger.info(f"L1缓存命中：{cache_query[:30]}... 使用缓存结果：{len(documents)} 个文档")
-            return documents
-
         query_embedding = None
         semantic_cache = None
         semantic_lookup_ms = 0.0
         query_embedding_ms = 0.0
 
         # L2：语义相似缓存（Redis不可用时跳过，避免超时阻塞）
+        # 注：已移除 L1 精确匹配缓存，L2 语义缓存完全覆盖 L1 功能
+        #     精确匹配时相似度=100%，必然命中 L2（阈值92%）
+        from app.cache.redis_cache import get_cache
+        cache = get_cache()
+
         if getattr(config, 'ENABLE_SEMANTIC_CACHE', False) and cache._available:
             semantic_cache = get_semantic_cache()
             logger.info(f"L2语义缓存检查：{cache_query[:30]}...")
 
-            embedding_start = time.time()
-            query_embedding = semantic_cache.get_embedding(cache_query)
-            query_embedding_ms = (time.time() - embedding_start) * 1000
+            # 优化：先快速检查L2是否有数据，为空则跳过Embedding API（省600ms+）
+            try:
+                l2_keys = cache._redis.keys(f"{semantic_cache.prefix}*")
+                if not l2_keys:
+                    logger.info("L2语义缓存为空，跳过Embedding计算")
+                else:
+                    embedding_start = time.time()
+                    query_embedding = semantic_cache.get_embedding(cache_query)
+                    query_embedding_ms = (time.time() - embedding_start) * 1000
 
-            semantic_lookup_start = time.time()
-            semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
-            semantic_lookup_ms = (time.time() - semantic_lookup_start) * 1000
+                    semantic_lookup_start = time.time()
+                    semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
+                    semantic_lookup_ms = (time.time() - semantic_lookup_start) * 1000
 
-            logger.info(
-                f"L2语义缓存耗时：embedding_ms={query_embedding_ms:.2f}, lookup_ms={semantic_lookup_ms:.2f}"
-            )
+                    logger.info(
+                        f"L2语义缓存耗时：embedding_ms={query_embedding_ms:.2f}, lookup_ms={semantic_lookup_ms:.2f}"
+                    )
 
-            if semantic_result:
-                documents, metadata = semantic_result
-                logger.info(
-                    f"L2 语义缓存命中：{cache_query[:30]}... "
-                    f"(相似度: {metadata.get('similarity', 0):.2%})"
-                )
-                return documents
+                    if semantic_result:
+                        documents, metadata = semantic_result
+                        logger.info(
+                            f"L2 语义缓存命中：{cache_query[:30]}... "
+                            f"(相似度: {metadata.get('similarity', 0):.2%})"
+                        )
+                        return documents
+            except Exception as l2_err:
+                logger.warning(f"L2缓存检查异常，跳过：{l2_err}")
 
         elif query_embedding is None:
             embedding_start = time.time()
@@ -323,6 +315,8 @@ class HybridRetriever(BaseRetriever):
         fusion_ms = (time.time() - fusion_start) * 1000
 
         rerank_ms = 0.0
+        # Reranker 跳过判断：仅当候选数 <= k 或简单问候时跳过
+        # 不再使用 actual_rerank_input <= k 判断，因为 rerank_top_k 应大于 k 才有重排意义
         should_skip_reranker = self._should_skip_reranker(query, candidates)
 
         # Reranker 重排序
@@ -362,21 +356,6 @@ class HybridRetriever(BaseRetriever):
 
         # 写入缓存
         if final_docs:
-            cache.set(
-                cache_query,
-                final_docs,
-                metadata={
-                    "retrieval_time_ms": retrieval_time,
-                    "sources": [d.metadata.get("source") for d in final_docs],
-                    "original_query": original_query,
-                    "search_query": query,
-                },
-                k=self.k,
-                use_reranker=self.use_reranker,
-                rerank_top_k=self.rerank_top_k
-            )
-            logger.info(f"L1缓存已写入：{cache_query[:30]}...")
-
             if semantic_cache is not None:
                 semantic_cache.set(cache_query, final_docs, query_embedding=query_embedding)
                 logger.info(f"L2语义缓存已写入：{cache_query[:30]}...")
@@ -391,7 +370,7 @@ def get_hybrid_retriever(
         alpha: float = 0.5,
         use_cache: bool = True,
         use_reranker: bool = True,
-        rerank_top_k: int = 5
+        rerank_top_k: int = 10
 ) -> HybridRetriever:
     """工厂函数"""
     return HybridRetriever(

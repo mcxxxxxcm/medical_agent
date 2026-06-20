@@ -18,4 +18,7 @@ def get_embeddings() -> OpenAIEmbeddings:
         model=config.EMBEDDING_MODEL,
         base_url=config.MODEL_URL,
         api_key=config.MODEL_API_KEY,
+        # 限制超时和重试，避免API网络抖动时阻塞20+秒
+        request_timeout=10,     # 单次请求超时10秒
+        max_retries=1,          # 最多重试1次（共2次尝试）
     )

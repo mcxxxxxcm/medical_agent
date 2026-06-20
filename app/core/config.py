@@ -20,12 +20,15 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # ===== LLM 配置 =====
-    MODEL_NAME: str = "glm-4.5-air"
-    # MODEL_NAME: str = "glm-4"
+    MODEL_NAME: str = "glm-4-flash"     # 主模型（RAG答案生成），首token 1-3s
+    # MODEL_NAME: str = "glm-4.5-air"   # 备选：推理更强但首token 10-20s
+    # MODEL_NAME: str = "glm-4"         # 备选：平衡型
     MODEL_URL: Optional[str] = None
     MODEL_API_KEY: Optional[str] = None
     MODEL_TEMPERATURE: float = 0.2
     REWRITE_MODEL_NAME: Optional[str] = None  # 查询重写专用模型（留空则使用MODEL_NAME）
+    SYMPTOM_MODEL_NAME: str = "glm-4-flash"  # 症状解析专用模型（快速轻量）
+    VISION_MODEL_NAME: str = "glm-4v-plus"  # 多模态视觉模型（图片问诊）
 
     # ===== Embedding 配置 =====
     # EMBEDDING_MODEL: str = "text-embedding-3-small"
@@ -40,7 +43,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50
     DEFAULT_K: int = 5
     DEFAULT_SEARCH_TYPE: str = "similarity"
-    RERANKER_THRESHOLD: float = 0.0  # ONNX Reranker分数范围与原生不同，0.3会过滤所有文档
+    RERANKER_THRESHOLD: float = 0.1  # sigmoid归一化后的阈值，仅过滤极低分文档，排序交给Reranker，过滤交给下游
 
     # ===== 路径配置 =====
     DOCS_DIR: Path = PROJECT_ROOT / "docs" / "medical"

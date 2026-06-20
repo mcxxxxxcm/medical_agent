@@ -188,13 +188,19 @@ class Reranker:
             }
 
             outputs = self._model.run(None, input_feed)
-            scores = outputs[0].flatten().tolist()
+            raw_scores = outputs[0].flatten().tolist()
+
+            # sigmoid 归一化：bge-reranker 输出的是 logits（可为负值），
+            # 归一化到 [0,1] 后阈值才有意义
+            scores = [1.0 / (1.0 + np.exp(-s)) for s in raw_scores]
 
             # 排序
             scored_items = list(zip(valid_docs, scores))
             scored_items.sort(key=lambda x: x[1], reverse=True)
 
             # 阈值过滤与截取
+            # Reranker 的核心价值是排序，不是过滤
+            # 阈值仅过滤极低分文档（sigmoid < 0.1 = 几乎不相关），其余交给下游启发式过滤
             final_docs = []
             for doc, score in scored_items:
                 if score >= score_threshold and len(final_docs) < top_k:

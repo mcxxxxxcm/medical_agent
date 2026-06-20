@@ -42,6 +42,7 @@ from app.graph.nodes import (
     safety_check_node, memory_load_node,
     profile_extraction_node,
     direct_answer_node,
+    vision_analysis_node,
     query_rewrite_node,
     grade_documents_node,
     should_summarize,
@@ -89,6 +90,7 @@ def build_graph() -> StateGraph:
     builder.add_node("knowledge_retrieval", knowledge_retrieval_node)
     builder.add_node("grade_documents", grade_documents_node)
     builder.add_node("direct_answer", direct_answer_node)
+    builder.add_node("vision_analysis", vision_analysis_node)
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("safety_check", safety_check_node)
     builder.add_node("query_rewrite", query_rewrite_node)
@@ -122,6 +124,7 @@ def build_graph() -> StateGraph:
     if getattr(config, 'ENABLE_SAFETY_CHECK', True):
         # 启用 safety_check
         builder.add_edge("direct_answer", "safety_check")
+        builder.add_edge("vision_analysis", "safety_check")
         builder.add_edge("answer_generation", "safety_check")
 
         builder.add_conditional_edges(
@@ -136,6 +139,14 @@ def build_graph() -> StateGraph:
         # 关闭 safety_check，直接跳到总结判断
         builder.add_conditional_edges(
             "direct_answer",
+            should_summarize,
+            {
+                "summarize": "summarize_conversation",
+                END: END
+            }
+        )
+        builder.add_conditional_edges(
+            "vision_analysis",
             should_summarize,
             {
                 "summarize": "summarize_conversation",

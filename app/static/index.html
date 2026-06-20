@@ -115,6 +115,7 @@
             border-top: 1px solid #e0e0e0;
             display: flex;
             gap: 12px;
+            align-items: flex-end;
         }
 
         .input-container textarea {
@@ -130,6 +131,72 @@
 
         .input-container textarea:focus {
             border-color: #667eea;
+        }
+
+        .upload-btn {
+            width: 44px;
+            height: 44px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #666;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .upload-btn:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .upload-btn.has-image {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+
+        .image-preview {
+            display: none;
+            padding: 8px 24px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .image-preview.show {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .image-preview img {
+            max-width: 80px;
+            max-height: 80px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .image-preview .image-info {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .image-preview .remove-image {
+            padding: 4px 12px;
+            background: #ff4d4f;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .image-preview .remove-image:hover {
+            background: #d9363e;
         }
 
         .input-container button {
@@ -225,7 +292,18 @@
     </div>
 </div>
 
+<div class="image-preview" id="imagePreview">
+    <img id="previewImg" src="" alt="预览">
+    <div class="image-info">
+        <div id="imageName"></div>
+        <div id="imageSize"></div>
+    </div>
+    <button class="remove-image" onclick="removeImage()">移除</button>
+</div>
+
 <div class="input-container">
+    <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+    <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('imageInput').click()" title="上传图片">📎</button>
         <textarea
                 id="userInput"
                 placeholder="输入您的问题..."
@@ -238,6 +316,7 @@
 <script>
     const API_BASE = window.location.origin;
     let isStreaming = false;
+    let currentImageBase64 = null;
 
     // 自动调整输入框高度
     const textarea = document.getElementById('userInput');
@@ -254,21 +333,61 @@
         }
     }
 
+    // 图片上传处理
+    function handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // 限制大小5MB
+        if (file.size > 5 * 1024 * 1024) {
+            alert('图片大小不能超过5MB');
+            event.target.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const base64 = e.target.result.split(',')[1];
+            currentImageBase64 = base64;
+
+            // 显示预览
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('imageName').textContent = file.name;
+            document.getElementById('imageSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+            document.getElementById('imagePreview').classList.add('show');
+            document.getElementById('uploadBtn').classList.add('has-image');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 移除图片
+    function removeImage() {
+        currentImageBase64 = null;
+        document.getElementById('imageInput').value = '';
+        document.getElementById('imagePreview').classList.remove('show');
+        document.getElementById('uploadBtn').classList.remove('has-image');
+    }
+
     // 发送消息
     async function sendMessage() {
         const input = document.getElementById('userInput');
         const question = input.value.trim();
 
-        if (!question || isStreaming) return;
+        if ((!question && !currentImageBase64) || isStreaming) return;
 
         const userId = document.getElementById('userId').value || 'default';
         const threadId = document.getElementById('threadId').value || null;
         const streamMode = document.getElementById('streamMode').value;
 
-        // 添加用户消息
-        addMessage(question, 'user');
+        // 添加用户消息（带图片标记）
+        const displayText = currentImageBase64 ? (question || '请帮我看看这张图片') + ' 🖼️' : question;
+        addMessage(displayText, 'user');
         input.value = '';
         input.style.height = 'auto';
+
+        // 保存图片并清除
+        const imageBase64 = currentImageBase64;
+        removeImage();
 
         // 禁用发送按钮
         isStreaming = true;
@@ -283,9 +402,9 @@
 
         try {
             if (streamMode === 'stream') {
-                await sendStreamRequest(question, userId, threadId, loadingDiv);
+                await sendStreamRequest(question, userId, threadId, loadingDiv, imageBase64);
             } else {
-                await sendSyncRequest(question, userId, threadId, loadingDiv);
+                await sendSyncRequest(question, userId, threadId, loadingDiv, imageBase64);
             }
         } catch (error) {
             loadingDiv.className = 'message assistant';
@@ -297,15 +416,20 @@
     }
 
     // 流式请求
-    async function sendStreamRequest(question, userId, threadId, loadingDiv) {
+    async function sendStreamRequest(question, userId, threadId, loadingDiv, imageBase64) {
+        const body = {
+            question: question,
+            user_id: userId,
+            thread_id: threadId
+        };
+        if (imageBase64) {
+            body.image_base64 = imageBase64;
+        }
+
         const response = await fetch(`${API_BASE}/api/chat/stream`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                question: question,
-                user_id: userId,
-                thread_id: threadId
-            })
+            body: JSON.stringify(body)
         });
 
         loadingDiv.className = 'message assistant';
@@ -314,6 +438,7 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullAnswer = '';
+        let currentSources = [];
 
         while (true) {
             const {done, value} = await reader.read();
@@ -327,27 +452,33 @@
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const data = line.slice(6);
-                    console.log('Extracted data:', data); // 调试日志
 
                     if (data === '[DONE]') {
-                        console.log('Stream completed'); // 调试日志
+                        // 流结束后渲染文档来源
+                        if (currentSources.length > 0) {
+                            const sourcesDiv = document.createElement('div');
+                            sourcesDiv.className = 'sources';
+                            sourcesDiv.innerHTML = '📚 来源：' + currentSources.map(s => s.source).join(', ');
+                            loadingDiv.appendChild(sourcesDiv);
+                            scrollToBottom();
+                        }
                         break;
                     } else if (data.startsWith('[ERROR]')) {
                         loadingDiv.innerHTML = data;
                     } else {
                         try {
-                            // 解析JSON编码的答案
-                            const token = JSON.parse(data);
-                            fullAnswer += token;
-
-                            console.log('Current full answer:', fullAnswer); // 调试日志
-                            loadingDiv.innerHTML = formatAnswer(fullAnswer);
-                            scrollToBottom();
+                            const parsed = JSON.parse(data);
+                            // sources 事件：文档来源元数据
+                            if (parsed.type === 'sources' && parsed.sources) {
+                                currentSources = parsed.sources;
+                            } else {
+                                // token 文本
+                                fullAnswer += parsed;
+                                loadingDiv.innerHTML = formatAnswer(fullAnswer);
+                                scrollToBottom();
+                            }
                         } catch (e) {
-                            // 如果解析失败，直接使用原始数据
                             fullAnswer += data;
-
-                            console.log('Current full answer (raw):', fullAnswer);
                             loadingDiv.innerHTML = formatAnswer(fullAnswer);
                             scrollToBottom();
                         }
@@ -358,15 +489,20 @@
     }
 
     // 同步请求
-    async function sendSyncRequest(question, userId, threadId, loadingDiv) {
+    async function sendSyncRequest(question, userId, threadId, loadingDiv, imageBase64) {
+        const body = {
+            question: question,
+            user_id: userId,
+            thread_id: threadId
+        };
+        if (imageBase64) {
+            body.image_base64 = imageBase64;
+        }
+
         const response = await fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                question: question,
-                user_id: userId,
-                thread_id: threadId
-            })
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();

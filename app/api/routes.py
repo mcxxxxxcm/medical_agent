@@ -30,6 +30,7 @@ from app.graph.graph import get_graph
 from app.graph.nodes import (
     stream_answer_generation,
     stream_direct_answer,
+    stream_vision_answer,
     memory_load_node,
     profile_extraction_node,
     router_node,
@@ -42,6 +43,9 @@ from app.memory import get_checkpointer, get_long_term_memory
 from app.memory.checkpointer import close_checkpointer
 from app.rag.hybrid_retriever import get_hybrid_retriever
 from app.rag.reranker import get_reranker
+from app.cache.redis_cache import get_cache
+from app.cache.semantic_cache import get_semantic_cache
+from app.core.config import get_config
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 import jieba
@@ -55,6 +59,7 @@ class ChatRequest(BaseModel):
     question: str = Field(..., description="用户问题", min_length=1, max_length=1000)
     user_id: Optional[str] = Field(None, description="用户ID")
     thread_id: Optional[str] = Field(None, description="会话线程ID")
+    image_base64: Optional[str] = Field(None, description="图片base64编码（多模态问诊）")
 
 
 class SourceInfo(BaseModel):
@@ -103,6 +108,25 @@ async def lifespan(app: FastAPI):
     logger.info("预热混合检索器...")
     get_hybrid_retriever()
     logger.info("混合检索器预热完成")
+
+    # 4. 预热Redis缓存和语义缓存（避免首次请求2s连接延迟）
+    logger.info("预热缓存连接...")
+    try:
+        cache = get_cache()
+        if cache._available:
+            logger.info(f"Redis缓存预热成功：{cache.redis_url}")
+        else:
+            logger.info("Redis不可用，使用内存缓存降级")
+    except Exception as e:
+        logger.warning(f"Redis缓存预热失败：{e}")
+    try:
+        config = get_config()
+        if getattr(config, 'ENABLE_SEMANTIC_CACHE', False):
+            semantic_cache = get_semantic_cache()
+            logger.info("语义缓存预热成功")
+    except Exception as e:
+        logger.warning(f"语义缓存预热失败：{e}")
+    logger.info("缓存预热完成")
 
     yield
 
@@ -237,6 +261,22 @@ async def chat(request: ChatRequest):
         )
 
 
+# L0 答案缓存TTL（秒），比文档缓存短
+_ANSWER_CACHE_TTL = 1800  # 30分钟
+
+
+def _save_answer_cache(question: str, answer: str):
+    """将完整答案写入L0答案缓存（仅无用户档案时调用）"""
+    try:
+        cache = get_cache()
+        if cache._available:
+            answer_cache_key = cache.prefix + f"answer:{question}"
+            cache._redis.setex(answer_cache_key, _ANSWER_CACHE_TTL, json.dumps(answer, ensure_ascii=False))
+            logger.info(f"L0答案缓存已写入：{question[:30]}...")
+    except Exception as e:
+        logger.warning(f"L0答案缓存写入失败：{e}")
+
+
 @app.post("/api/chat/stream")
 async def stream(request: ChatRequest, http_request: Request):
     """流式聊天接口
@@ -262,6 +302,7 @@ async def stream(request: ChatRequest, http_request: Request):
         current_state = {
             "question": request.question,
             "user_id": request.user_id,
+            "image_base64": request.image_base64,
             "thread_id": thread_id,
             "request_id": request_id,
             "warnings": [],
@@ -284,44 +325,120 @@ async def stream(request: ChatRequest, http_request: Request):
             if memory_state:
                 current_state.update(memory_state)
 
-            # 优化：档案提取移到回答生成之后，避免阻塞首token
-            # profile_extraction_node 会在回答完成后异步执行
+            # ===== 并行：缓存检查 + 路由同时执行 =====
+            # 缓存命中则丢弃路由结果；缓存未命中则路由已完成，不浪费时间
+            cached_docs = None
+            cached_answer = None
+            route_command = None
+            has_profile = bool(current_state.get("user_profile"))
 
-            route_command = router_node(current_state)
-            next_node = getattr(route_command, "goto", "direct_answer")
-            logger.info(
-                f"流式请求路由完成：request_id={request_id}, thread_id={thread_id}, next_node={next_node}"
-            )
-
-            if next_node == "direct_answer":
-                async for token in stream_direct_answer(current_state):
-                    yield await emit_data(token)
-
+            if request.image_base64:
+                # 图片问诊不走缓存，直接路由
+                route_command = router_node(current_state)
             else:
-                if next_node == "symptom_analysis":
-                    symptom_state = symptom_analysis_node(current_state)
-                    if symptom_state:
-                        current_state.update(symptom_state)
+                import asyncio
+                cache_check_start = time.time()
 
-                rewrite_state = query_rewrite_node(current_state)
-                if rewrite_state:
-                    current_state.update(rewrite_state)
+                async def _check_cache():
+                    """异步执行缓存检查（L0 → L2）"""
+                    nonlocal cached_docs, cached_answer
+                    try:
+                        cache = get_cache()
 
-                retrieval_state = knowledge_retrieval_node(current_state)
-                if retrieval_state:
-                    current_state.update(retrieval_state)
+                        # L0 答案缓存（仅无用户档案时）
+                        if not has_profile:
+                            answer_cache_key = f"answer:{request.question}"
+                            try:
+                                if cache._available:
+                                    cached_raw = cache._redis.get(cache.prefix + answer_cache_key)
+                                    if cached_raw:
+                                        cached_answer = json.loads(cached_raw)
+                                        logger.info(f"⚡ L0答案缓存命中，直接返回：{request.question[:30]}...")
+                                        return
+                            except Exception:
+                                pass
 
-                grade_command = grade_documents_node(current_state)
-                grade_update = getattr(grade_command, "update", None) or {}
-                if grade_update:
-                    current_state.update(grade_update)
+                        # L2 语义相似匹配（文档级）
+                        # 注：已移除 L1 精确匹配缓存，L2 完全覆盖 L1 功能
+                        config = get_config()
+                        if getattr(config, 'ENABLE_SEMANTIC_CACHE', False) and cache._available:
+                            semantic_cache = get_semantic_cache()
+                            try:
+                                l2_keys = cache._redis.keys(f"{semantic_cache.prefix}*")
+                                if not l2_keys:
+                                    logger.info("L2语义缓存为空，跳过Embedding计算")
+                                else:
+                                    query_embedding = semantic_cache.get_embedding(request.question)
+                                    l2_result = semantic_cache.get(request.question, query_embedding=query_embedding)
+                                    if l2_result:
+                                        cached_docs, l2_meta = l2_result
+                                        logger.info(
+                                            f"⚡ 早期缓存L2命中(相似度{l2_meta.get('similarity', 0):.1%})，跳过路由+重写：{request.question[:30]}..."
+                                        )
+                            except Exception as l2_err:
+                                logger.warning(f"L2缓存检查异常，跳过：{l2_err}")
+                    except Exception as cache_err:
+                        logger.warning(f"缓存检查异常：{cache_err}")
 
-                grade_next_node = getattr(grade_command, "goto", "answer_generation")
+                async def _run_route():
+                    """异步执行路由（在线程池中运行同步函数）"""
+                    nonlocal route_command
+                    loop = asyncio.get_event_loop()
+                    route_command = await loop.run_in_executor(None, router_node, dict(current_state))
+
+                # 并行执行缓存检查和路由
+                await asyncio.gather(_check_cache(), _run_route())
+
+                cache_check_ms = (time.time() - cache_check_start) * 1000
+                logger.info(f"并行（缓存+路由）耗时：{cache_check_ms:.2f}ms")
+
+            if cached_answer:
+                # L0答案缓存命中：直接返回完整答案，跳过所有处理
+                yield await emit_data(cached_answer)
+            elif cached_docs:
+                # L2文档缓存命中：跳过路由、症状解析、重写，直接用缓存文档生成答案
+                current_state["retrieved_docs"] = cached_docs
+                current_state["rewritten_query"] = request.question
+                logger.info(f"缓存命中，直接进入答案生成：request_id={request_id}, docs={len(cached_docs)}")
+                # 推送文档来源元数据
+                sources = [
+                    {
+                        "source": doc.metadata.get("source", "未知来源"),
+                        "file_path": doc.metadata.get("file_path", ""),
+                    }
+                    for doc in cached_docs
+                ]
+                if sources:
+                    yield f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
+                full_answer = ""
+                async for token in stream_answer_generation(current_state):
+                    full_answer += token
+                    yield await emit_data(token)
+                if full_answer and not has_profile:
+                    _save_answer_cache(request.question, full_answer)
+            else:
+                # 缓存未命中：路由已完成，直接使用路由结果
+                next_node = getattr(route_command, "goto", "direct_answer") if route_command else "direct_answer"
                 logger.info(
-                    f"文档评分完成：request_id={request_id}, thread_id={thread_id}, next_node={grade_next_node}, docs={len(current_state.get('retrieved_docs') or [])}"
+                    f"流式请求路由完成：request_id={request_id}, thread_id={thread_id}, next_node={next_node}"
                 )
 
-                if grade_next_node == "query_rewrite":
+                if next_node == "direct_answer":
+                    async for token in stream_direct_answer(current_state):
+                        yield await emit_data(token)
+
+                elif next_node == "vision_analysis":
+                    # 图片问诊分支（参考蚂蚁阿福的多模态问诊）
+                    logger.info(f"开始流式图片问诊：request_id={request_id}, thread_id={thread_id}")
+                    async for token in stream_vision_answer(current_state):
+                        yield await emit_data(token)
+
+                else:
+                    if next_node == "symptom_analysis":
+                        symptom_state = symptom_analysis_node(current_state)
+                        if symptom_state:
+                            current_state.update(symptom_state)
+
                     rewrite_state = query_rewrite_node(current_state)
                     if rewrite_state:
                         current_state.update(rewrite_state)
@@ -334,18 +451,53 @@ async def stream(request: ChatRequest, http_request: Request):
                     grade_update = getattr(grade_command, "update", None) or {}
                     if grade_update:
                         current_state.update(grade_update)
-                    grade_next_node = getattr(grade_command, "goto", "answer_generation")
 
-                if grade_next_node == "answer_generation" and current_state.get("final_answer"):
-                    yield await emit_data(current_state["final_answer"])
-                elif current_state.get("retrieved_docs"):
-                    logger.info(f"开始流式生成 RAG 答案：request_id={request_id}, thread_id={thread_id}")
-                    async for token in stream_answer_generation(current_state):
-                        yield await emit_data(token)
-                else:
-                    logger.info(f"无检索文档，降级为流式直接回答：request_id={request_id}, thread_id={thread_id}")
-                    async for token in stream_direct_answer(current_state):
-                        yield await emit_data(token)
+                    grade_next_node = getattr(grade_command, "goto", "answer_generation")
+                    logger.info(
+                        f"文档评分完成：request_id={request_id}, thread_id={thread_id}, next_node={grade_next_node}, docs={len(current_state.get('retrieved_docs') or [])}"
+                    )
+
+                    if grade_next_node == "query_rewrite":
+                        rewrite_state = query_rewrite_node(current_state)
+                        if rewrite_state:
+                            current_state.update(rewrite_state)
+
+                        retrieval_state = knowledge_retrieval_node(current_state)
+                        if retrieval_state:
+                            current_state.update(retrieval_state)
+
+                        grade_command = grade_documents_node(current_state)
+                        grade_update = getattr(grade_command, "update", None) or {}
+                        if grade_update:
+                            current_state.update(grade_update)
+                        grade_next_node = getattr(grade_command, "goto", "answer_generation")
+
+                    if grade_next_node == "answer_generation" and current_state.get("final_answer"):
+                        yield await emit_data(current_state["final_answer"])
+                        if not has_profile:
+                            _save_answer_cache(request.question, current_state["final_answer"])
+                    elif current_state.get("retrieved_docs"):
+                        logger.info(f"开始流式生成 RAG 答案：request_id={request_id}, thread_id={thread_id}")
+                        # 推送文档来源元数据（独立于LLM回答，前端单独渲染）
+                        sources = [
+                            {
+                                "source": doc.metadata.get("source", "未知来源"),
+                                "file_path": doc.metadata.get("file_path", ""),
+                            }
+                            for doc in current_state.get("retrieved_docs", [])
+                        ]
+                        if sources:
+                            yield f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
+                        full_answer = ""
+                        async for token in stream_answer_generation(current_state):
+                            full_answer += token
+                            yield await emit_data(token)
+                        if full_answer and not has_profile:
+                            _save_answer_cache(request.question, full_answer)
+                    else:
+                        logger.info(f"无检索文档，降级为流式直接回答：request_id={request_id}, thread_id={thread_id}")
+                        async for token in stream_direct_answer(current_state):
+                            yield await emit_data(token)
 
             total_elapsed_ms = (time.time() - request_start_time) * 1000
             logger.info(
@@ -477,6 +629,7 @@ async def delete_cache(query: str):
 
 # 启动入口
 if __name__ == '__main__':
+    import os
     import uvicorn
 
     uvicorn.run("app.api.routes:app", host="0.0.0.0", port=8000, reload=True)
