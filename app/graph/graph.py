@@ -45,8 +45,8 @@ from app.graph.nodes import (
     vision_analysis_node,
     query_rewrite_node,
     grade_documents_node,
-    should_summarize,
-    summarize_conversation_node
+    should_update_snapshot,
+    update_clinical_snapshot_node
 )
 from app.memory import get_long_term_memory
 from app.memory.checkpointer import get_checkpointer
@@ -94,8 +94,9 @@ def build_graph() -> StateGraph:
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("safety_check", safety_check_node)
     builder.add_node("query_rewrite", query_rewrite_node)
-    # 自定义消息总结
-    builder.add_node("summarize_conversation", summarize_conversation_node)
+    # L2会话层：临床状态快照（滑动窗口触发）
+    builder.add_node("update_snapshot", update_clinical_snapshot_node)
+    builder.add_edge("update_snapshot", END)
 
     # ===== 添加边 =====
 
@@ -129,35 +130,35 @@ def build_graph() -> StateGraph:
 
         builder.add_conditional_edges(
             "safety_check",
-            should_summarize,
+            should_update_snapshot,
             {
-                "summarize": "summarize_conversation",
+                "update_snapshot": "update_snapshot",
                 END: END
             }
         )
     else:
-        # 关闭 safety_check，直接跳到总结判断
+        # 关闭 safety_check，直接跳到快照判断
         builder.add_conditional_edges(
             "direct_answer",
-            should_summarize,
+            should_update_snapshot,
             {
-                "summarize": "summarize_conversation",
+                "update_snapshot": "update_snapshot",
                 END: END
             }
         )
         builder.add_conditional_edges(
             "vision_analysis",
-            should_summarize,
+            should_update_snapshot,
             {
-                "summarize": "summarize_conversation",
+                "update_snapshot": "update_snapshot",
                 END: END
             }
         )
         builder.add_conditional_edges(
             "answer_generation",
-            should_summarize,
+            should_update_snapshot,
             {
-                "summarize": "summarize_conversation",
+                "update_snapshot": "update_snapshot",
                 END: END
             }
         )

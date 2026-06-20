@@ -31,6 +31,36 @@ def get_llm(model_name: str = None, model_url: str = None, streaming: bool = Fal
 
 
 @lru_cache(maxsize=2)
+def get_local_llm() -> ChatOpenAI:
+    """获取本地模型实例（Ollama）
+
+    用于中间节点（查询重写/档案提取/快照更新），降低延迟：
+        - 本地推理，无网络延迟
+        - TTFT 约 0.2-0.5s（热启动）
+        - 需先安装 Ollama 并拉取模型：ollama pull qwen2.5:3b
+
+    当 LOCAL_MODEL_ENABLED=False 时，降级使用 API 模型
+
+    Returns:
+        ChatOpenAI: 本地 LLM 实例
+    """
+    config = get_config()
+
+    if not config.LOCAL_MODEL_ENABLED:
+        # 未启用本地模型，降级使用 API 轻量模型
+        return get_rewrite_llm()
+
+    return ChatOpenAI(
+        model=config.LOCAL_MODEL_NAME,
+        base_url=config.LOCAL_MODEL_URL,
+        api_key=config.LOCAL_MODEL_API_KEY,
+        temperature=0.0,           # 结构化提取/改写不需要创造性
+        request_timeout=30,        # 本地模型一般很快，30秒足够
+        max_retries=1,
+    )
+
+
+@lru_cache(maxsize=2)
 def get_rewrite_llm() -> ChatOpenAI:
     """获取查询重写专用的轻量 LLM 实例
 

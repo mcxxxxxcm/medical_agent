@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     SYMPTOM_MODEL_NAME: str = "glm-4-flash"  # 症状解析专用模型（快速轻量）
     VISION_MODEL_NAME: str = "glm-4v-plus"  # 多模态视觉模型（图片问诊）
 
+    # ===== 本地模型配置（Ollama） =====
+    # 中间节点（查询重写/档案提取/快照更新）使用本地模型，降低延迟
+    LOCAL_MODEL_NAME: str = "qwen2.5:3b"       # Ollama 模型名
+    LOCAL_MODEL_URL: str = "http://localhost:11434/v1"  # Ollama 默认地址
+    LOCAL_MODEL_API_KEY: str = "ollama"         # Ollama 不需要真实 key，填任意值
+    LOCAL_MODEL_ENABLED: bool = False            # 是否启用本地模型（需先安装 Ollama 并拉取模型）
+
     # ===== Embedding 配置 =====
     # EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_MODEL: str = "embedding-3"
@@ -59,10 +66,12 @@ class Settings(BaseSettings):
     # ===== 日志配置 =====
     LOG_LEVEL: str = "INFO"
 
-    # ===== 上下文窗口管理 =====
-    MAX_MESSAGES: int = 20  # 最大消息数量
-    KEEP_RECENT_MESSAGES: int = 6  # 保留最近的消息数量
-    SUMMARY_TRIGGER: int = 14  # 触发总结的消息数量阈值
+    # ===== 上下文窗口管理（三层架构） =====
+    # L1 永久层：Profile（PostgresStore，跨会话）- 姓名、年龄、过敏史
+    # L2 会话层：Clinical Snapshot（Checkpointer State，单会话）- 症状、用药、诊断
+    # L3 短期窗口：Messages（滑动窗口，最近3轮）
+    KEEP_RECENT_MESSAGES: int = 6  # 保留最近的消息数量（3轮=6条）
+    SNAPSHOT_TRIGGER: int = 8      # 触发快照更新的消息数量阈值（4轮=8条）
 
     # ===== 性能优化 =====
     ENABLE_SAFETY_CHECK: bool = False  # 是否启用安全检查（关闭可节省1次LLM调用）

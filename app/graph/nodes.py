@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_config
 from app.graph.state import MedicalAssistantState
-from app.core.llm import get_llm, get_rewrite_llm, get_symptom_llm, get_vision_llm
+from app.core.llm import get_llm, get_rewrite_llm, get_symptom_llm, get_vision_llm, get_local_llm
 from app.memory import get_long_term_memory
 from app.core.app_logging import get_logger
 from app.rag.hybrid_retriever import get_hybrid_retriever
@@ -502,7 +502,7 @@ def router_node(state: MedicalAssistantState) -> Command:
         question_type = rule_based_route
     else:
         try:
-            llm = get_llm()
+            llm = get_local_llm()
             prompt = f"""请判断以下问题的类型，只返回类型名称：
 问题：{question}
 
@@ -569,9 +569,9 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.info(f"规则提取症状成功，跳过LLM：{rule_result}")
         return {"symptoms": rule_result}
 
-    # 规则未命中：调用快速模型提取（glm-4-flash，首token ~1-2秒）
+    # 规则未命中：调用本地模型提取（避免API延迟）
     try:
-        llm = get_symptom_llm()
+        llm = get_local_llm()
 
         prompt = f"""你是一位专业的症状分析助手，负责从用户描述中提取结构化的症状信息。
 
@@ -806,15 +806,21 @@ def strip_rag_documents_from_history(history_text: str) -> str:
     return result
 
 
-def get_conversation_history_text(state: MedicalAssistantState) -> str:
+def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 3) -> str:
     """构建对话历史文本（含RAG文档MicroCompact压缩），不含临床快照
 
     临床快照由 build_rag_prompt 单独注入，避免重复
+    max_rounds: 最多注入最近N轮对话（1轮=1条Human+1条AI），控制prompt大小
     """
     messages = state.get("messages", [])
 
     if not messages:
         return ""
+
+    # 只取最近 max_rounds 轮（2*max_rounds 条消息）
+    max_msgs = max_rounds * 2
+    if len(messages) > max_msgs:
+        messages = messages[-max_msgs:]
 
     # MicroCompact：对旧AI消息中的RAG文档内容进行压缩
     last_ai_index = -1
@@ -832,6 +838,9 @@ def get_conversation_history_text(state: MedicalAssistantState) -> str:
             history_parts.append(f"用户：{msg.content}")
         elif isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            # AI消息截断，避免过长
+            if len(content) > 200:
+                content = content[:200] + "..."
             if i != last_ai_index:
                 content = strip_rag_documents_from_history(content)
             history_parts.append(f"助手：{content}")
@@ -947,19 +956,25 @@ def _build_followup_hints(symptoms: Optional[Dict[str, Any]]) -> str:
 
 
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
-    """构建 RAG 问答提示词（含对话历史 + 循证标注 + 主动追问 + 冻结层用户档案）"""
+    """构建 RAG 问答提示词（三层上下文架构）
+
+    L1 永久层：用户档案（冻结层，永不压缩）
+    L2 会话层：临床状态快照（JSON结构化，增量更新）
+    L3 短期窗口：对话历史（滑动窗口，最近3轮）
+    """
+    # L2 会话层：临床状态快照
     checkpoint = state.get("clinical_checkpoint")
     checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
 
-    # 冻结层：用户档案独立注入，不嵌入 enhanced_question，确保摘要时不会丢失
+    # L1 永久层：用户档案独立注入，确保摘要时不会丢失
     frozen_profile_section = ""
     profile_text = get_user_context_prompt(user_profile)
     if profile_text:
-        frozen_profile_section = f"【用户档案（冻结层，永不压缩）】\n{profile_text}\n"
+        frozen_profile_section = f"【L1 用户档案（永不压缩）】\n{profile_text}\n"
 
-    # 对话历史：注入近期对话，让 LLM 理解上下文（如用户之前提到的用药情况）
+    # L3 短期窗口：注入近期对话历史
     history_text = get_conversation_history_text(state)
-    history_section = f"【对话历史】\n{history_text}\n" if history_text else ""
+    history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
 
     if not retrieved_docs:
         return f"{frozen_profile_section}{history_section}请回答以下问题：\n{question}"
@@ -984,36 +999,35 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     # 生成追问引导
     followup = _build_followup_hints(symptoms)
 
+    # L2 快照独立注入，确保即使对话历史为空也可见
+    checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
+
     return f"""你是医疗助手，基于文档和对话历史回答问题。{frozen_profile_section}
 【文档】
 {context}
 
-{f"【临床快照】{checkpoint_text}" if checkpoint_text else ""}
-{history_section}【问题】{question}
+{checkpoint_section}{history_section}【问题】{question}
 
 要求：基于文档和对话历史回答，结合用户之前提到的信息（如用药、症状等）；无相关信息则说明；结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}。"""
 
-    # 注意：history_section 已包含临床快照（通过 get_context_with_summary），
-    # 但此处 checkpoint_text 单独注入确保快照始终可见，即使对话历史为空
-
 
 def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:
-    """构建直接回答提示词（含冻结层用户档案）"""
+    """构建直接回答提示词（三层上下文架构）"""
     checkpoint = state.get("clinical_checkpoint")
     checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
 
-    # 冻结层：用户档案独立注入，不嵌入 enhanced_question，确保摘要时不会丢失
+    # L1 永久层：用户档案
     frozen_profile_section = ""
     profile_text = get_user_context_prompt(user_profile)
     if profile_text:
-        frozen_profile_section = f"【用户档案（冻结层，永不压缩）】\n{profile_text}\n"
+        frozen_profile_section = f"【L1 用户档案（永不压缩）】\n{profile_text}\n"
+
+    # L2 会话层：临床快照
+    checkpoint_section = f"【L2 临床快照】\n{checkpoint_text if checkpoint_text else '无'}\n"
 
     return f"""你是一个友好的医疗助手。
 
-{frozen_profile_section}【临床状态快照】
-{checkpoint_text if checkpoint_text else ""}
-
-【用户问题】
+{frozen_profile_section}{checkpoint_section}【用户问题】
 {question}
 
 请简洁友好地回复用户。如果是问候语，请热情回复。如果是感谢，请礼貌回应。
@@ -1134,7 +1148,7 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     content = state.get("final_answer", "")
 
     try:
-        llm = get_llm()
+        llm = get_local_llm()
         structured_llm = llm.with_structured_output(SafetyCheckOutput)
 
         prompt = f"""你是一位医疗安全审核专家，负责审核医疗建议的安全性。
@@ -1241,7 +1255,7 @@ def profile_extraction_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {}
 
     try:
-        llm = get_llm()
+        llm = get_local_llm()
         structured_llm = llm.with_structured_output(ProfileExtractionOutput)
 
         prompt = f"""从以下用户问题中提取用户的个人信息：
@@ -1516,7 +1530,8 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         "恶心", "呕吐", "腹泻", "拉肚子", "胸闷", "胸痛", "呼吸困难", "不舒服",
         "过敏", "便秘", "失眠", "头晕", "乏力", "麻木", "出血", "溃疡", "骨折",
         "扭伤", "抽筋", "水肿", "贫血", "结石", "鼻炎", "咽炎", "皮炎", "湿疹",
-        "哮喘", "痛风", "甲亢", "甲减", "颈椎", "腰椎", "关节炎",
+        "哮喘", "痛风", "甲亢", "甲减", "颈椎", "腰椎", "关节炎", "牙痛", "牙疼",
+        "耳鸣", "眼痛", "背痛", "腿痛", "腿麻", "手麻", "皮疹", "瘙痒",
         # 疾病相关（具体疾病名）
         "高血压", "糖尿病", "感冒", "肺炎", "胃炎", "肝炎", "肾炎", "支气管",
         "冠心病", "脑梗", "脂肪肝", "甲状腺",
@@ -1542,52 +1557,31 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
             return {"rewritten_query": question}
 
     try:
-        # 构建上下文感知的重写提示
-        # 注入临床快照和最近对话，让模糊问题能被重写为具体查询
-        context_parts = []
+        # 3B模型无法正确使用上下文信息，重写时只做简单的关键词补全
+        # 不注入临床快照和对话历史，避免模型混淆当前问题与历史信息
+        llm = get_local_llm()
+        prompt = f"""将用户问题改写为医学检索查询。
 
-        # 临床快照
-        checkpoint = state.get("clinical_checkpoint")
-        if checkpoint:
-            checkpoint_text = format_clinical_checkpoint(checkpoint)
-            context_parts.append(f"【临床状态快照】\n{checkpoint_text}")
+用户问题：{question}
 
-        # 最近2轮对话（避免过长）
-        messages = state.get("messages", [])
-        recent_msgs = messages[-4:] if len(messages) > 4 else messages  # 最近2轮=4条消息
-        if recent_msgs:
-            history_lines = []
-            for msg in recent_msgs:
-                if isinstance(msg, HumanMessage):
-                    history_lines.append(f"用户：{msg.content}")
-                elif isinstance(msg, AIMessage):
-                    # AI消息截断，避免过长
-                    content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                    history_lines.append(f"助手：{content[:100]}...")
-            if history_lines:
-                context_parts.append(f"【最近对话】\n" + "\n".join(history_lines))
-
-        context_section = "\n\n".join(context_parts) if context_parts else "无上下文信息"
-
-        # 优化：使用轻量模型进行查询重写，降低延迟
-        llm = get_rewrite_llm()
-        prompt = f"""你是一位医疗检索查询优化助手，请将用户问题重写为更适合知识库检索的短查询。
-
-{context_section}
-
-用户问题：
-{question}
-
-要求：
-1. 结合上下文将模糊指代重写为具体查询（如"换什么药"→"对乙酰氨基酚无效后替代止痛药选择"）
-2. 只输出重写后的查询
-3. 保留核心医学实体和症状词
-4. 不要解释，不要列出步骤，不要输出 JSON
-5. 如果无需重写，直接返回原问题"""
+规则：
+1. 如果问题已明确具体，原样返回
+2. 如果问题模糊（如"换什么药"、"还有呢"），补充具体症状或药物信息
+3. 只输出改写结果，不要解释
+4. 不要编造用户未提到的症状或药物"""
 
         raw_response = llm.invoke(prompt)
         raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
         rewritten_query = normalize_query_text(raw_text, question)
+
+        # 重写守卫：如果重写结果丢失了原问题的核心症状词，则回退到原问题
+        _core_symptoms = ["头痛", "头疼", "肚子疼", "腹痛", "发烧", "咳嗽", "恶心", "呕吐",
+                          "腹泻", "拉肚子", "胸闷", "胸痛", "过敏", "头晕", "失眠"]
+        original_has_symptom = any(s in question for s in _core_symptoms)
+        rewrite_lost_symptom = original_has_symptom and not any(s in rewritten_query for s in _core_symptoms if s in question)
+        if rewrite_lost_symptom:
+            logger.warning(f"重写丢失核心症状，回退到原问题：{rewritten_query} -> {question}")
+            rewritten_query = question
 
         if is_same_query(rewritten_query, question):
             logger.info("查询重写结果与原问题一致，直接复用原问题")
@@ -1601,42 +1595,42 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {"rewritten_query": question}
 
 
-def should_summarize(state: MedicalAssistantState) -> str:
-    """判断是否需要总结
-    Returns：
-        "summarize"：需要
-        "END"：不需要
-    """
-    max_messages = config.MAX_MESSAGES
-    keep_recent_messages = config.KEEP_RECENT_MESSAGES
-    summarize_trigger = config.SUMMARY_TRIGGER
+def should_update_snapshot(state: MedicalAssistantState) -> str:
+    """判断是否需要更新临床状态快照（L2会话层）
 
+    三层上下文管理架构：
+    - L1 永久层：Profile（跨会话持久化，永不压缩）
+    - L2 会话层：Clinical Snapshot（单会话，JSON结构化快照）
+    - L3 短期窗口：Messages（滑动窗口，保留最近3轮）
+
+    触发条件：messages > SNAPSHOT_TRIGGER 时，将早期消息提取为快照后删除
+    """
+    snapshot_trigger = config.SNAPSHOT_TRIGGER
     messages = state.get("messages", [])
 
-    if len(messages) > summarize_trigger:
-        logger.info(f"消息数量{len(messages)}超过阈值{summarize_trigger}，触发总结")
-        return "summarize"
+    if len(messages) > snapshot_trigger:
+        logger.info(f"消息数量{len(messages)}超过阈值{snapshot_trigger}，触发快照更新")
+        return "update_snapshot"
 
     from langgraph.graph import END
     return END
 
-@timing_decorator("临床状态快照")
-def summarize_conversation_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """临床状态快照节点
-    功能描述：
-        将早期对话历史总结为结构化临床状态快照（JSON Checkpoint）
-        保存最近的消息，总结并删除早期消息
 
-    设计理念：
-        1、当messages数量超过阈值时触发
-        2、保留最近N条消息
-        3、将早期消息总结为结构化临床快照存储在clinical_checkpoint
-        4、快照会累计更新，而非每次重新生成
-        5、使用ClinicalCheckpointOutput结构化输出，确保字段一致性
+@timing_decorator("临床状态快照")
+def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any]:
+    """L2会话层：临床状态快照节点
+
+    三层上下文管理策略：
+    - 当 messages > SNAPSHOT_TRIGGER 时触发
+    - 从早期消息中提取/更新结构化临床快照（JSON）
+    - 删除已提取的早期消息，保留最近 KEEP_RECENT_MESSAGES 条（3轮）
+    - 快照增量更新，非全量重建
+
+    与 L1 Profile 的分工：
+    - Profile：跨会话持久信息（姓名、年龄、性别、过敏史）
+    - Snapshot：当前会话的临床状态（主诉、症状时间线、用药记录、诊断）
     """
-    max_messages = config.MAX_MESSAGES
     keep_recent_messages = config.KEEP_RECENT_MESSAGES
-    summarize_trigger = config.SUMMARY_TRIGGER
 
     logger.info(f"临床状态快照节点开始执行")
 
@@ -1647,31 +1641,30 @@ def summarize_conversation_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.info(f"消息数量{len(messages)}未超过保留数量，跳过快照")
         return {}
 
-    # 获取需要总结的消息（早于keep_recent_messages数量的消息都将总结）
-    messages_to_summarize = messages[:-keep_recent_messages]
+    # 获取需要提取的消息（早于keep_recent_messages的消息）
+    messages_to_extract = messages[:-keep_recent_messages]
 
-    if not messages_to_summarize:
+    if not messages_to_extract:
         return {}
 
-    logger.info(f"开始总结{len(messages_to_summarize)}条早期消息为临床状态快照")
+    logger.info(f"从{len(messages_to_extract)}条早期消息中提取临床状态快照")
 
     try:
-        llm = get_llm()
+        llm = get_local_llm()
 
         # 格式化消息为文本
-        formatted_massages = []
-        for msg in messages_to_summarize:
+        formatted_messages = []
+        for msg in messages_to_extract:
             role = "用户" if isinstance(msg, HumanMessage) else "助手"
             if isinstance(msg, SystemMessage):
                 role = "系统"
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            formatted_massages.append(f"[{role}]: {content}")
+            formatted_messages.append(f"[{role}]: {content}")
 
-        messages_text = "\n".join(formatted_massages)
+        messages_text = "\n".join(formatted_messages)
 
-        # 构建快照提示
-        # 冻结层提示：用户档案已单独存储，快照中不需要重复记录，但应引用
-        frozen_layer_note = "注意：用户档案信息（过敏史、既往病史等）已单独存储在冻结层，不需要在快照中重复记录，但快照中应引用这些信息（如'结合用户青霉素过敏史'）。"
+        # 冻结层提示：Profile信息已单独存储，快照中不重复
+        frozen_layer_note = "注意：用户档案信息（过敏史、既往病史等）已单独存储在冻结层（L1），不需要在快照中重复记录，但快照中应引用这些信息（如'结合用户青霉素过敏史'）。"
 
         if existing_checkpoint:
             existing_json = json.dumps(existing_checkpoint, ensure_ascii=False, indent=2)
@@ -1717,17 +1710,17 @@ def summarize_conversation_node(state: MedicalAssistantState) -> Dict[str, Any]:
         )
         new_checkpoint = result.model_dump()
 
-        # 删除已总结的消息
-        delete_messages = [RemoveMessage(id=m.id) for m in messages_to_summarize if hasattr(m, 'id') and m.id]
+        # 删除已提取的消息（滑动窗口：保留最近3轮，删除其余）
+        delete_messages = [RemoveMessage(id=m.id) for m in messages_to_extract if hasattr(m, 'id') and m.id]
 
-        logger.info(f"临床状态快照生成完成，删除 {len(delete_messages)} 条消息")
+        logger.info(f"临床状态快照更新完成，删除 {len(delete_messages)} 条早期消息，保留最近 {keep_recent_messages} 条")
         return {
             "clinical_checkpoint": new_checkpoint,
             "messages": delete_messages,
         }
 
     except Exception as e:
-        logger.error(f"临床状态快照生成失败：{str(e)}")
+        logger.error(f"临床状态快照更新失败：{str(e)}")
         return {}
 
 def format_clinical_checkpoint(checkpoint: Dict[str, Any]) -> str:

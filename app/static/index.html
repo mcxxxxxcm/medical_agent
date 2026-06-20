@@ -439,50 +439,54 @@
         const decoder = new TextDecoder();
         let fullAnswer = '';
         let currentSources = [];
+        let buffer = '';  // SSE 跨 chunk 缓冲
 
         while (true) {
             const {done, value} = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value);
-            console.log('Received chunk:', chunk); // 调试日志
+            buffer += decoder.decode(value, {stream: true});
 
-            const lines = chunk.split('\n');
+            // 按双换行分割完整的 SSE 事件
+            const parts = buffer.split('\n\n');
+            // 最后一段可能不完整，留在 buffer 等下次拼接
+            buffer = parts.pop() || '';
 
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
+            for (const part of parts) {
+                const line = part.trim();
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6);
 
-                    if (data === '[DONE]') {
-                        // 流结束后渲染文档来源
-                        if (currentSources.length > 0) {
-                            const sourcesDiv = document.createElement('div');
-                            sourcesDiv.className = 'sources';
-                            sourcesDiv.innerHTML = '📚 来源：' + currentSources.map(s => s.source).join(', ');
-                            loadingDiv.appendChild(sourcesDiv);
-                            scrollToBottom();
-                        }
-                        break;
-                    } else if (data.startsWith('[ERROR]')) {
-                        loadingDiv.innerHTML = data;
-                    } else {
-                        try {
-                            const parsed = JSON.parse(data);
-                            // sources 事件：文档来源元数据
-                            if (parsed.type === 'sources' && parsed.sources) {
-                                currentSources = parsed.sources;
-                            } else {
-                                // token 文本
-                                fullAnswer += parsed;
-                                loadingDiv.innerHTML = formatAnswer(fullAnswer);
-                                scrollToBottom();
-                            }
-                        } catch (e) {
-                            fullAnswer += data;
-                            loadingDiv.innerHTML = formatAnswer(fullAnswer);
-                            scrollToBottom();
-                        }
+                if (data === '[DONE]') {
+                    if (currentSources.length > 0) {
+                        const sourcesDiv = document.createElement('div');
+                        sourcesDiv.className = 'sources';
+                        sourcesDiv.innerHTML = '📚 来源：' + currentSources.map(s => s.source).join(', ');
+                        loadingDiv.appendChild(sourcesDiv);
+                        scrollToBottom();
                     }
+                    continue;
+                }
+
+                if (data.startsWith('[ERROR]')) {
+                    loadingDiv.innerHTML = data;
+                    continue;
+                }
+
+                try {
+                    const parsed = JSON.parse(data);
+                    if (typeof parsed === 'string') {
+                        // token 文本（json.dumps("xxx") → "xxx"）
+                        fullAnswer += parsed;
+                        loadingDiv.innerHTML = formatAnswer(fullAnswer);
+                        scrollToBottom();
+                    } else if (parsed && parsed.type === 'sources') {
+                        // 文档来源元数据事件
+                        currentSources = parsed.sources || [];
+                    }
+                    // 其他对象类型忽略，不拼接到答案
+                } catch (e) {
+                    // JSON 解析失败，忽略（不拼接到答案，避免 [object Object]）
                 }
             }
         }

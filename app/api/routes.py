@@ -15,10 +15,11 @@ API接口：
     GET /api/health：健康检查
 """
 from contextlib import asynccontextmanager
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 import time
 import uuid
+import asyncio
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -51,6 +52,16 @@ from fastapi.staticfiles import StaticFiles
 import jieba
 
 logger = get_logger(__name__)
+
+# Per-thread 快照更新锁，防止并发快照更新导致竞态
+_snapshot_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _get_snapshot_lock(thread_id: str) -> asyncio.Lock:
+    """获取指定线程的快照更新锁（懒创建）"""
+    if thread_id not in _snapshot_locks:
+        _snapshot_locks[thread_id] = asyncio.Lock()
+    return _snapshot_locks[thread_id]
 
 
 # Pydantic模型
@@ -127,6 +138,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"语义缓存预热失败：{e}")
     logger.info("缓存预热完成")
+
+    # 预热本地模型（Ollama），避免首次请求冷启动
+    try:
+        config = get_config()
+        if getattr(config, 'LOCAL_MODEL_ENABLED', False):
+            logger.info("预热本地模型...")
+            from app.core.llm import get_local_llm
+            local_llm = get_local_llm()
+            local_llm.invoke("你好")  # 简单请求触发模型加载
+            logger.info("本地模型预热完成")
+    except Exception as e:
+        logger.warning(f"本地模型预热失败（不影响功能，首次请求会稍慢）：{e}")
 
     yield
 
@@ -523,6 +546,7 @@ async def stream(request: ChatRequest, http_request: Request):
             # 保存对话历史到 checkpointer，确保下一轮能读取
             try:
                 from langchain_core.messages import HumanMessage, AIMessage
+                from app.graph.nodes import should_update_snapshot, update_clinical_snapshot_node
                 graph = await get_graph()
                 checkpoint_config = {"configurable": {"thread_id": thread_id}}
 
@@ -540,6 +564,46 @@ async def stream(request: ChatRequest, http_request: Request):
                         {"messages": [AIMessage(content=full_answer)]},
                         as_node="answer_generation",
                     )
+
+                # 快照更新改为后台异步任务，不阻塞当前响应
+                # 原因：快照更新需要调用LLM（3-5s），用户已看到回答无需等待
+                # 使用 asyncio.create_task 让快照更新在后台执行
+                # Per-thread 锁：防止同一会话的并发快照更新导致竞态
+                async def _background_snapshot_update():
+                    lock = _get_snapshot_lock(thread_id)
+                    if lock.locked():
+                        # 已有快照更新在执行，跳过本次
+                        # 下次请求会重新检查是否需要更新
+                        logger.info(f"快照更新已在进行中，跳过本次（thread_id={thread_id}）")
+                        return
+                    async with lock:
+                        try:
+                            # 重新读取最新状态（可能在等待锁期间已发生变化）
+                            state_snapshot = await graph.aget_state(checkpoint_config)
+                            if not state_snapshot or not state_snapshot.values:
+                                return
+                            bg_state = {
+                                "messages": state_snapshot.values.get("messages", []),
+                                "clinical_checkpoint": state_snapshot.values.get("clinical_checkpoint"),
+                            }
+                            # 再次检查是否仍需更新（可能之前的快照已经处理了）
+                            snapshot_decision = should_update_snapshot(bg_state)
+                            if snapshot_decision != "update_snapshot":
+                                logger.info(f"快照已由前次任务处理，无需重复更新")
+                                return
+                            logger.info("后台触发临床状态快照更新")
+                            snapshot_result = update_clinical_snapshot_node(bg_state)
+                            if snapshot_result:
+                                await graph.aupdate_state(
+                                    checkpoint_config,
+                                    snapshot_result,
+                                    as_node="update_snapshot",
+                                )
+                                logger.info(f"临床状态快照已更新，删除 {len(snapshot_result.get('messages', []))} 条早期消息")
+                        except Exception as e:
+                            logger.warning(f"后台快照更新失败（不影响后续对话）：{e}")
+
+                asyncio.create_task(_background_snapshot_update())
 
                 logger.info(f"对话历史已保存")
             except Exception as e:
