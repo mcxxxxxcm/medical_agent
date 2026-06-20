@@ -807,25 +807,36 @@ def strip_rag_documents_from_history(history_text: str) -> str:
 
 
 def get_conversation_history_text(state: MedicalAssistantState) -> str:
-    """构建带摘要的对话历史文本（含RAG文档MicroCompact压缩）"""
-    context_messages = get_context_with_summary(state)
-    if not context_messages:
+    """构建对话历史文本（含RAG文档MicroCompact压缩），不含临床快照
+
+    临床快照由 build_rag_prompt 单独注入，避免重复
+    """
+    messages = state.get("messages", [])
+
+    if not messages:
         return ""
 
+    # MicroCompact：对旧AI消息中的RAG文档内容进行压缩
+    last_ai_index = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], AIMessage):
+            last_ai_index = i
+            break
+
     history_parts = []
-    for msg in context_messages:
+    for i, msg in enumerate(messages):
         if isinstance(msg, SystemMessage):
-            history_parts.append(f"{msg.content}")
+            # 跳过临床快照的 SystemMessage，由 build_rag_prompt 单独注入
+            continue
         elif isinstance(msg, HumanMessage):
             history_parts.append(f"用户：{msg.content}")
-        else:
-            history_parts.append(f"助手：{msg.content}")
-    result = "\n".join(history_parts)
+        elif isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            if i != last_ai_index:
+                content = strip_rag_documents_from_history(content)
+            history_parts.append(f"助手：{content}")
 
-    # MicroCompact：剥离历史对话中的RAG文档原文，替换为引用标记
-    result = strip_rag_documents_from_history(result)
-
-    return result
+    return "\n".join(history_parts)
 
 
 def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit: int = 200) -> List[Dict[str, str]]:
@@ -936,7 +947,7 @@ def _build_followup_hints(symptoms: Optional[Dict[str, Any]]) -> str:
 
 
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
-    """构建 RAG 问答提示词（含循证标注 + 主动追问 + 冻结层用户档案）"""
+    """构建 RAG 问答提示词（含对话历史 + 循证标注 + 主动追问 + 冻结层用户档案）"""
     checkpoint = state.get("clinical_checkpoint")
     checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
 
@@ -946,8 +957,12 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     if profile_text:
         frozen_profile_section = f"【用户档案（冻结层，永不压缩）】\n{profile_text}\n"
 
+    # 对话历史：注入近期对话，让 LLM 理解上下文（如用户之前提到的用药情况）
+    history_text = get_conversation_history_text(state)
+    history_section = f"【对话历史】\n{history_text}\n" if history_text else ""
+
     if not retrieved_docs:
-        return f"{frozen_profile_section}请回答以下问题：\n{question}"
+        return f"{frozen_profile_section}{history_section}请回答以下问题：\n{question}"
 
     formatted_docs = []
     for i, doc in enumerate(retrieved_docs, 1):
@@ -969,14 +984,17 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     # 生成追问引导
     followup = _build_followup_hints(symptoms)
 
-    return f"""你是医疗助手，基于文档回答问题。{frozen_profile_section}
+    return f"""你是医疗助手，基于文档和对话历史回答问题。{frozen_profile_section}
 【文档】
 {context}
 
 {f"【临床快照】{checkpoint_text}" if checkpoint_text else ""}
-【问题】{question}
+{history_section}【问题】{question}
 
-要求：基于文档回答，无相关信息则说明；结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}。"""
+要求：基于文档和对话历史回答，结合用户之前提到的信息（如用药、症状等）；无相关信息则说明；结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}。"""
+
+    # 注意：history_section 已包含临床快照（通过 get_context_with_summary），
+    # 但此处 checkpoint_text 单独注入确保快照始终可见，即使对话历史为空
 
 
 def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:

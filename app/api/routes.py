@@ -299,6 +299,7 @@ async def stream(request: ChatRequest, http_request: Request):
 
     async def event_generator():
         first_token_sent = False
+        full_answer = ""  # 初始化，确保保存对话历史时可访问
         current_state = {
             "question": request.question,
             "user_id": request.user_id,
@@ -324,6 +325,20 @@ async def stream(request: ChatRequest, http_request: Request):
             memory_state = memory_load_node(current_state)
             if memory_state:
                 current_state.update(memory_state)
+
+            # 从 LangGraph 加载对话历史（短期记忆），供 build_rag_prompt 注入
+            try:
+                graph = await get_graph()
+                checkpoint_config = {"configurable": {"thread_id": thread_id}}
+                state_snapshot = await graph.aget_state(checkpoint_config)
+                if state_snapshot and state_snapshot.values:
+                    if "messages" in state_snapshot.values:
+                        current_state["messages"] = state_snapshot.values["messages"]
+                        logger.info(f"从 checkpointer 加载对话历史：{len(state_snapshot.values['messages'])} 条消息")
+                    if "clinical_checkpoint" in state_snapshot.values:
+                        current_state["clinical_checkpoint"] = state_snapshot.values["clinical_checkpoint"]
+            except Exception as e:
+                logger.warning(f"加载对话历史失败（不影响当前请求）：{e}")
 
             # ===== 并行：缓存检查 + 路由同时执行 =====
             # 缓存命中则丢弃路由结果；缓存未命中则路由已完成，不浪费时间
@@ -504,6 +519,31 @@ async def stream(request: ChatRequest, http_request: Request):
                 f"流式请求完成：request_id={request_id}, thread_id={thread_id}, total_elapsed_ms={total_elapsed_ms:.2f}"
             )
             yield "data: [DONE]\n\n"
+
+            # 保存对话历史到 checkpointer，确保下一轮能读取
+            try:
+                from langchain_core.messages import HumanMessage, AIMessage
+                graph = await get_graph()
+                checkpoint_config = {"configurable": {"thread_id": thread_id}}
+
+                # 追加用户消息
+                await graph.aupdate_state(
+                    checkpoint_config,
+                    {"messages": [HumanMessage(content=request.question)]},
+                    as_node="memory_load",
+                )
+
+                # 追加AI回答
+                if full_answer:
+                    await graph.aupdate_state(
+                        checkpoint_config,
+                        {"messages": [AIMessage(content=full_answer)]},
+                        as_node="answer_generation",
+                    )
+
+                logger.info(f"对话历史已保存")
+            except Exception as e:
+                logger.warning(f"保存对话历史失败（不影响当前回答）：{e}")
 
             # 优化：档案提取移到回答完成之后，异步执行不阻塞用户
             try:
