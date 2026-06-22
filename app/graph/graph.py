@@ -24,7 +24,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import uuid
-from typing import Literal
+from typing import List, Literal
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
@@ -76,6 +76,11 @@ def build_graph() -> StateGraph:
 
     Returns:
         StateGraph: 未编译的工作流图构建器
+
+    ⚠️ 同步提醒：
+        流式接口 (app/api/routes.py) 手动编排节点调用顺序。
+        修改此图的节点或边时，必须同步更新 routes.py 中的流式处理逻辑。
+        启动时会自动运行 validate_streaming_sync() 检测不一致。
     """
     builder = StateGraph(
         MedicalAssistantState,
@@ -220,6 +225,48 @@ def reset_graph() -> None:
     global _graph
     _graph = None
     logger.info("工作流图已重置")
+
+
+# 流式接口必须编排的节点名称集合（不含 memory_load/profile_extraction，它们在流式接口中单独处理）
+_STREAMING_REQUIRED_NODES = {
+    "router", "symptom_analysis", "query_rewrite",
+    "knowledge_retrieval", "grade_documents",
+    "answer_generation", "direct_answer", "vision_analysis",
+    "update_snapshot",
+}
+
+
+def validate_streaming_sync() -> List[str]:
+    """验证流式接口与 Graph 定义是否同步
+
+    检查 Graph 中定义的节点是否都在流式接口中被编排。
+    启动时自动调用，发现不一致时输出警告。
+
+    Returns:
+        不一致的节点名称列表（空列表表示完全同步）
+    """
+    builder = build_graph()
+    graph_nodes = set(builder.nodes.keys())
+
+    # 检查流式接口是否遗漏了 Graph 中的节点
+    missing_in_streaming = graph_nodes - _STREAMING_REQUIRED_NODES - {"memory_load", "profile_extraction", "safety_check"}
+
+    # 检查流式接口是否引用了 Graph 中不存在的节点
+    extra_in_streaming = _STREAMING_REQUIRED_NODES - graph_nodes
+
+    issues = []
+    if missing_in_streaming:
+        issues.append(f"Graph 中存在但流式接口未编排的节点：{missing_in_streaming}")
+    if extra_in_streaming:
+        issues.append(f"流式接口引用了 Graph 中不存在的节点：{extra_in_streaming}")
+
+    for issue in issues:
+        logger.warning(f"⚠️ 流式接口与 Graph 不同步：{issue}，请检查 app/api/routes.py")
+
+    if not issues:
+        logger.info("✅ 流式接口与 Graph 节点定义同步验证通过")
+
+    return issues
 
 
 async def run_graph(

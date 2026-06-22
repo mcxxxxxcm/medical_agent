@@ -16,12 +16,10 @@
 from datetime import datetime
 import hashlib
 import json
-from optparse import Option
 from typing import Optional, List, Tuple, Dict
 
 import numpy as np
 from langchain_core.documents import Document
-from sqlalchemy.testing.suite.test_reflection import metadata
 
 from app.cache.redis_cache import get_cache
 from app.core.config import get_config
@@ -35,7 +33,7 @@ class SemanticCache:
 
     def __init__(
             self,
-            similarity_threshold: float = 0.75,  # 相似度阈值（0.92表示非常相似）
+            similarity_threshold: float = 0.92,  # 相似度阈值（医疗场景要求高精度，0.92表示非常相似）
             prefix: str = "semantic_cache:",
             ttl: int = 3600,  # 默认一个小时过期
             enabled: bool = True,
@@ -141,9 +139,15 @@ class SemanticCache:
             return None
 
         try:
-            # 获取所有语义缓存键（带超时保护）
+            # 使用 SCAN 替代 KEYS，避免阻塞 Redis
             try:
-                all_keys = self._cache._redis.keys(f"{self.prefix}*")
+                all_keys = []
+                cursor = 0
+                while True:
+                    cursor, batch = self._cache._redis.scan(cursor, match=f"{self.prefix}*", count=100)
+                    all_keys.extend(batch)
+                    if cursor == 0:
+                        break
             except Exception as e:
                 logger.warning(f"语义缓存查询Redis失败，跳过：{e}")
                 self._cache._available = False
@@ -329,7 +333,14 @@ class SemanticCache:
     def clear(self) -> int:
         """清空语义缓存"""
         try:
-            keys = self._cache._redis.keys(f"{self.prefix}*")
+            # 使用 SCAN 替代 KEYS，避免阻塞 Redis
+            keys = []
+            cursor = 0
+            while True:
+                cursor, batch = self._cache._redis.scan(cursor, match=f"{self.prefix}*", count=100)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
             if keys:
                 self._cache._redis.delete(*keys)
             logger.info(f"清空语义缓存：{len(keys)}条")

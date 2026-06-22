@@ -107,6 +107,18 @@
 
 ## 其他特性
 
+### 模型清单
+
+| 模型 | 用途 | 部署方式 | 配置项 |
+|------|------|----------|--------|
+| glm-4-flash | RAG 答案生成、直接回答 | 云端 API（智谱） | `MODEL_NAME` |
+| qwen2.5:3b | 查询重写、症状解析、档案提取、快照更新 | 本地部署（Ollama） | `LOCAL_MODEL_NAME` / `LOCAL_MODEL_ENABLED` |
+| embedding-3 | 文档向量化、语义缓存相似度计算 | 云端 API（智谱） | `EMBEDDING_MODEL` |
+| bge-reranker-onnx | 检索结果重排序 | 本地 ONNX 推理 | `RERANKER_MODEL_PATH` |
+| BM25 (rank-bm25) | 稀疏检索（关键词匹配） | 本地内存 | - |
+
+**模型分工策略**：最终答案生成调用云端 API（保证质量），中间节点（重写/解析/提取）调用本地 3B 模型（降低延迟与成本），Reranker 使用 ONNX 本地推理（避免 GPU 依赖）。
+
 ### 智能问答
 - **流式响应**：SSE 实时推送，无需等待完整生成
 - **智能路由**：规则优先 + LLM 降级的多级路由（symptom > knowledge > general）
@@ -122,8 +134,15 @@
 
 ### 持久化存储
 - **PostgreSQL**：对话检查点 + 用户档案持久化
-- **Redis**：查询缓存 + RAG 文档缓存
+- **Redis**：查询缓存 + RAG 文档缓存（自动重连，故障降级为内存缓存）
 - **ChromaDB**：向量数据库存储医疗文档
+
+### 安全防护
+- **CORS 限制**：生产环境通过 `CORS_ORIGINS` 配置允许的来源，`allow_origins=*` 时自动禁用 `credentials`
+- **接口认证**：缓存管理接口（`/api/cache/clear`、`/api/cache/{query}`）需 `X-Admin-API-Key` 认证，未配置密钥时仅允许本地访问
+- **输入限制**：`question` 最大 1000 字符，`image_base64` 最大 10MB
+- **异常脱敏**：生产环境（`DEBUG=false`）全局异常处理器返回通用消息，不泄露内部实现细节
+- **Redis 自动重连**：连接断开后每 30 秒尝试重连，恢复后自动切回 Redis，避免永久降级
 
 ### 🖼️ 图片识别（规划中）
 - 当前主服务 `app/api/routes.py` 未暴露图片分析接口
@@ -242,7 +261,7 @@ REDIS_URL=redis://localhost:6379/0
 ENABLE_QUERY_CACHE=true
 CACHE_TTL_SECONDS=3600
 ENABLE_SEMANTIC_CACHE=true
-SEMANTIC_CACHE_THRESHOLD=0.75
+SEMANTIC_CACHE_THRESHOLD=0.92
 
 # Reranker 配置
 RERANKER_THRESHOLD=0.0
@@ -394,16 +413,19 @@ python scripts/test_llm.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `MODEL_NAME` | LLM 模型名称 | glm-4.5-air |
+| `MODEL_NAME` | LLM 模型名称 | glm-4-flash |
 | `MODEL_URL` | LLM API 地址 | - |
 | `MODEL_API_KEY` | LLM API 密钥 | - |
 | `REWRITE_MODEL_NAME` | 查询重写专用模型 | 空（使用 MODEL_NAME） |
 | `EMBEDDING_MODEL` | Embedding 模型 | embedding-3 |
-| `RERANKER_THRESHOLD` | Reranker 阈值 | 0.0 |
+| `RERANKER_THRESHOLD` | Reranker 阈值 | 0.1 |
 | `RERANKER_MODEL_PATH` | Reranker 模型路径 | /app/models/bge-reranker-onnx |
 | `ENABLE_SEMANTIC_CACHE` | 启用语义缓存 | true |
-| `SEMANTIC_CACHE_THRESHOLD` | 语义相似度阈值 | 0.75 |
+| `SEMANTIC_CACHE_THRESHOLD` | 语义相似度阈值 | 0.92 |
 | `REDIS_URL` | Redis 连接地址 | redis://localhost:6379/0 |
+| `CORS_ORIGINS` | 允许的跨域来源（逗号分隔） | 空（允许所有） |
+| `ADMIN_API_KEY` | 缓存管理接口认证密钥 | admin-api-key-change-in-production |
+| `DEBUG` | 调试模式（影响异常信息详细程度） | false |
 
 ### 路径配置
 

@@ -36,8 +36,8 @@ def get_local_llm() -> ChatOpenAI:
 
     用于中间节点（查询重写/档案提取/快照更新），降低延迟：
         - 本地推理，无网络延迟
-        - TTFT 约 0.2-0.5s（热启动）
-        - 需先安装 Ollama 并拉取模型：ollama pull qwen2.5:3b
+        - qwen2.5:1.5b 适配 4GB VRAM，纯GPU推理约 50+ tokens/s
+        - 需先安装 Ollama 并拉取模型：ollama pull qwen2.5:1.5b
 
     当 LOCAL_MODEL_ENABLED=False 时，降级使用 API 模型
 
@@ -57,6 +57,42 @@ def get_local_llm() -> ChatOpenAI:
         temperature=0.0,           # 结构化提取/改写不需要创造性
         request_timeout=30,        # 本地模型一般很快，30秒足够
         max_retries=1,
+        max_tokens=200,            # 查询重写/HyDE只需短输出，限制生成长度加速推理
+    )
+
+
+@lru_cache(maxsize=2)
+def get_local_llm_json() -> ChatOpenAI:
+    """获取本地模型实例（Ollama）— JSON Mode
+
+    与 get_local_llm() 的区别：
+        开启 response_format={"type": "json_object"}，在采样层面提高 JSON 字符权重，
+        大幅减少 3B 模型的格式错误（单引号、多余逗号、括号不匹配等）。
+
+    注意：
+        - JSON Mode 只保证输出是合法 JSON，不保证符合特定 schema
+        - 仍需后处理容错（_coerce_list_fields / json_repair）
+        - prompt 中必须包含 "JSON" 字样，否则 Ollama 可能忽略 response_format
+
+    适用节点：症状解析、快照更新、档案提取（需要结构化输出的节点）
+    不适用节点：查询重写、HyDE（纯文本输出，不需要 JSON）
+    """
+    config = get_config()
+
+    if not config.LOCAL_MODEL_ENABLED:
+        return get_rewrite_llm()
+
+    return ChatOpenAI(
+        model=config.LOCAL_MODEL_NAME,
+        base_url=config.LOCAL_MODEL_URL,
+        api_key=config.LOCAL_MODEL_API_KEY,
+        temperature=0.0,
+        request_timeout=30,
+        max_retries=1,
+        max_tokens=150,  # 结构化输出只需短JSON，限制生成长度加速推理
+        model_kwargs={
+            "response_format": {"type": "json_object"},
+        },
     )
 
 

@@ -42,6 +42,9 @@ class CacheStats:
 class RedisCache:
     """Redis 缓存管理器"""
 
+    # 重连配置
+    _RECONNECT_INTERVAL = 30  # 重连尝试间隔（秒）
+
     def __init__(
             self,
             redis_url: str = "redis://localhost:6379/0",
@@ -56,6 +59,7 @@ class RedisCache:
 
         self._redis = None
         self._available = False
+        self._last_reconnect_attempt = 0  # 上次重连尝试时间
         self._stats = CacheStats()
 
         # 降级用的内存缓存
@@ -89,6 +93,38 @@ class RedisCache:
         except Exception as e:
             logger.warning(f"⚠️ Redis 连接失败：{e}，使用内存缓存降级")
             self._available = False
+
+    def _try_reconnect(self) -> bool:
+        """尝试重连 Redis（冷却期内不重复尝试）
+
+        Returns:
+            True 表示重连成功或仍可用，False 表示不可用
+        """
+        if self._available:
+            return True
+
+        now = time.time()
+        if now - self._last_reconnect_attempt < self._RECONNECT_INTERVAL:
+            return False  # 冷却期内，跳过重连
+
+        self._last_reconnect_attempt = now
+        try:
+            if self._redis is None:
+                self._redis = redis.Redis.from_url(
+                    self.redis_url,
+                    max_connections=10,
+                    decode_responses=True,
+                    socket_timeout=2,
+                    socket_connect_timeout=2,
+                    retry_on_timeout=False,
+                )
+            self._redis.ping()
+            self._available = True
+            logger.info(f"✅ Redis 重连成功：{self.redis_url}")
+            return True
+        except Exception as e:
+            logger.debug(f"Redis 重连失败：{e}，继续使用内存缓存")
+            return False
 
     def _generate_key(self, query: str, **kwargs) -> str:
         """生成缓存键
@@ -175,6 +211,8 @@ class RedisCache:
                     logger.info(f"🎯 Redis 缓存命中：{query[:30]}... (命中率: {self._stats.hit_rate:.1f}%)")
                     return documents, cached.get("metadata", {})
             else:
+                # 尝试重连 Redis
+                self._try_reconnect()
                 # 内存缓存降级
                 if key in self._fallback_cache:
                     data, expires_at = self._fallback_cache[key]
@@ -232,6 +270,14 @@ class RedisCache:
                 self._redis.setex(key, ttl, data)
                 logger.debug(f"Redis 缓存写入：{query[:30]}... TTL={ttl}s")
             else:
+                # 尝试重连 Redis，成功则写入 Redis
+                if self._try_reconnect():
+                    try:
+                        self._redis.setex(key, ttl, data)
+                        logger.debug(f"Redis 重连后缓存写入：{query[:30]}... TTL={ttl}s")
+                        return True
+                    except Exception:
+                        pass  # 重连后写入仍失败，走内存缓存
                 # 内存缓存降级
                 # 检查容量
                 if len(self._fallback_cache) >= self._fallback_max_size:
@@ -337,8 +383,14 @@ class RedisCache:
         """
         try:
             if self._available:
-                # 删除所有匹配前缀的键
-                keys = self._redis.keys(f"{self.prefix}*")
+                # 使用 SCAN 替代 KEYS，避免阻塞 Redis
+                keys = []
+                cursor = 0
+                while True:
+                    cursor, batch = self._redis.scan(cursor, match=f"{self.prefix}*", count=100)
+                    keys.extend(batch)
+                    if cursor == 0:
+                        break
                 if keys:
                     self._redis.delete(*keys)
                 count = len(keys)

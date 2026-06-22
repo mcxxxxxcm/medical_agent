@@ -20,11 +20,13 @@ import json
 import time
 import uuid
 import asyncio
+from collections import defaultdict
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.app_logging import get_logger
 from app.graph.graph import get_graph
@@ -70,7 +72,7 @@ class ChatRequest(BaseModel):
     question: str = Field(..., description="用户问题", min_length=1, max_length=1000)
     user_id: Optional[str] = Field(None, description="用户ID")
     thread_id: Optional[str] = Field(None, description="会话线程ID")
-    image_base64: Optional[str] = Field(None, description="图片base64编码（多模态问诊）")
+    image_base64: Optional[str] = Field(None, description="图片base64编码（多模态问诊）", max_length=10_000_000)
 
 
 class SourceInfo(BaseModel):
@@ -151,11 +153,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"本地模型预热失败（不影响功能，首次请求会稍慢）：{e}")
 
+    # 验证流式接口与 Graph 节点定义同步
+    try:
+        from app.graph.graph import validate_streaming_sync
+        validate_streaming_sync()
+    except Exception as e:
+        logger.warning(f"流式接口同步验证失败：{e}")
+
     yield
 
     # 关闭时清理
     logger.info(f"应用关闭中")
     await close_checkpointer()
+    # 关闭长期记忆存储器连接
+    try:
+        from app.memory.long_term_memory import reset_long_term_memory
+        reset_long_term_memory()
+        logger.info("长期记忆存储器连接已关闭")
+    except Exception as e:
+        logger.warning(f"关闭长期记忆存储器失败：{e}")
     logger.info(f"资源清理完成")
 
 
@@ -168,13 +184,62 @@ app = FastAPI(
 )
 
 # CORS中间件
+# 安全：限制允许的来源，避免 CSRF 攻击
+# 生产环境应通过 CORS_ORIGINS 环境变量指定具体域名
+_config = get_config()
+_cors_origins = getattr(_config, 'CORS_ORIGINS', '').split(',') if getattr(_config, 'CORS_ORIGINS', '') else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=True if _cors_origins != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ===== 速率限制中间件 =====
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """基于令牌桶算法的简易速率限制
+
+    配置项（通过环境变量）：
+        RATE_LIMIT_PER_MINUTE: 每分钟最大请求数，默认 20
+    仅对 /api/chat 开头的接口生效，健康检查等不受限制。
+    """
+
+    def __init__(self, app, max_requests: int = 20, window_seconds: int = 60):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        # {client_ip: [timestamp1, timestamp2, ...]}
+        self._requests: Dict[str, List[float]] = defaultdict(list)
+
+    def _cleanup(self, ip: str, now: float):
+        """清理过期的请求记录"""
+        cutoff = now - self.window_seconds
+        self._requests[ip] = [t for t in self._requests[ip] if t > cutoff]
+
+    async def dispatch(self, request: Request, call_next):
+        # 仅限制聊天接口
+        if not request.url.path.startswith("/api/chat"):
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        self._cleanup(client_ip, now)
+
+        if len(self._requests[client_ip]) >= self.max_requests:
+            logger.warning(f"速率限制触发：{client_ip} 在 {self.window_seconds}s 内超过 {self.max_requests} 次请求")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"请求过于频繁，请 {self.window_seconds} 秒后重试"}
+            )
+
+        self._requests[client_ip].append(now)
+        return await call_next(request)
+
+
+_rate_limit = getattr(get_config(), 'RATE_LIMIT_PER_MINUTE', 20)
+app.add_middleware(RateLimitMiddleware, max_requests=_rate_limit)
 
 
 @app.middleware("http")
@@ -211,11 +276,18 @@ async def root():
 # 异常处理
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """全局异常处理"""
+    """全局异常处理：生产环境不泄露内部信息"""
     logger.error(f"未处理的异常：{exc}", exc_info=True)
+    config = get_config()
+    if getattr(config, 'DEBUG', False):
+        # 开发模式返回详细错误
+        detail = f"服务器内部错误：{str(exc)}"
+    else:
+        # 生产环境返回通用消息
+        detail = "服务器内部错误，请稍后重试"
     return JSONResponse(
         status_code=500,
-        content={"detail": f"服务器内部错误：{str(exc)}"}
+        content={"detail": detail}
     )
 
 
@@ -402,7 +474,14 @@ async def stream(request: ChatRequest, http_request: Request):
                         if getattr(config, 'ENABLE_SEMANTIC_CACHE', False) and cache._available:
                             semantic_cache = get_semantic_cache()
                             try:
-                                l2_keys = cache._redis.keys(f"{semantic_cache.prefix}*")
+                                # 使用 SCAN 替代 KEYS，避免阻塞 Redis
+                                l2_keys = []
+                                cursor = 0
+                                while True:
+                                    cursor, batch = cache._redis.scan(cursor, match=f"{semantic_cache.prefix}*", count=100)
+                                    l2_keys.extend(batch)
+                                    if cursor == 0:
+                                        break
                                 if not l2_keys:
                                     logger.info("L2语义缓存为空，跳过Embedding计算")
                                 else:
@@ -432,6 +511,7 @@ async def stream(request: ChatRequest, http_request: Request):
 
             if cached_answer:
                 # L0答案缓存命中：直接返回完整答案，跳过所有处理
+                full_answer = cached_answer  # 保存到 full_answer，确保后续写入 checkpointer
                 yield await emit_data(cached_answer)
             elif cached_docs:
                 # L2文档缓存命中：跳过路由、症状解析、重写，直接用缓存文档生成答案
@@ -456,6 +536,9 @@ async def stream(request: ChatRequest, http_request: Request):
                     _save_answer_cache(request.question, full_answer)
             else:
                 # 缓存未命中：路由已完成，直接使用路由结果
+                # ⚠️ 同步提醒：以下节点编排顺序必须与 app/graph/graph.py 中的边定义一致
+                # 修改 Graph 节点/边时，必须同步更新此处的编排逻辑
+                # 启动时 validate_streaming_sync() 会自动检测不一致
                 next_node = getattr(route_command, "goto", "direct_answer") if route_command else "direct_answer"
                 logger.info(
                     f"流式请求路由完成：request_id={request_id}, thread_id={thread_id}, next_node={next_node}"
@@ -571,37 +654,39 @@ async def stream(request: ChatRequest, http_request: Request):
                 # Per-thread 锁：防止同一会话的并发快照更新导致竞态
                 async def _background_snapshot_update():
                     lock = _get_snapshot_lock(thread_id)
-                    if lock.locked():
-                        # 已有快照更新在执行，跳过本次
-                        # 下次请求会重新检查是否需要更新
+                    # 非阻塞获取锁：尝试在极短时间内获取，失败则跳过
+                    try:
+                        await asyncio.wait_for(lock.acquire(), timeout=0.01)
+                    except asyncio.TimeoutError:
                         logger.info(f"快照更新已在进行中，跳过本次（thread_id={thread_id}）")
                         return
-                    async with lock:
-                        try:
-                            # 重新读取最新状态（可能在等待锁期间已发生变化）
-                            state_snapshot = await graph.aget_state(checkpoint_config)
-                            if not state_snapshot or not state_snapshot.values:
-                                return
-                            bg_state = {
-                                "messages": state_snapshot.values.get("messages", []),
-                                "clinical_checkpoint": state_snapshot.values.get("clinical_checkpoint"),
-                            }
-                            # 再次检查是否仍需更新（可能之前的快照已经处理了）
-                            snapshot_decision = should_update_snapshot(bg_state)
-                            if snapshot_decision != "update_snapshot":
-                                logger.info(f"快照已由前次任务处理，无需重复更新")
-                                return
-                            logger.info("后台触发临床状态快照更新")
-                            snapshot_result = update_clinical_snapshot_node(bg_state)
-                            if snapshot_result:
-                                await graph.aupdate_state(
-                                    checkpoint_config,
-                                    snapshot_result,
-                                    as_node="update_snapshot",
-                                )
-                                logger.info(f"临床状态快照已更新，删除 {len(snapshot_result.get('messages', []))} 条早期消息")
-                        except Exception as e:
-                            logger.warning(f"后台快照更新失败（不影响后续对话）：{e}")
+                    try:
+                        # 重新读取最新状态（可能在等待锁期间已发生变化）
+                        state_snapshot = await graph.aget_state(checkpoint_config)
+                        if not state_snapshot or not state_snapshot.values:
+                            return
+                        bg_state = {
+                            "messages": state_snapshot.values.get("messages", []),
+                            "clinical_checkpoint": state_snapshot.values.get("clinical_checkpoint"),
+                        }
+                        # 再次检查是否仍需更新（可能之前的快照已经处理了）
+                        snapshot_decision = should_update_snapshot(bg_state)
+                        if snapshot_decision != "update_snapshot":
+                            logger.info(f"快照已由前次任务处理，无需重复更新")
+                            return
+                        logger.info("后台触发临床状态快照更新")
+                        snapshot_result = update_clinical_snapshot_node(bg_state)
+                        if snapshot_result:
+                            await graph.aupdate_state(
+                                checkpoint_config,
+                                snapshot_result,
+                                as_node="update_snapshot",
+                            )
+                            logger.info(f"临床状态快照已更新，删除 {len(snapshot_result.get('messages', []))} 条早期消息")
+                    except Exception as e:
+                        logger.warning(f"后台快照更新失败（不影响后续对话）：{e}")
+                    finally:
+                        lock.release()
 
                 asyncio.create_task(_background_snapshot_update())
 
@@ -713,9 +798,22 @@ async def cache_health():
     return cache.health_check()
 
 
+def _verify_admin_key(request: Request) -> bool:
+    """验证管理员 API Key（用于缓存管理等敏感接口）"""
+    config = get_config()
+    admin_key = getattr(config, 'ADMIN_API_KEY', '')
+    request_key = request.headers.get("X-Admin-API-Key", "")
+    if not admin_key or admin_key == "admin-api-key-change-in-production":
+        # 未配置安全密钥时，仅允许本地访问
+        return request.client.host in ("127.0.0.1", "::1", "localhost")
+    return request_key == admin_key
+
+
 @app.post("/api/cache/clear")
-async def clear_cache():
-    """清空缓存"""
+async def clear_cache(request: Request):
+    """清空缓存（需管理员认证）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问，请提供有效的 X-Admin-API-Key"})
     from app.cache.redis_cache import get_cache
     cache = get_cache()
     count = cache.clear()
@@ -723,8 +821,10 @@ async def clear_cache():
 
 
 @app.delete("/api/cache/{query}")
-async def delete_cache(query: str):
-    """删除指定查询的缓存"""
+async def delete_cache(query: str, request: Request):
+    """删除指定查询的缓存（需管理员认证）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问，请提供有效的 X-Admin-API-Key"})
     from app.cache.redis_cache import get_cache
     cache = get_cache()
     success = cache.delete(query)
@@ -736,4 +836,6 @@ if __name__ == '__main__':
     import os
     import uvicorn
 
+    # Ollama 优化：缩减上下文窗口加速本地模型推理（默认4096太慢）
+    os.environ.setdefault("OLLAMA_NUM_CTX", "1024")
     uvicorn.run("app.api.routes:app", host="0.0.0.0", port=8000, reload=True)

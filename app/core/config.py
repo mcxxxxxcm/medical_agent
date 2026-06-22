@@ -15,8 +15,12 @@ class Settings(BaseSettings):
     # ===== 应用配置 =====
     APP_NAME: str = "Medical Assistant"
     DEBUG: bool = False
+    # ===== 安全配置 =====
     SECRET_KEY: str = "dev-secret-key-change-in-production"
-    HOST: str = "0.0.0.0"
+    ADMIN_API_KEY: str = "admin-api-key-change-in-production"  # 缓存管理等敏感接口的认证密钥
+    CORS_ORIGINS: str = ""  # 允许的跨域来源，逗号分隔；留空则允许所有（开发模式）
+    RATE_LIMIT_PER_MINUTE: int = 20  # 每分钟最大请求数（仅限 /api/chat 接口）
+    HOST: str = "127.0.0.1"  # 默认仅本地访问，生产环境通过环境变量设置为 0.0.0.0
     PORT: int = 8000
 
     # ===== LLM 配置 =====
@@ -32,7 +36,7 @@ class Settings(BaseSettings):
 
     # ===== 本地模型配置（Ollama） =====
     # 中间节点（查询重写/档案提取/快照更新）使用本地模型，降低延迟
-    LOCAL_MODEL_NAME: str = "qwen2.5:3b"       # Ollama 模型名
+    LOCAL_MODEL_NAME: str = "qwen2.5:1.5b"      # Ollama 模型名（1.5b 适配 4GB VRAM，纯GPU推理）
     LOCAL_MODEL_URL: str = "http://localhost:11434/v1"  # Ollama 默认地址
     LOCAL_MODEL_API_KEY: str = "ollama"         # Ollama 不需要真实 key，填任意值
     LOCAL_MODEL_ENABLED: bool = False            # 是否启用本地模型（需先安装 Ollama 并拉取模型）
@@ -85,7 +89,7 @@ class Settings(BaseSettings):
 
     # ===== 语义缓存配置 =====
     ENABLE_SEMANTIC_CACHE: bool = True  # 是否启用语义相似缓存
-    SEMANTIC_CACHE_THRESHOLD: float = 0.75  # 语义相似度阈值（0.92 = 92% 相似）
+    SEMANTIC_CACHE_THRESHOLD: float = 0.92  # 语义相似度阈值（医疗场景要求高精度，0.92 = 92% 相似）
 
     # ===== RERANKER_MODEL本地路径 =====
     RERANKER_MODEL_PATH: str = "/app/models/bge-reranker-onnx"

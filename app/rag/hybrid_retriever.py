@@ -169,16 +169,39 @@ class HybridRetriever(BaseRetriever):
 
         return documents
 
-    def _dense_search(self, query: str, query_embedding: Optional[List[float]] = None) -> List[Document]:
-        """执行 dense 检索；若已提供 embedding，则直接复用。"""
+    def _dense_search(self, query: str, query_embedding: Optional[List[float]] = None) -> tuple:
+        """执行 dense 检索；若已提供 embedding，则直接复用。
+
+        Returns:
+            (documents, top1_score): 检索到的文档列表和 Top-1 距离得分
+            ChromaDB cosine distance: 0.0=完全相同, <0.08 对应 cosine_similarity>0.92
+        """
         top_k = self.k * 2
+        top1_score = 0.0
         try:
-            if query_embedding is not None and hasattr(self.vector_store, "similarity_search_by_vector"):
-                return self.vector_store.similarity_search_by_vector(query_embedding, k=top_k)
-            return self.vector_store.similarity_search(query, k=top_k)
+            # 优先使用带分数的检索，获取 Top-1 置信度
+            if query_embedding is not None:
+                if hasattr(self.vector_store, "similarity_search_by_vector_with_score"):
+                    results = self.vector_store.similarity_search_by_vector_with_score(
+                        query_embedding, k=top_k
+                    )
+                    if results:
+                        docs = [doc for doc, score in results]
+                        top1_score = float(results[0][1])
+                        return docs, top1_score
+                docs = self.vector_store.similarity_search_by_vector(query_embedding, k=top_k)
+            else:
+                if hasattr(self.vector_store, "similarity_search_with_score"):
+                    results = self.vector_store.similarity_search_with_score(query, k=top_k)
+                    if results:
+                        docs = [doc for doc, score in results]
+                        top1_score = float(results[0][1])
+                        return docs, top1_score
+                docs = self.vector_store.similarity_search(query, k=top_k)
+            return docs, top1_score
         except Exception as e:
             logger.error(f"Dense 检索失败：{e}")
-            return []
+            return [], 0.0
 
     def _sparse_search(self, query: str) -> List[Document]:
         """执行 BM25 稀疏检索。"""
@@ -212,22 +235,22 @@ class HybridRetriever(BaseRetriever):
         ranked_keys = sorted(score_map.keys(), key=lambda key: score_map[key], reverse=True)
         return [doc_map[key] for key in ranked_keys]
 
-    def _should_skip_reranker(self, query: str, candidates: List[Document]) -> bool:
-        """在候选很少或问题已足够明确时跳过 rerank，降低首 token 延迟。
+    def _should_skip_reranker(self, query: str, candidates: List[Document],
+                               top1_dense_score: float = 0.0) -> bool:
+        """判断是否可以跳过 Reranker，降低首 token 延迟。
 
-        优化策略：
+        跳过条件（基于置信度，而非数量）：
             1. 无候选文档 → 跳过
-            2. 候选数 <= k → 无需重排序
-            3. 简单问候/寒暄类查询 → 跳过
-        注意：语义明确的医疗查询不应跳过Reranker，因为RRF排序质量不够，
-              Reranker能过滤掉不相关文档，对检索质量至关重要。
+            2. 简单问候/寒暄 → 跳过
+            3. Dense Top-1 置信度极高（> HIGH_CONFIDENCE_THRESHOLD）→ 跳过
+               此时向量检索已找到近乎完美的匹配，Rerank 不会改变结果
+
+        不跳过的理由（为什么不能按"数量少"跳过）：
+            - Lost in the Middle 效应：LLM 对文档位置敏感，Rerank 确保最相关文档在第1位
+            - 过滤噪声：召回少不代表质量高，可能是"矮子里拔将军"
+            - 缩短 Prompt：Rerank 过滤不相关文档 → Prompt 更短 → TTFT 更快
         """
         if not candidates:
-            return True
-
-        candidate_count = len(candidates)
-        # 候选数 <= k，无需重排序
-        if candidate_count <= self.k:
             return True
 
         # 简单问候/寒暄类查询直接跳过Reranker
@@ -237,6 +260,16 @@ class HybridRetriever(BaseRetriever):
         if query_no_punct in simple_patterns or len(query_no_punct) <= 4:
             return True
 
+        # 策略1：High-Confidence Bypass
+        # Dense Top-1 相似度极高 → 向量检索已找到近乎完美匹配，Rerank 不会改变结果
+        # 阈值说明：ChromaDB cosine distance，0.0=完全相同，<0.08 对应 cosine_similarity>0.92
+        HIGH_CONFIDENCE_THRESHOLD = 0.08
+        if top1_dense_score > 0 and top1_dense_score < HIGH_CONFIDENCE_THRESHOLD:
+            logger.info(
+                f"Dense Top-1 置信度极高（distance={top1_dense_score:.4f} < {HIGH_CONFIDENCE_THRESHOLD}），跳过重排"
+            )
+            return True
+
         return False
 
     def _get_relevant_documents(
@@ -244,10 +277,24 @@ class HybridRetriever(BaseRetriever):
             query: str,
             *,
             run_manager: CallbackManagerForRetrieverRun,
-            original_query: str = None
+            original_query: str = None,
+            hyde_answer: str = None
     ) -> List[Document]:
-        """混合检索主流程"""
+        """混合检索主流程
+
+        Args:
+            query: 检索查询（重写后的查询，用于 BM25 稀疏检索）
+            original_query: 原始用户查询（用于缓存 key）
+            hyde_answer: HyDE 假想答案（用于 Dense 向量检索，提升语义召回率）
+        """
         cache_query = original_query if original_query else query
+
+        # HyDE 策略：Dense 用假想答案，Sparse 用原始查询
+        dense_query = hyde_answer if hyde_answer else query
+        sparse_query = query  # BM25 用关键词查询，假想答案会引入噪声
+
+        if hyde_answer:
+            logger.info(f"HyDE 模式：Dense 用假想答案（{len(hyde_answer)}字），Sparse 用查询")
 
         query_embedding = None
         semantic_cache = None
@@ -266,7 +313,14 @@ class HybridRetriever(BaseRetriever):
 
             # 优化：先快速检查L2是否有数据，为空则跳过Embedding API（省600ms+）
             try:
-                l2_keys = cache._redis.keys(f"{semantic_cache.prefix}*")
+                # 使用 SCAN 替代 KEYS，避免阻塞 Redis
+                l2_keys = []
+                cursor = 0
+                while True:
+                    cursor, batch = cache._redis.scan(cursor, match=f"{semantic_cache.prefix}*", count=100)
+                    l2_keys.extend(batch)
+                    if cursor == 0:
+                        break
                 if not l2_keys:
                     logger.info("L2语义缓存为空，跳过Embedding计算")
                 else:
@@ -295,7 +349,8 @@ class HybridRetriever(BaseRetriever):
         elif query_embedding is None:
             embedding_start = time.time()
             try:
-                query_embedding = get_embeddings().embed_query(query)
+                # HyDE：用假想答案做 embedding（语义空间更接近文档）
+                query_embedding = get_embeddings().embed_query(dense_query)
             except Exception as e:
                 logger.warning(f"查询向量预计算失败，将回退到文本检索：{e}")
                 query_embedding = None
@@ -303,11 +358,11 @@ class HybridRetriever(BaseRetriever):
 
         retrieval_start = time.time()
         dense_start = time.time()
-        dense_docs = self._dense_search(query, query_embedding=query_embedding)
+        dense_docs, top1_dense_score = self._dense_search(dense_query, query_embedding=query_embedding)
         dense_ms = (time.time() - dense_start) * 1000
 
         sparse_start = time.time()
-        sparse_docs = self._sparse_search(query)
+        sparse_docs = self._sparse_search(sparse_query)
         sparse_ms = (time.time() - sparse_start) * 1000
 
         fusion_start = time.time()
@@ -315,9 +370,8 @@ class HybridRetriever(BaseRetriever):
         fusion_ms = (time.time() - fusion_start) * 1000
 
         rerank_ms = 0.0
-        # Reranker 跳过判断：仅当候选数 <= k 或简单问候时跳过
-        # 不再使用 actual_rerank_input <= k 判断，因为 rerank_top_k 应大于 k 才有重排意义
-        should_skip_reranker = self._should_skip_reranker(query, candidates)
+        # Reranker 跳过判断：基于 Dense Top-1 置信度，而非候选数量
+        should_skip_reranker = self._should_skip_reranker(query, candidates, top1_dense_score)
 
         # Reranker 重排序
         if self.use_reranker and candidates and not should_skip_reranker:
@@ -344,7 +398,7 @@ class HybridRetriever(BaseRetriever):
 
         retrieval_time = (time.time() - retrieval_start) * 1000
         logger.info(
-            "检索完成，耗时：%.2fms（query_embedding=%.2fms, semantic_lookup=%.2fms, dense=%.2fms, sparse=%.2fms, fusion=%.2fms, rerank=%.2fms）",
+            "检索完成，耗时：%.2fms（query_embedding=%.2fms, semantic_lookup=%.2fms, dense=%.2fms, sparse=%.2fms, fusion=%.2fms, rerank=%.2fms, top1_dense_dist=%.4f）",
             retrieval_time,
             query_embedding_ms,
             semantic_lookup_ms,
@@ -352,6 +406,7 @@ class HybridRetriever(BaseRetriever):
             sparse_ms,
             fusion_ms,
             rerank_ms,
+            top1_dense_score,
         )
 
         # 写入缓存

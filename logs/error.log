@@ -562,3 +562,94 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/erro
     For further information visit https://errors.pydantic.dev/2.12/v/json_invalid，直接生成答案
 2026-06-08 22:48:37 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
 2026-06-08 23:23:26 - app.cache.semantic_cache - ERROR - 语义缓存写入失败：Timeout connecting to server
+2026-06-21 19:03:01 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-79' coro=<stream.<locals>.event_generator.<locals>._background_snapshot_update() done, defined at D:\Agent\medical_assistant_agent\app\api\routes.py:655> exception=AttributeError("'Lock' object has no attribute 'acquire_nowait'")>
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\api\routes.py", line 659, in _background_snapshot_update
+    lock.acquire_nowait()
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Lock' object has no attribute 'acquire_nowait'
+2026-06-21 19:05:08 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-132' coro=<stream.<locals>.event_generator.<locals>._background_snapshot_update() done, defined at D:\Agent\medical_assistant_agent\app\api\routes.py:655> exception=AttributeError("'Lock' object has no attribute 'acquire_nowait'")>
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\api\routes.py", line 659, in _background_snapshot_update
+    lock.acquire_nowait()
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Lock' object has no attribute 'acquire_nowait'
+2026-06-21 19:05:49 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-175' coro=<stream.<locals>.event_generator.<locals>._background_snapshot_update() done, defined at D:\Agent\medical_assistant_agent\app\api\routes.py:655> exception=AttributeError("'Lock' object has no attribute 'acquire_nowait'")>
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\api\routes.py", line 659, in _background_snapshot_update
+    await asyncio.wait_for(lock.acquire(), timeout=0.01)
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Lock' object has no attribute 'acquire_nowait'
+2026-06-21 19:06:35 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-219' coro=<stream.<locals>.event_generator.<locals>._background_snapshot_update() done, defined at D:\Agent\medical_assistant_agent\app\api\routes.py:655> exception=AttributeError("'Lock' object has no attribute 'acquire_nowait'")>
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\api\routes.py", line 659, in _background_snapshot_update
+    await asyncio.wait_for(lock.acquire(), timeout=0.01)
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Lock' object has no attribute 'acquire_nowait'
+2026-06-21 20:50:13 - app.graph.nodes - ERROR - 临床状态快照更新失败：ClinicalCheckpointOutput 单次调用本地解析失败，模型原始输出：{
+  "chief_complaint": null,
+  "symptom_timeline": [
+    {
+      "symptom": "头痛",
+      "onset": "3天前",
+      "severity": "未明确描述",
+      "evolution": "持续3天"
+    },
+    {
+      "symptom": "恶心",
+      "onset": "今天",
+      "severity": "有点",
+      "evolution": "今天开始出现"
+    },
+    {
+      "symptom": "腹痛",
+      "onset": "今天",
+      "severity": "中等",
+      "evolution": "持续1天，伴恶心"
+    },
+    {
+      "symptom": "头晕",
+      "onset": "今天",
+      "severity": "轻微",
+      "evolution": "今天开始出现"
+    }
+  ],
+  "medication_history": [
+    {
+      "drug": "布洛芬",
+      "dosage": null,
+      "effect": "未缓解头痛"
+    },
+    {
+      "drug": "鼻用糖皮质激素（糠酸莫米松鼻喷剂或丙酸氟替卡松鼻喷剂）",
+      "dosage": null,
+      "effect": null
+    },
+    {
+      "drug": "口服抗组胺药（氯雷他定或西替利嗪）",
+      "dosage": null,
+      "effect": null
+    },
+    {
+      "drug": "鼻用抗组胺药（氮卓斯汀鼻喷剂）",
+      "dosage": null,
+      "effect": null
+    }
+  ],
+  "red_flags": [
+    {
+      "symptom": "头痛进行性加重"
+    },
+    {
+      "symptom": "伴发热、颈项强直、意识障碍、抽搐、局灶性神经功能缺损等"
+    }
+  ],
+  "confirmed_facts": null,
+  "ruled_out": null
+}
+2026-06-22 01:46:49 - app.graph.nodes - ERROR - 查询重写失败：Completions.parse() got an unexpected keyword argument 'num_ctx'
+2026-06-22 01:47:02 - app.graph.nodes - ERROR - 临床状态快照更新失败：Completions.parse() got an unexpected keyword argument 'num_ctx'

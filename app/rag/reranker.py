@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 from langchain_core.documents import Document
-from pyexpat import features
 
 from app.core.app_logging import get_logger
 
