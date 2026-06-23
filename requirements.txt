@@ -26,3 +26,4 @@ langchain-mineru
 
 onnxruntime>=1.16.0
 tokenizers>=0.15.0
+dateparser~=1.4.1

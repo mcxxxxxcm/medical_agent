@@ -4,9 +4,11 @@
     2. 增加 store.setup() 初始化调用
     3. 优化 search 结果的排序逻辑
     4. 增加异常处理
+    5. 新增 symptom_events / medication_events 命名空间（Append-Only 事件流）
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import uuid
 import logging
 
 from langgraph.store.postgres import PostgresStore
@@ -145,6 +147,179 @@ class LongTermMemoryManager:
         existing=self.get_user_profile(user_id) or {}
         existing.update(updates)
         self.save_user_profile(user_id, existing)
+
+    # ===== 症状事件（Append-Only 事件流） =====
+
+    def append_symptom_event(
+            self,
+            user_id: str,
+            symptom_name: str,
+            onset_iso: str,
+            onset_ts: int,
+            precision: str = "default",
+            source_query: str = "",
+    ) -> str:
+        """追加一条症状报告事件到长期记忆
+
+        Args:
+            user_id: 用户ID
+            symptom_name: 症状名称（如"头痛"）
+            onset_iso: 症状首发绝对时间（ISO格式）
+            onset_ts: 症状首发 Unix 时间戳
+            precision: 时间精度（exact/approximate/vague/default）
+            source_query: 触发此事件的原始用户问题
+
+        Returns:
+            事件ID
+        """
+        event_id = f"se_{uuid.uuid4().hex[:12]}"
+        event = {
+            "event_type": "symptom_report",
+            "symptom": symptom_name,
+            "onset_iso": onset_iso,
+            "onset_ts": onset_ts,
+            "precision": precision,
+            "source_query": source_query,
+            "created_at": datetime.now().isoformat(),
+        }
+        self.store.put(
+            namespace=("symptom_events", user_id),
+            key=event_id,
+            value=event,
+        )
+        logger.info(f"症状事件已写入L1：user={user_id}, symptom={symptom_name}, onset={onset_iso}")
+        return event_id
+
+    def get_symptom_events(
+            self,
+            user_id: str,
+            symptom_name: Optional[str] = None,
+            limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """获取用户的症状事件列表
+
+        Args:
+            user_id: 用户ID
+            symptom_name: 可选，按症状名过滤
+            limit: 最大返回条数
+
+        Returns:
+            症状事件列表，按 onset_ts 倒序
+        """
+        items = self.store.search(
+            namespace_prefix=("symptom_events", user_id)
+        )
+        records = []
+        for item in items:
+            if not item.value or "onset_ts" not in item.value:
+                continue
+            if symptom_name and item.value.get("symptom") != symptom_name:
+                continue
+            records.append(item.value)
+
+        records.sort(key=lambda x: x.get("onset_ts", 0), reverse=True)
+        return records[:limit]
+
+    def get_latest_symptom_onset(
+            self,
+            user_id: str,
+            symptom_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """获取某个症状的最早首发记录（用于计算持续时间）
+
+        Args:
+            user_id: 用户ID
+            symptom_name: 症状名称
+
+        Returns:
+            最早的首发记录，如 {"iso": "...", "ts": 123, "precision": "exact"}
+            未找到返回 None
+        """
+        events = self.get_symptom_events(user_id, symptom_name=symptom_name, limit=100)
+        if not events:
+            return None
+        # 取最早的首发记录（onset_ts 最小的）
+        earliest = min(events, key=lambda x: x.get("onset_ts", float("inf")))
+        return {
+            "iso": earliest.get("onset_iso", ""),
+            "ts": earliest.get("onset_ts"),
+            "precision": earliest.get("precision", "default"),
+        }
+
+    def get_all_symptom_onsets(
+            self,
+            user_id: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """获取用户所有症状的最早首发记录（用于新会话填充 L2）
+
+        Returns:
+            {"头痛": {"iso": "...", "ts": 123, "precision": "exact"}, ...}
+        """
+        events = self.get_symptom_events(user_id, limit=200)
+        # 按症状名分组，取每组中 onset_ts 最小的
+        symptom_map: Dict[str, Dict[str, Any]] = {}
+        for event in events:
+            name = event.get("symptom", "")
+            if not name:
+                continue
+            existing = symptom_map.get(name)
+            current_ts = event.get("onset_ts", float("inf"))
+            if existing is None or current_ts < existing.get("ts", float("inf")):
+                symptom_map[name] = {
+                    "iso": event.get("onset_iso", ""),
+                    "ts": current_ts,
+                    "precision": event.get("precision", "default"),
+                }
+        return symptom_map
+
+    # ===== 用药事件（Append-Only 事件流） =====
+
+    def append_medication_event(
+            self,
+            user_id: str,
+            drug: str,
+            dosage: Optional[str] = None,
+            effect: Optional[str] = None,
+            source_query: str = "",
+    ) -> str:
+        """追加一条用药记录事件到长期记忆"""
+        event_id = f"me_{uuid.uuid4().hex[:12]}"
+        event = {
+            "event_type": "medication_record",
+            "drug": drug,
+            "dosage": dosage,
+            "effect": effect,
+            "source_query": source_query,
+            "created_at": datetime.now().isoformat(),
+        }
+        self.store.put(
+            namespace=("medication_events", user_id),
+            key=event_id,
+            value=event,
+        )
+        logger.info(f"用药事件已写入L1：user={user_id}, drug={drug}")
+        return event_id
+
+    def get_medication_events(
+            self,
+            user_id: str,
+            drug: Optional[str] = None,
+            limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """获取用户的用药事件列表"""
+        items = self.store.search(
+            namespace_prefix=("medication_events", user_id)
+        )
+        records = []
+        for item in items:
+            if not item.value or "drug" not in item.value:
+                continue
+            if drug and item.value.get("drug") != drug:
+                continue
+            records.append(item.value)
+
+        records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return records[:limit]
 
 # 🔴 修改为同步单例获取，或在 FastAPI 中使用 lifespan 管理
 def get_long_term_memory() -> LongTermMemoryManager:

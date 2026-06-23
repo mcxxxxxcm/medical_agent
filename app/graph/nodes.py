@@ -20,6 +20,7 @@ import re
 import uuid
 import time
 import ast
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Literal
 from functools import wraps
 
@@ -152,6 +153,7 @@ class ClinicalCheckpointOutput(BaseModel):
     red_flags: Optional[List[str]] = Field(default=None, description="高危症状列表")
     confirmed_facts: Optional[List[str]] = Field(default=None, description="已确认的既往史/过敏史")
     ruled_out: Optional[List[str]] = Field(default=None, description="已排除的疾病或原因")
+    symptom_onset_dates: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, description="症状首发日期映射，如{'头痛':{'iso':'2026-06-21T10:00:00','ts':1784567890,'precision':'exact'}}")
 
 
 def extract_json_block(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -473,16 +475,169 @@ def _extract_symptoms_by_rules(question: str) -> Optional[Dict[str, Any]]:
             body_parts.append(part)
     body_parts = list(dict.fromkeys(body_parts))
 
+    # ===== 时间锚定：相对时间 → 绝对时间戳 =====
+    # 核心原则：绝不让 LLM 做时间运算，代码层完成所有时间转换和计算
+    # 三层策略：L1 dateparser 规则解析 → L2 中文数字正则兜底 → L3 默认当前时刻
+    system_now = datetime.now()
+    onset_iso = None       # ISO 格式绝对时间（如 "2026-06-22T00:23:00"）
+    onset_ts = None        # Unix 时间戳（用于精确计算差值）
+    time_precision = None  # 时间精度：exact / approximate / vague
+    duration = None        # 人类可读的持续时间（如 "3天"）
+
+    # L1: dateparser 解析（支持 200+ 语言的相对时间，1-5ms）
+    try:
+        import dateparser
+        parsed_time = dateparser.parse(
+            text,
+            settings={
+                'RELATIVE_BASE': system_now,       # 以系统时间为基准
+                'PREFER_DATES_FROM': 'past',        # 症状默认指向过去
+                'RETURN_AS_TIMEZONE_AWARE': False,
+                'TIMEZONE': 'Asia/Shanghai',
+                'PARSERS': ['relative-time', 'absolute-time', 'custom-formats'],
+            }
+        )
+        if parsed_time:
+            onset_iso = parsed_time.strftime("%Y-%m-%dT%H:%M:%S")
+            onset_ts = int(parsed_time.timestamp())
+            delta = system_now - parsed_time
+            days = delta.days
+            hours = delta.seconds // 3600
+            if days > 0:
+                duration = f"{days}天"
+            elif hours > 0:
+                duration = f"{hours}小时"
+            else:
+                duration = "今天"
+            time_precision = "exact"
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # L2: 中文数字正则兜底（dateparser 对中文数字+单位支持有限）
+    if not onset_ts:
+        duration_patterns = [
+            r"持续\s*([一二三四五六七八九十\d]+)\s*(天|周|个月|年)",
+            r"([一二三四五六七八九十\d]+)\s*(天|周|个月|年)\s*[了以]",
+            r"有\s*([一二三四五六七八九十\d]+)\s*(天|周|个月|年)",
+        ]
+        cn_num_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+                      "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        unit_days_map = {"天": 1, "周": 7, "个月": 30, "年": 365}
+
+        for pattern in duration_patterns:
+            m = re.search(pattern, text)
+            if m:
+                num_raw, unit = m.group(1), m.group(2)
+                num = cn_num_map.get(num_raw)
+                if num is not None:
+                    days_per_unit = unit_days_map.get(unit, 1)
+                    total_days = num * days_per_unit
+                    onset_dt = system_now - timedelta(days=total_days)
+                    onset_iso = onset_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                    onset_ts = int(onset_dt.timestamp())
+                    duration = f"{num}{unit}"
+                    time_precision = "exact"
+                break
+
+        # "几天了"等模糊表达
+        if not onset_ts:
+            vague_match = re.search(r"(几)\s*(天|周|个月)\s*[了以]", text)
+            if vague_match:
+                duration = f"?{vague_match.group(2)}"
+                time_precision = "vague"
+
+    # L3: 未提及任何时间 → 默认当前时刻（"我现在头痛"）
+    if not onset_ts and not duration:
+        onset_iso = system_now.strftime("%Y-%m-%dT%H:%M:%S")
+        onset_ts = int(system_now.timestamp())
+        duration = "今天"
+        time_precision = "default"  # 系统推断，非用户明确表述
+
     # 构建结果
     result = {
         "symptoms": found_symptoms,
         "severity": severity,
         "body_parts": body_parts if body_parts else None,
-        "duration": None,
+        "duration": duration,
+        "onset_date": onset_iso,         # 绝对时间（ISO格式）
+        "onset_ts": onset_ts,            # Unix 时间戳（精确计算用）
+        "time_precision": time_precision, # 时间精度标记
         "additional_info": None,
     }
 
     return result
+
+
+def _calculate_duration_from_checkpoint(
+    question: str, current_symptoms: List[str], checkpoint: Dict[str, Any]
+) -> Optional[str]:
+    """从临床快照中计算症状持续时间（代码层计算，绝不让LLM算）
+
+    核心原则：
+        - 使用 Unix 时间戳做精确差值计算
+        - 计算结果作为事实注入 Prompt，LLM 只负责读取
+
+    场景：用户首轮说"我现在头痛"→ onset_ts 记录到快照，
+         后续追问"头痛几天了"→ 代码层计算 current_ts - onset_ts
+
+    Args:
+        question: 当前用户问题
+        current_symptoms: 当前提取到的症状列表
+        checkpoint: 临床快照（含 symptom_onset_dates）
+
+    Returns:
+        持续时间字符串（如"3天2小时"），或 None
+    """
+    # 只在用户追问持续时间时触发（"几天了"/"多久了"/"多长时间"）
+    duration_question_patterns = [r"几天", r"多久", r"多长", r"多长时间", r"多长时间了"]
+    if not any(re.search(p, question) for p in duration_question_patterns):
+        return None
+
+    # 从快照中取出症状首发日期映射
+    onset_dates = checkpoint.get("symptom_onset_dates", {})
+    if not onset_dates:
+        return None
+
+    system_now = datetime.now()
+    system_now_ts = int(system_now.timestamp())
+
+    # 匹配当前症状与记录的 onset_ts
+    for symptom in current_symptoms:
+        for recorded_symptom, onset_info in onset_dates.items():
+            if symptom in recorded_symptom or recorded_symptom in symptom:
+                # 优先用 Unix 时间戳精确计算
+                onset_ts = onset_info.get("ts") if isinstance(onset_info, dict) else None
+                if onset_ts and isinstance(onset_ts, (int, float)):
+                    delta_seconds = system_now_ts - int(onset_ts)
+                    if delta_seconds >= 0:
+                        days = delta_seconds // 86400
+                        hours = (delta_seconds % 86400) // 3600
+                        if days > 0:
+                            return f"{days}天{hours}小时" if hours > 0 else f"{days}天"
+                        elif hours > 0:
+                            return f"{hours}小时"
+                        else:
+                            minutes = delta_seconds // 60
+                            return f"{minutes}分钟" if minutes > 0 else "刚刚"
+
+                # 兜底：用 ISO 字符串解析
+                onset_iso = onset_info.get("iso") if isinstance(onset_info, dict) else onset_info
+                if onset_iso and isinstance(onset_iso, str):
+                    try:
+                        onset_dt = datetime.strptime(onset_iso[:19], "%Y-%m-%dT%H:%M:%S")
+                        delta = system_now - onset_dt
+                        days = delta.days
+                        hours = delta.seconds // 3600
+                        if days > 0:
+                            return f"{days}天{hours}小时" if hours > 0 else f"{days}天"
+                        elif hours > 0:
+                            return f"{hours}小时"
+                    except (ValueError, TypeError):
+                        continue
+
+    return None
 
 
 def parse_router_output(raw_text: str) -> Optional[str]:
@@ -765,12 +920,24 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     has_drug = any(kw in question for kw in _DRUG_KEYWORDS)
     if has_drug and not has_any_symptom:
         logger.info(f"用药咨询问题，跳过症状解析：{question}")
-        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "additional_info": None}}
+        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}}
 
     # 规则优先提取症状
     rule_result = _extract_symptoms_by_rules(question)
     if rule_result:
         logger.info(f"规则提取症状成功，跳过LLM：{rule_result}")
+
+        # 追加：从 clinical_checkpoint 中计算持续时间
+        # 场景：用户首轮说"我现在头痛"→记录onset_date，后续追问"头痛几天了"→计算差值
+        checkpoint = state.get("clinical_checkpoint")
+        if checkpoint and not rule_result.get("duration"):
+            calculated_duration = _calculate_duration_from_checkpoint(
+                question, rule_result.get("symptoms", []), checkpoint
+            )
+            if calculated_duration:
+                rule_result["duration"] = calculated_duration
+                logger.info(f"从快照计算持续时间：{calculated_duration}")
+
         return {"symptoms": rule_result}
 
     # 规则未命中：调用本地模型提取（JSON Mode + 鲁棒解析 + 分隔符降级）
@@ -807,7 +974,7 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"症状解析失败：{str(e)}")
-        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "additional_info": None}}
+        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}}
 
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
@@ -1242,6 +1409,36 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     # 生成追问引导
     followup = _build_followup_hints(symptoms)
 
+    # 时间差事实注入（代码层计算，绝不让LLM算时间差）
+    time_facts_section = ""
+    if checkpoint and checkpoint.get("symptom_onset_dates"):
+        system_now = datetime.now()
+        system_now_ts = int(system_now.timestamp())
+        time_facts = []
+        onset_dates = checkpoint["symptom_onset_dates"]
+        for symptom_name, onset_info in onset_dates.items():
+            if not isinstance(onset_info, dict):
+                continue
+            onset_ts = onset_info.get("ts")
+            onset_iso = onset_info.get("iso", "")
+            precision = onset_info.get("precision", "default")
+            if onset_ts and isinstance(onset_ts, (int, float)):
+                delta_seconds = system_now_ts - int(onset_ts)
+                if delta_seconds >= 0:
+                    days = delta_seconds // 86400
+                    hours = (delta_seconds % 86400) // 3600
+                    if days > 0:
+                        duration_str = f"{days}天{hours}小时" if hours > 0 else f"{days}天"
+                    elif hours > 0:
+                        duration_str = f"{hours}小时"
+                    else:
+                        minutes = delta_seconds // 60
+                        duration_str = f"{minutes}分钟"
+                    precision_note = "（约数）" if precision == "approximate" else ""
+                    time_facts.append(f"- {symptom_name}：首发于 {onset_iso}，距今 {duration_str}{precision_note}")
+        if time_facts:
+            time_facts_section = f"【时间事实（系统计算，无需推算）】\n" + "\n".join(time_facts) + "\n"
+
     # L2 快照独立注入，确保即使对话历史为空也可见
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
 
@@ -1249,7 +1446,7 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
 【文档】
 {context}
 
-{checkpoint_section}{history_section}【问题】{question}
+{time_facts_section}{checkpoint_section}{history_section}【问题】{question}
 
 要求：基于文档和对话历史回答，结合用户之前提到的信息（如用药、症状等）；无相关信息则说明；结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}。"""
 
@@ -1442,6 +1639,7 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
     功能描述：
         从长期记忆中读取用户档案和健康历史
         作为工作流的第一个节点，为后续节点提供用户上下文
+        新增：从 L1 加载症状首发时间，填充 L2 symptom_onset_dates
 
     Args：
         state：当前状态，包含user_id
@@ -1455,16 +1653,12 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
     if not user_id:
         logger.info("未提供user_id，跳过长期记忆加载")
         return {"user_profile": None}
+
     try:
         memory = get_long_term_memory()
 
         # 读取用户档案
         user_profile = memory.get_user_profile(user_id)
-        # # ✅ 新增：加载最近查询历史，暂不需要此功能。使用checkpointer能够找到历史
-        # recent_queries = memory.get_query_history(user_id, limit=3)
-        # 注入到 state 或日志
-        # if recent_queries:
-        #     logger.info(f"加载最近{len(recent_queries)}条查询记录")
 
         if user_profile:
             logger.info(f"已加载用户档案：user_id={user_id}")
@@ -1479,7 +1673,29 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
             logger.info(f"用户档案信息：{', '.join(profile_info)}")
         else:
             logger.info(f"用户档案不存在：user_id={user_id}")
-        return {"user_profile": user_profile}
+
+        # 从 L1 加载症状首发时间，填充 L2 symptom_onset_dates
+        # 场景：新会话时 L2 为空，但 L1 有历史症状记录
+        result = {"user_profile": user_profile}
+        try:
+            l1_onset_dates = memory.get_all_symptom_onsets(user_id)
+            if l1_onset_dates:
+                logger.info(f"从L1加载症状首发时间：{list(l1_onset_dates.keys())}")
+                # 仅在 L2 快照为空或没有 symptom_onset_dates 时填充
+                existing_checkpoint = state.get("clinical_checkpoint")
+                existing_onset = (existing_checkpoint or {}).get("symptom_onset_dates") or {}
+                # 合并：L2 已有的优先（当前会话更新过），L1 补充缺失的
+                merged_onset = {**l1_onset_dates, **existing_onset}
+                if merged_onset != existing_onset:
+                    # 需要更新 clinical_checkpoint
+                    checkpoint = existing_checkpoint or {}
+                    checkpoint["symptom_onset_dates"] = merged_onset
+                    result["clinical_checkpoint"] = checkpoint
+                    logger.info(f"L1→L2 症状首发时间已合并：{list(merged_onset.keys())}")
+        except Exception as e:
+            logger.warning(f"从L1加载症状首发时间失败（不影响主流程）：{e}")
+
+        return result
 
     except Exception as e:
         logger.error(f"加载长期记忆失败：{str(e)}")
@@ -2125,6 +2341,71 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
             ClinicalCheckpointOutput,
         )
         new_checkpoint = result.model_dump()
+
+        # 合并症状首发日期（代码层维护，LLM 不参与计算）
+        # 关键：先保留旧快照中已有的时间记录，再合并当前轮新增的
+        # 存储结构：{"头痛": {"iso": "2026-06-22T10:00:00", "ts": 1784567890, "precision": "exact"}}
+        existing_onset_dates = (existing_checkpoint or {}).get("symptom_onset_dates", {}) or {}
+        # LLM 可能输出空的 symptom_onset_dates，用旧快照的值兜底
+        onset_dates = {**existing_onset_dates, **(new_checkpoint.get("symptom_onset_dates") or {})}
+
+        # 合并当前轮症状解析的时间记录（覆盖旧值，以最新为准）
+        symptoms_data = state.get("symptoms")
+        if symptoms_data and symptoms_data.get("symptoms") and (symptoms_data.get("onset_ts") or symptoms_data.get("onset_date")):
+            for symptom_name in symptoms_data["symptoms"]:
+                onset_dates[symptom_name] = {
+                    "iso": symptoms_data.get("onset_date", ""),
+                    "ts": symptoms_data.get("onset_ts"),
+                    "precision": symptoms_data.get("time_precision", "default"),
+                }
+        if onset_dates:
+            new_checkpoint["symptom_onset_dates"] = onset_dates
+            logger.info(f"症状首发日期已记录：{onset_dates}")
+
+            # ===== 异步同步到 L1 长期记忆（不阻塞响应） =====
+            # 核心原则：L2 是工作缓存，L1 是事实真相源
+            # 每次快照更新时，将新的症状首发时间写入 L1（Append-Only）
+            try:
+                user_id = state.get("user_id")
+                if user_id:
+                    memory = get_long_term_memory()
+                    question = state.get("question", "")
+                    for symptom_name, onset_info in onset_dates.items():
+                        # 只同步当前轮新增/更新的（有 ts 的）
+                        if isinstance(onset_info, dict) and onset_info.get("ts"):
+                            # 检查 L1 中是否已有相同症状的更早记录
+                            existing_l1 = memory.get_latest_symptom_onset(user_id, symptom_name)
+                            if existing_l1 and existing_l1.get("ts") and existing_l1["ts"] <= onset_info["ts"]:
+                                # L1 已有更早的记录，不同步（保留最早首发时间）
+                                continue
+                            memory.append_symptom_event(
+                                user_id=user_id,
+                                symptom_name=symptom_name,
+                                onset_iso=onset_info.get("iso", ""),
+                                onset_ts=onset_info["ts"],
+                                precision=onset_info.get("precision", "default"),
+                                source_query=question[:100],
+                            )
+            except Exception as e:
+                logger.warning(f"症状事件同步到L1失败（不影响主流程）：{e}")
+
+        # ===== 用药记录同步到 L1 =====
+        try:
+            user_id = state.get("user_id")
+            if user_id and new_checkpoint.get("medication_history"):
+                memory = get_long_term_memory()
+                question = state.get("question", "")
+                for med in new_checkpoint["medication_history"]:
+                    if isinstance(med, dict) and med.get("drug"):
+                        memory.append_medication_event(
+                            user_id=user_id,
+                            drug=med["drug"],
+                            dosage=med.get("dosage"),
+                            effect=med.get("effect"),
+                            source_query=question[:100],
+                        )
+        except Exception as e:
+            logger.warning(f"用药记录同步到L1失败（不影响主流程）：{e}")
 
         # 删除已提取的消息（滑动窗口：保留最近3轮，删除其余）
         delete_messages = [RemoveMessage(id=m.id) for m in messages_to_extract if hasattr(m, 'id') and m.id]

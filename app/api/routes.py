@@ -465,8 +465,12 @@ async def stream(request: ChatRequest, http_request: Request):
                                         cached_answer = json.loads(cached_raw)
                                         logger.info(f"⚡ L0答案缓存命中，直接返回：{request.question[:30]}...")
                                         return
+                                    else:
+                                        logger.info(f"L0答案缓存未命中：{request.question[:30]}...")
                             except Exception:
                                 pass
+                        else:
+                            logger.info(f"L0答案缓存跳过（用户有档案，答案个性化不可缓存）")
 
                         # L2 语义相似匹配（文档级）
                         # 注：已移除 L1 精确匹配缓存，L2 完全覆盖 L1 功能
