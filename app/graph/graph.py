@@ -16,9 +16,6 @@
 import sys
 import asyncio
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware
-
 # Windows 平台需要设置事件循环策略
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -53,22 +50,6 @@ from app.memory.checkpointer import get_checkpointer
 from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
-
-
-# 使用create_agent创建的agent可以以节点的方式直接加入workflow, 但这里的逻辑有误，子agent无法总结主agent的messages
-# def create_summarization_subagent():
-#     """创建消息总结子agent"""
-#     return create_agent(
-#         model="gpt-4o-mini",
-#         tools=[],
-#         middleware=[
-#             SummarizationMiddleware(
-#                 model="gpt-4o-mini",
-#                 trigger={"tokens": 4000, "messages": 10},  # tokens > 4000 AND messages > 10时触发
-#                 keep={"messages": 6}  # 保留最近6条消息
-#             ),
-#         ]
-#     )
 
 
 def build_graph() -> StateGraph:
@@ -325,38 +306,15 @@ async def run_graph(
 
 
 if __name__ == "__main__":
-    import asyncio
-
-
     async def test():
-        # print("【保存用户档案】")
-        # user_id = "test_user"
-        # try:
-        #     memory = get_long_term_memory()
-        #     memory.save_user_profile(
-        #         user_id=user_id,
-        #         profile={
-        #             "name": "张三",
-        #             "age": 30,
-        #             "gender": "男",
-        #             "allergies": ["青霉素", "海鲜"],
-        #         }
-        #     )
-        #     print(f"  用户档案已保存：user_id={user_id}")
-        # except Exception as e:
-        #     print(f"  保存失败：{e}")
-
-        print("=== 测试工作流 ===\n")
-
         result = await run_graph(
-            question="你好,我刚刚问了什么问题？",
+            question="你好，我刚刚问了什么问题？",
             user_id="test_user3",
             thread_id="test_thread_003",
         )
-
         print(f"最终答案: {result.get('final_answer')}")
         print(f"警告信息: {result.get('warnings')}")
         print(f"来源信息: {result.get('sources')}")
 
-
+    import asyncio
     asyncio.run(test())

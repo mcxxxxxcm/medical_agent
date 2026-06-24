@@ -272,6 +272,149 @@ class LongTermMemoryManager:
                 }
         return symptom_map
 
+    # ===== Bad Case 采集（自包含性检测回归测试） =====
+
+    def append_bad_case(
+            self,
+            case_type: str,
+            original_query: str,
+            rewritten_query: str,
+            final_question: str,
+            history_summary: str = "",
+            route: str = "",
+            top_doc_score: float = 0.0,
+            grade_result: str = "",
+            answer_preview: str = "",
+            user_id: str = "system",
+            thread_id: str = "",
+            metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """追加一条 bad case 记录
+
+        case_type 分类：
+            - "rewrite_missed_anaphora": 指代词未重写（如"还有其他可以吃的吗"）
+            - "rewrite_lost_entity": 重写丢失核心实体（守卫回退）
+            - "rewrite_same_as_original": 重写结果与原问题一致（LLM未理解上下文）
+            - "low_score_no_clarify": 检索低分但未触发澄清（幻觉出口）
+            - "manual_flag": 人工标注的 bad case
+
+        Args:
+            case_type: bad case 类型
+            original_query: 用户原始问题
+            rewritten_query: 重写后的检索查询
+            final_question: 重写后的完整问题
+            history_summary: 对话历史摘要
+            route: 路由结果
+            top_doc_score: 最高文档评分
+            grade_result: 文档评分结果
+            answer_preview: AI 回答预览（前200字）
+            user_id: 用户ID
+            thread_id: 会话线程ID
+            metadata: 额外元数据
+
+        Returns:
+            case_id
+        """
+        case_id = f"bc_{uuid.uuid4().hex[:12]}"
+        case = {
+            "case_id": case_id,
+            "case_type": case_type,
+            "original_query": original_query,
+            "rewritten_query": rewritten_query,
+            "final_question": final_question,
+            "history_summary": history_summary[:500] if history_summary else "",
+            "route": route,
+            "top_doc_score": top_doc_score,
+            "grade_result": grade_result,
+            "answer_preview": answer_preview[:200] if answer_preview else "",
+            "thread_id": thread_id,
+            "metadata": metadata or {},
+            "created_at": datetime.now().isoformat(),
+            "reviewed": False,
+            "expected_rewrite": "",  # 人工补填：期望的重写结果
+            "is_self_contained": None,  # 人工标注：原问题是否自包含
+        }
+        self.store.put(
+            namespace=("bad_cases", user_id),
+            key=case_id,
+            value=case,
+        )
+        logger.info(f"Bad case 已记录：type={case_type}, query={original_query[:30]}")
+        return case_id
+
+    def get_bad_cases(
+            self,
+            user_id: str = "system",
+            case_type: Optional[str] = None,
+            reviewed: Optional[bool] = None,
+            limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """查询 bad case 列表
+
+        Args:
+            user_id: 用户ID（默认 "system" 查全局）
+            case_type: 按类型过滤
+            reviewed: 按审核状态过滤
+            limit: 最大返回条数
+
+        Returns:
+            bad case 列表，按创建时间倒序
+        """
+        items = self.store.search(
+            namespace_prefix=("bad_cases", user_id)
+        )
+        records = []
+        for item in items:
+            if not item.value or "case_id" not in item.value:
+                continue
+            if case_type and item.value.get("case_type") != case_type:
+                continue
+            if reviewed is not None and item.value.get("reviewed") != reviewed:
+                continue
+            records.append(item.value)
+
+        records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return records[:limit]
+
+    def update_bad_case_review(
+            self,
+            user_id: str,
+            case_id: str,
+            expected_rewrite: str = "",
+            is_self_contained: Optional[bool] = None,
+            reviewed: bool = True,
+    ) -> None:
+        """人工审核更新 bad case（补填期望重写结果和自包含标注）
+
+        Args:
+            user_id: 用户ID
+            case_id: case ID
+            expected_rewrite: 期望的重写结果
+            is_self_contained: 原问题是否自包含
+            reviewed: 是否已审核
+        """
+        item = self.store.get(
+            namespace=("bad_cases", user_id),
+            key=case_id,
+        )
+        if not item or not item.value:
+            logger.warning(f"Bad case 不存在：{case_id}")
+            return
+
+        case = item.value
+        if expected_rewrite:
+            case["expected_rewrite"] = expected_rewrite
+        if is_self_contained is not None:
+            case["is_self_contained"] = is_self_contained
+        case["reviewed"] = reviewed
+
+        self.store.put(
+            namespace=("bad_cases", user_id),
+            key=case_id,
+            value=case,
+        )
+        logger.info(f"Bad case 审核更新：{case_id}")
+
     # ===== 用药事件（Append-Only 事件流） =====
 
     def append_medication_event(

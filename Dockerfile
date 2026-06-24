@@ -26,7 +26,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 
-RUN mkdir -p logs /app/models
+ARG MODEL_DIR=/app/models
+RUN mkdir -p logs ${MODEL_DIR}
 
 EXPOSE 8000
 

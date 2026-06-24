@@ -1,29 +1,40 @@
-numpy~=1.26.4
+# ===== Web Framework =====
 uvicorn~=0.32.1
 fastapi~=0.129.0
 pydantic~=2.12.5
-starlette~=0.51.0
-langchain-community~=0.4.1
-langchain-core~=1.2.17
-langchain-text-splitters~=1.1.0
-jieba~=0.42.1
-rank-bm25~=0.2.2
-langchain-openai~=1.0.3
 pydantic-settings~=2.12.0
-sqlalchemy~=2.0.45
-asyncio~=3.4.3
+starlette~=0.51.0
+python-dotenv~=1.0.1
+
+# ===== LangChain & LangGraph =====
 langchain~=1.0.0
+langchain-core~=1.2.17
+langchain-community~=0.4.1
+langchain-openai~=1.0.3
+langchain-text-splitters~=1.1.0
+langchain-chroma
+langchain-mineru
 langgraph~=1.0.10
 langgraph-checkpoint-postgres~=2.0.0
-python-dotenv~=1.0.1
-redis~=7.3.0
-langchain-chroma
-transformers>=4.35.0
-#optimum[onnxruntime]~=2.1.0
-psycopg-binary
-#pypdf  # 已替换为 MinerU
-langchain-mineru
 
-onnxruntime>=1.16.0
+# ===== RAG & Embedding =====
+rank-bm25~=0.2.2
+transformers>=4.35.0
 tokenizers>=0.15.0
+onnxruntime>=1.16.0
+
+# ===== Database & Cache =====
+redis~=7.3.0
+sqlalchemy~=2.0.45
+psycopg-binary
+
+# ===== NLP =====
+jieba~=0.42.1
 dateparser~=1.4.1
+
+# ===== Numeric & Async =====
+numpy~=1.26.4
+asyncio~=3.4.3
+
+# ===== Dev & Test =====
+pytest~=8.0

@@ -304,12 +304,12 @@
 <div class="input-container">
     <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
     <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('imageInput').click()" title="上传图片">📎</button>
-        <textarea
-                id="userInput"
-                placeholder="输入您的问题..."
-                rows="1"
-                onkeydown="handleKeyDown(event)"
-        ></textarea>
+    <textarea
+        id="userInput"
+        placeholder="输入您的问题..."
+        rows="1"
+        onkeydown="handleKeyDown(event)"
+    ></textarea>
     <button id="sendBtn" onclick="sendMessage()">发送</button>
 </div>
 
@@ -461,7 +461,7 @@
                     if (currentSources.length > 0) {
                         const sourcesDiv = document.createElement('div');
                         sourcesDiv.className = 'sources';
-                        sourcesDiv.innerHTML = '📚 来源：' + currentSources.map(s => s.source).join(', ');
+                        sourcesDiv.innerHTML = `📚 来源：${currentSources.map(s => s.source).join(', ')}`;
                         loadingDiv.appendChild(sourcesDiv);
                         scrollToBottom();
                     }

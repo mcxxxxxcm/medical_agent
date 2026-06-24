@@ -17,284 +17,51 @@
 """
 import json
 import re
-import uuid
 import time
-import ast
+import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Literal
-from functools import wraps
+from typing import Any, Dict, List, Literal, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage, RemoveMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from langgraph.types import Command
-from pydantic import BaseModel, Field
 
-from app.core.config import get_config
-from app.graph.state import MedicalAssistantState
-from app.core.llm import get_llm, get_rewrite_llm, get_symptom_llm, get_vision_llm, get_local_llm, get_local_llm_json
-from app.memory import get_long_term_memory
 from app.core.app_logging import get_logger
+from app.core.config import get_config
+from app.core.llm import (
+    get_llm,
+    get_local_llm,
+    get_local_llm_json,
+    get_rewrite_llm,
+    get_symptom_llm,
+    get_vision_llm,
+)
+from app.graph.state import MedicalAssistantState
+from app.memory import get_long_term_memory
 from app.rag.hybrid_retriever import get_hybrid_retriever
 
 logger = get_logger(__name__)
 config = get_config()
 
-# 公共关键词集合：药物名（用于路由/症状解析/查询重写/HyDE 多处判断）
-_DRUG_KEYWORDS = [
-    "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林", "奥司他韦",
-    "连花清瘟", "板蓝根", "感冒灵", "止咳糖浆", "蒙脱石散", "藿香正气",
-    "氯雷他定", "西替利嗪", "扑尔敏", "地塞米松", "红霉素", "甲硝唑",
-    "奥美拉唑", "雷尼替丁", "硝苯地平", "氨氯地平", "二甲双胍",
-    "阿卡波糖", "格列美脲", "胰岛素", "阿托伐他汀", "辛伐他汀",
-    "氯吡格雷", "华法林", "肝素", "青霉素", "左氧氟沙星",
-    "莫西沙星", "利巴韦林", "更昔洛韦", "阿昔洛韦", "伐昔洛韦",
-    "双氯芬酸", "塞来昔布", "美洛昔康", "曲马多", "可待因",
-    "地氯雷他定", "氮卓斯汀", "糠酸莫米松", "丙酸氟替卡松",
-]
-_DRUG_INTENT_KEYWORDS = ["吃几颗", "吃几粒", "怎么吃", "怎么服用", "用量", "用法",
-                          "剂量", "一天几次", "一次几颗", "一次几粒", "能吃吗",
-                          "能吃不能吃", "可以吃吗", "能和", "能一起"]
-
-
-# 计时装饰器
-def timing_decorator(node_name: str):
-    """节点耗时记录装饰器"""
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            start_time = time.time()
-            logger.info(f"⏱️ [{node_name}] 开始执行")
-
-            try:
-                result = func(*args, **kwargs)
-                elapsed_time = (time.time() - start_time) * 1000
-                logger.info(f"⏱️ [{node_name}] 执行完成，耗时：{elapsed_time:.2f}ms")
-                return result
-            except Exception as e:
-                elapsed_time = (time.time() - start_time) * 1000
-                logger.error(f"⏱️ [{node_name}] 执行失败，耗时：{elapsed_time:.2f}ms，错误：{str(e)}")
-                raise
-
-        return wrapper
-
-    return decorator
-
-def async_timing_decorator(node_name: str):
-    """异步节点耗时记录装饰器"""
-
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            start_time = time.time()
-            logger.info(f"计时器：{node_name}开始执行")
-
-            try:
-                result = await func(*args, **kwargs)
-                elapsed_time = (time.time() - start_time) * 1000
-                logger.info(f"计时器：{node_name}执行完成，耗时：{elapsed_time:.2f}ms")
-                return result
-            except Exception as e:
-                elapsed_time = (time.time() - start_time) * 1000
-                logger.error(f"计时器：{node_name}执行失败，耗时：{elapsed_time:.2f}ms，错误：{str(e)}")
-                raise
-        return wrapper
-    return decorator
-
-# 结构化输出模型定义（改进原始方案，使用langchain的with_structured_output替代手动JSON解析）
-class RouterOutput(BaseModel):
-    """路由分类输出（router_node）"""
-    question_type: Literal["symptom", "knowledge", "general"] = Field(
-        description="问题类型：symptom=症状查询，knowledge=知识查询，general=一般问题"
-    )
-
-
-class SymptomAnalysisOutput(BaseModel):
-    """症状分析输出"""
-    symptoms: Optional[List[str]] = Field(default=None, description="症状列表")
-    severity: Optional[Literal["轻微", "中等", "严重"]] = Field(default=None, description="严重程度")
-    body_parts: Optional[List[str]] = Field(default=None, description="身体部位")
-    duration: Optional[str] = Field(default=None, description="持续时间")
-    additional_info: Optional[str] = Field(default=None, description="附加信息")
-
-
-class SafetyCheckOutput(BaseModel):
-    """安全检查输出"""
-    is_safe: bool = Field(description="是否安全")
-    risk_level: Literal["low", "medium", "high"] = Field(description="风险等级")
-    detected_issues: List[str] = Field(default_factory=list, description="检测到的问题")
-    requires_medical_attention: bool = Field(description="是否需要就医")
-
-
-class GradeDocuments(BaseModel):
-    """文档相关性评分（Agentic RAG 模式）"""
-    binary_score: str = Field(
-        description="文档相关性评分：'yes' 表示相关，'no' 表示不相关"
-    )
-
-
-class QueryRewriteOutput(BaseModel):
-    """查询重写输出"""
-    rewritten_query: str = Field(description="重写后的查询")
-
-
-class ProfileExtractionOutput(BaseModel):
-    """用户档案提取输出"""
-    name: Optional[str] = Field(default=None, description="姓名")
-    age: Optional[int] = Field(default=None, description="年龄")
-    gender: Optional[str] = Field(default=None, description="性别")
-    allergies: Optional[List[str]] = Field(default=None, description="过敏史")
-
-
-class ClinicalCheckpointOutput(BaseModel):
-    """结构化临床状态快照"""
-    chief_complaint: Optional[str] = Field(default=None, description="核心主诉（如：持续性头痛3天）")
-    symptom_timeline: Optional[List[Dict[str, Optional[str]]]] = Field(default=None, description="症状时间线，每项含symptom/onset/severity/evolution")
-    medication_history: Optional[List[Dict[str, Optional[str]]]] = Field(default=None, description="用药记录，每项含drug/dosage/effect")
-    red_flags: Optional[List[str]] = Field(default=None, description="高危症状列表")
-    confirmed_facts: Optional[List[str]] = Field(default=None, description="已确认的既往史/过敏史")
-    ruled_out: Optional[List[str]] = Field(default=None, description="已排除的疾病或原因")
-    symptom_onset_dates: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, description="症状首发日期映射，如{'头痛':{'iso':'2026-06-21T10:00:00','ts':1784567890,'precision':'exact'}}")
-
-
-def extract_json_block(raw_text: str) -> Optional[Dict[str, Any]]:
-    """从模型文本输出中尽量提取 JSON 对象（鲁棒解析）
-
-    解析策略（按优先级）：
-        1. 直接 json.loads（最快路径）
-        2. 提取 Markdown 代码块中的 JSON
-        3. 正则提取最大的 {...} 块
-        4. json_repair 修复（处理单引号、多余逗号、缺少引号等）
-        5. ast.literal_eval（处理 Python 字典格式）
-    """
-    if not raw_text:
-        return None
-
-    text = raw_text.strip()
-
-    # 收集候选 JSON 字符串（按优先级排序）
-    candidates = []
-
-    # 优先级1：Markdown 代码块中的 JSON
-    fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
-    if fenced_match:
-        candidates.append(fenced_match.group(1).strip())
-
-    # 优先级2：最大的 {...} 块
-    brace_match = re.search(r"\{[\s\S]*\}", text)
-    if brace_match:
-        candidates.append(brace_match.group(0).strip())
-
-    # 优先级3：原始文本
-    candidates.append(text)
-
-    for candidate in candidates:
-        # 第一层：直接 json.loads
-        try:
-            data = json.loads(candidate)
-            if isinstance(data, dict):
-                _coerce_list_fields(data)
-                return data
-        except Exception:
-            pass
-
-        # 第二层：json_repair 修复（单引号、多余逗号、缺少引号等 3B 模型常见问题）
-        try:
-            from json_repair import repair_json
-            repaired = repair_json(candidate)
-            data = json.loads(repaired)
-            if isinstance(data, dict):
-                _coerce_list_fields(data)
-                logger.debug(f"json_repair 修复成功")
-                return data
-        except ImportError:
-            pass  # json_repair 未安装，跳过
-        except Exception:
-            pass
-
-        # 第三层：ast.literal_eval（处理 Python 字典格式，如 {'key': 'value'}）
-        try:
-            data = ast.literal_eval(candidate)
-            if isinstance(data, dict):
-                # ast 解析的结果可能包含非 JSON 类型，转为 JSON 安全格式
-                data = json.loads(json.dumps(data, default=str))
-                _coerce_list_fields(data)
-                logger.debug(f"ast.literal_eval 解析成功")
-                return data
-        except Exception:
-            pass
-
-    return None
-
-
-def _coerce_list_fields(data: Dict[str, Any]) -> None:
-    """将期望为列表但实际为字符串的字段自动转为列表，并展平嵌套字典元素
-
-    3B 模型常见问题：
-        "symptoms": "膝盖摔伤"  →  "symptoms": ["膝盖摔伤"]
-        "body_parts": "膝盖"    →  "body_parts": ["膝盖"]
-        "red_flags": [{"symptom": "头痛加重"}]  →  "red_flags": ["头痛加重"]
-    """
-    list_field_names = {"symptoms", "body_parts", "medications", "allergies",
-                        "red_flags", "confirmed_facts", "ruled_out"}
-    for field in list_field_names:
-        if field in data and isinstance(data[field], str):
-            # 用中文逗号、顿号、空格分割
-            items = re.split(r"[，,、；;\s]+", data[field])
-            data[field] = [item.strip() for item in items if item.strip()]
-        elif field in data and data[field] is None:
-            data[field] = []
-        elif field in data and isinstance(data[field], list):
-            # 展平嵌套字典元素：[{"symptom": "头痛加重"}] → ["头痛加重"]
-            flattened = []
-            for item in data[field]:
-                if isinstance(item, dict):
-                    # 取第一个非空值作为字符串
-                    value = next((v for v in item.values() if v is not None), str(item))
-                    flattened.append(str(value))
-                elif isinstance(item, str):
-                    flattened.append(item)
-                elif item is not None:
-                    flattened.append(str(item))
-            data[field] = flattened
-
-
-def invoke_structured_with_fallback(llm, prompt: str, schema: type[BaseModel]) -> BaseModel:
-    """优先结构化输出，失败时回退到纯文本+JSON提取，避免重复多次调用模型"""
-    try:
-        structured_llm = llm.with_structured_output(schema)
-        return structured_llm.invoke(prompt)
-    except Exception as structured_error:
-        logger.warning(f"{schema.__name__} 结构化解析失败，退回单次文本解析：{structured_error}")
-        raw_response = llm.invoke(prompt)
-        raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
-        parsed = extract_json_block(raw_text)
-        if parsed is not None:
-            return schema.model_validate(parsed)
-        raise ValueError(f"{schema.__name__} 回退解析失败，模型原始输出：{raw_text}")
-
-
-def invoke_json_once_with_fallback(
-        llm,
-        prompt: str,
-        schema: type[BaseModel],
-        fallback_parser=None,
-) -> BaseModel:
-    """单次模型调用后在本地完成 JSON / 文本回退解析。"""
-    raw_response = llm.invoke(prompt)
-    raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
-
-    parsed = extract_json_block(raw_text)
-    if parsed is not None:
-        try:
-            return schema.model_validate(parsed)
-        except Exception as schema_error:
-            logger.warning(f"{schema.__name__} JSON 校验失败，尝试本地规则解析：{schema_error}")
-
-    if fallback_parser is not None:
-        payload = fallback_parser(raw_text)
-        return schema.model_validate(payload)
-
-    raise ValueError(f"{schema.__name__} 单次调用本地解析失败，模型原始输出：{raw_text}")
+# 从子模块导入公共工具和模型（相对导入避免循环引用）
+from .helpers import (
+    _DRUG_KEYWORDS,
+    _DRUG_INTENT_KEYWORDS,
+    async_timing_decorator,
+    extract_json_block,
+    invoke_json_once_with_fallback,
+    invoke_structured_with_fallback,
+    timing_decorator,
+    _coerce_list_fields,
+)
+from .models import (
+    ClinicalCheckpointOutput,
+    GradeDocuments,
+    ProfileExtractionOutput,
+    QueryRewriteOutput,
+    RouterOutput,
+    SafetyCheckOutput,
+    SymptomAnalysisOutput,
+)
 
 
 def detect_rule_based_route(question: str) -> Optional[str]:
@@ -899,36 +666,29 @@ def _llm_route(question: str) -> str:
 def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """症状解析节点
 
-    功能描述：
-        从用户问题中提取结构化的症状信息
-        优化：规则优先提取，规则未命中时调用快速模型（glm-4-flash）
-
-    Args：
-        state：当前状态，包含question字段
-
-    Returns：
-        Dict[str, Any]：需要更新的状态字段
+    策略（按优先级）：
+        1. 规则提取命中 → 直接返回（0ms）
+        2. 追问短路：有对话历史 + 规则未命中 → 跳过 LLM（省 2-3s），症状从快照继承
+        3. 首轮规则未命中 → 调用本地模型提取
+        4. 统一末尾：空症状时尝试从 clinical_checkpoint 补充
     """
     logger.info("症状解析节点开始执行")
 
     question = state.get("question", "")
-
-    # 用药咨询快速跳过：问题不含症状词但含药物名 → 无需症状解析
+    messages = state.get("messages", [])
     _symptom_words = ["疼", "痛", "发烧", "咳嗽", "恶心", "呕吐", "腹泻", "头晕",
                       "胸闷", "过敏", "出血", "骨折", "肿", "痒", "麻", "炎"]
-    has_any_symptom = any(kw in question for kw in _symptom_words)
+
+    # 用药咨询快速跳过
     has_drug = any(kw in question for kw in _DRUG_KEYWORDS)
-    if has_drug and not has_any_symptom:
+    if has_drug and not any(kw in question for kw in _symptom_words):
         logger.info(f"用药咨询问题，跳过症状解析：{question}")
         return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}}
 
-    # 规则优先提取症状
+    # 1. 规则提取
     rule_result = _extract_symptoms_by_rules(question)
     if rule_result:
         logger.info(f"规则提取症状成功，跳过LLM：{rule_result}")
-
-        # 追加：从 clinical_checkpoint 中计算持续时间
-        # 场景：用户首轮说"我现在头痛"→记录onset_date，后续追问"头痛几天了"→计算差值
         checkpoint = state.get("clinical_checkpoint")
         if checkpoint and not rule_result.get("duration"):
             calculated_duration = _calculate_duration_from_checkpoint(
@@ -937,44 +697,65 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
             if calculated_duration:
                 rule_result["duration"] = calculated_duration
                 logger.info(f"从快照计算持续时间：{calculated_duration}")
-
         return {"symptoms": rule_result}
 
-    # 规则未命中：调用本地模型提取（JSON Mode + 鲁棒解析 + 分隔符降级）
-    try:
-        llm = get_local_llm_json()  # JSON Mode：Ollama response_format=json_object
-
-        prompt = f"""你是一位专业的症状分析助手，负责从用户描述中提取结构化的症状信息。
-
-用户描述：
-{question}
-
-请提取症状名称、严重程度、身体部位、持续时间等信息。
-
-重要：必须返回合法的 JSON 对象，字段值格式要求：
-- symptoms 和 body_parts 必须是数组（列表），即使只有一个元素也要用数组
-- severity 只能是"轻微"、"中等"、"严重"之一
-- 无法提取的字段设为 null
-
-示例输出：
-{{"symptoms": ["膝盖摔伤"], "severity": "中等", "body_parts": ["膝盖"], "duration": null, "additional_info": null}}
-
-只输出 JSON，不要输出任何其他内容："""
-        result: SymptomAnalysisOutput = invoke_json_once_with_fallback(
-            llm,
-            prompt,
-            SymptomAnalysisOutput,
-            fallback_parser=parse_symptom_text,  # 分隔符格式降级：症状：xxx\n部位：xxx
+    # 2. 追问短路：有历史 → 省 2-3s LLM 调用，症状由下方快照继承
+    if messages:
+        logger.info(f"追问规则未命中，短路跳过LLM（{len(messages)}条历史）：{question[:30]}")
+        return _symptoms_with_checkpoint_fallback(
+            {"symptoms": [], "severity": None, "body_parts": [],
+             "duration": None, "onset_date": None, "additional_info": None},
+            state,
         )
-        payload = result.model_dump()
 
-        logger.info(f"快速模型提取症状成功：{payload.get('symptoms')}")
+    # 3. 首轮 LLM 提取
+    symptoms_payload = None
+    try:
+        llm = get_local_llm_json()
+        prompt = f"""从用户描述中提取症状信息，返回JSON。
 
-        return {"symptoms": payload}
+描述：{question}
 
+格式：{{"symptoms": ["症状"], "severity": "轻微/中等/严重", "body_parts": ["部位"], "duration": null, "additional_info": null}}
+symptoms和body_parts必须是数组。只输出JSON："""
+        result: SymptomAnalysisOutput = invoke_json_once_with_fallback(
+            llm, prompt, SymptomAnalysisOutput,
+            fallback_parser=parse_symptom_text,
+        )
+        symptoms_payload = result.model_dump()
+        logger.info(f"LLM提取症状：{symptoms_payload.get('symptoms')}")
     except Exception as e:
         logger.error(f"症状解析失败：{str(e)}")
-        return {"symptoms": {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}}
+        symptoms_payload = {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}
+
+    # 4. 快照继承
+    return _symptoms_with_checkpoint_fallback(symptoms_payload, state)
+
+
+def _symptoms_with_checkpoint_fallback(symptoms_payload: dict, state: MedicalAssistantState) -> dict:
+    """空症状时从临床快照补全（追问场景）"""
+    if symptoms_payload.get("symptoms"):
+        return {"symptoms": symptoms_payload}
+
+    checkpoint = state.get("clinical_checkpoint")
+    if not checkpoint:
+        return {"symptoms": symptoms_payload}
+
+    cp_symptoms = checkpoint.get("symptoms") or []
+    if not cp_symptoms:
+        return {"symptoms": symptoms_payload}
+
+    symptoms_payload["symptoms"] = list(cp_symptoms)
+    symptoms_payload["body_parts"] = checkpoint.get("body_parts") or []
+    symptoms_payload["severity"] = checkpoint.get("severity")
+    cp_onset = checkpoint.get("symptom_onset_dates") or {}
+    if cp_onset and not symptoms_payload.get("duration"):
+        first_onset = next(iter(cp_onset.values()), {}) if isinstance(cp_onset, dict) else None
+        if isinstance(first_onset, dict) and first_onset.get("iso"):
+            symptoms_payload["onset_date"] = first_onset.get("iso")
+            symptoms_payload["onset_ts"] = first_onset.get("ts")
+    logger.info(f"追问症状继承：从临床快照补充 {cp_symptoms}")
+    return {"symptoms": symptoms_payload}
 
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
@@ -1063,7 +844,14 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
     retrieval_attempts = int(state.get("retrieval_attempts") or 0)
     rewritten_query = state.get("rewritten_query") or question
 
+    # 振荡检测：比较重试前后的 Reranker 分数，无显著提升则跳过重试
+    OSCILLATION_SCORE_DELTA = 0.05  # Reranker top-1 分数提升低于此值视为无改善
+    OSCILLATION_DOC_DELTA = 1       # 相关文档数增加低于此值视为无改善
+    _prev_max_score = float(state.get("_prev_max_score") or 0)
+    _prev_relevant_count = int(state.get("_prev_relevant_count") or 0)
+
     if not retrieved_docs:
+        # 记录当前分数为空值，后续重试时比较
         if retrieval_attempts >= 2 or is_same_query(rewritten_query, question):
             logger.warning("无检索文档且已达到重试上限/查询未变化，直接生成兜底答案")
             return Command(
@@ -1076,11 +864,12 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
             )
 
         logger.warning("无检索文档，路由到查询重写")
-        return Command(goto="query_rewrite")
+        return Command(
+            goto="query_rewrite",
+            update={"_prev_max_score": 0, "_prev_relevant_count": 0},
+        )
 
     # Reranker 低分检测：最高分极低说明知识库无相关文档
-    # sigmoid 归一化后：0.5 = 中性，<0.02 = 明确不相关
-    # 此时强行引用不相关文档比直接回答更危险（医疗场景尤其如此）
     max_rerank_score = max(
         (doc.metadata.get("rerank_score", 0) for doc in retrieved_docs),
         default=0,
@@ -1100,9 +889,27 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
         )
 
     relevant_docs = filter_relevant_docs(question, retrieved_docs)
-    logger.info(f"文档启发式过滤结果：{len(retrieved_docs)} -> {len(relevant_docs)} 相关")
+    relevant_count = len(relevant_docs)
+    logger.info(f"文档启发式过滤结果：{len(retrieved_docs)} -> {relevant_count} 相关")
 
     if not relevant_docs:
+        # 振荡检测：有重试历史但无改善时不再重试
+        if _prev_max_score > 0:
+            score_delta = max_rerank_score - _prev_max_score
+            if score_delta < OSCILLATION_SCORE_DELTA:
+                logger.warning(
+                    f"自纠正无改善（score_delta={score_delta:.4f} < {OSCILLATION_SCORE_DELTA}），"
+                    f"跳过重试，直接生成兜底答案"
+                )
+                return Command(
+                    goto="answer_generation",
+                    update={
+                        "retrieved_docs": [],
+                        "final_answer": build_no_results_answer(question),
+                        "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                    },
+                )
+
         if retrieval_attempts >= 2 or is_same_query(rewritten_query, question):
             logger.warning("文档过滤后为空且不再重试，直接生成兜底答案")
             return Command(
@@ -1113,8 +920,25 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                     "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
                 },
             )
+
         logger.info("所有文档被启发式过滤，路由到查询重写")
-        return Command(goto="query_rewrite")
+        return Command(
+            goto="query_rewrite",
+            update={
+                "_prev_max_score": max_rerank_score,
+                "_prev_relevant_count": 0,
+            },
+        )
+
+    # 振荡检测：有重试历史时检查改善幅度
+    if _prev_max_score > 0 and retrieval_attempts > 0:
+        score_delta = max_rerank_score - _prev_max_score
+        doc_delta = relevant_count - _prev_relevant_count
+        if score_delta < OSCILLATION_SCORE_DELTA and doc_delta < OSCILLATION_DOC_DELTA:
+            logger.warning(
+                f"自纠正改善不足（score_delta={score_delta:.4f}, doc_delta={doc_delta}），"
+                f"不再重试，使用当前结果"
+            )
 
     return Command(
         goto="answer_generation",
@@ -1465,12 +1289,17 @@ def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, A
     # L2 会话层：临床快照
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text if checkpoint_text else '无'}\n"
 
+    # L3 短期窗口：注入近期对话历史
+    history_text = get_conversation_history_text(state, max_rounds=2)
+    history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
+
     return f"""你是一个友好的医疗助手。
 
-{frozen_profile_section}{checkpoint_section}【用户问题】
+{frozen_profile_section}{checkpoint_section}{history_section}【用户问题】
 {question}
 
 请简洁友好地回复用户。如果是问候语，请热情回复。如果是感谢，请礼貌回应。
+如果是追问，必须结合对话历史中提到的症状和药物来回答，不要脱离上文。
 回复要简短，不要超过50个字。
 """
 
@@ -1497,7 +1326,9 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """
     logger.info("答案生成节点开始执行")
 
-    question = state.get("question", "")
+    original_question = state.get("question", "")
+    # 优先使用重写后的完整问题（含上下文），无重写时用原问题
+    prompt_question = state.get("final_question") or state.get("rewritten_query") or original_question
     retrieved_docs = state.get("retrieved_docs")
     existing_answer = state.get("final_answer")
     context_prompt = get_user_context_prompt(state.get("user_profile"))
@@ -1510,7 +1341,7 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
             result = {
                 "final_answer": existing_answer,
                 "messages": [
-                    HumanMessage(content=question),
+                    HumanMessage(content=original_question),
                     AIMessage(content=existing_answer)
                 ]
             }
@@ -1519,7 +1350,7 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
             return result
 
         prompt = build_rag_prompt(
-            question=question,
+            question=prompt_question,
             retrieved_docs=retrieved_docs,
             user_profile=state.get("user_profile"),
             state=state,
@@ -1537,7 +1368,7 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
         result = {
             "final_answer": answer,
             "messages": [
-                HumanMessage(content=question),
+                HumanMessage(content=original_question),
                 AIMessage(content=answer)
             ]
         }
@@ -1898,8 +1729,18 @@ async def stream_vision_answer(state: MedicalAssistantState):
     try:
         llm = get_vision_llm(streaming=True)
 
-        context_prompt = get_user_context_prompt(user_profile)
-        user_info = f"\n【用户信息】\n{context_prompt}" if context_prompt else ""
+        # L1 永久层
+        profile_text = get_user_context_prompt(user_profile)
+        profile_section = f"【L1 用户档案】\n{profile_text}\n" if profile_text else ""
+
+        # L2 会话层
+        checkpoint = state.get("clinical_checkpoint")
+        checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
+        checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
+
+        # L3 短期窗口
+        history_text = get_conversation_history_text(state, max_rounds=2)
+        history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
 
         from langchain_core.messages import HumanMessage
 
@@ -1910,8 +1751,7 @@ async def stream_vision_answer(state: MedicalAssistantState):
 2. 如果发现紧急或严重情况，请立即建议用户就医
 3. 基于图片内容如实描述，不要编造信息
 
-{user_info}
-【用户问题】
+{profile_section}{checkpoint_section}{history_section}【用户问题】
 {question if question else "请帮我解读这张图片"}
 
 【回答要求】
@@ -1920,7 +1760,8 @@ async def stream_vision_answer(state: MedicalAssistantState):
 3. 用通俗易懂的语言解释含义
 4. 给出初步建议和注意事项
 5. 结尾加上安全提醒："⚠️ 以上解读仅供参考，如有疑问请及时就医"
-6. 如果图片不是医疗相关内容，请礼貌说明并引导用户上传正确的图片"""
+6. 如果图片不是医疗相关内容，请礼貌说明并引导用户上传正确的图片
+7. 如果对话历史中有相关症状或用药信息，结合这些信息给出更有针对性的解读"""
 
         message = HumanMessage(content=[
             {"type": "text", "text": text_content},
@@ -1994,138 +1835,134 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
 @timing_decorator("查询重写")
 def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """查询重写 + HyDE 假想答案生成节点
+    """查询重写 + 问题拆解 + HyDE 假想答案生成
 
     功能描述：
-        1. 查询重写：将依赖上下文的追问改写为独立可检索的查询（用于 BM25 稀疏检索）
-        2. HyDE 假想答案：生成一个假想的医学回答（用于 Dense 向量检索）
+        1. 查询重写：将追问补全为自包含的完整问题（融入对话历史中的症状/药物/诊断）
+        2. 问题拆解：从完整问题中提取检索用关键词（用于 BM25 稀疏检索）
+        3. HyDE 假想答案：生成假想医学回答（用于 Dense 向量检索）
 
-    重写策略（LLM 自主判断）：
-        不再使用硬编码规则判断是否需要重写，而是让 3B 模型自己决定。
-        核心逻辑：
-        - 无对话历史 → 查询一定自包含，直接跳过（0ms）
-        - 有对话历史 → LLM 一次调用完成判断+重写，输出 JSON：
-          {"need_rewrite": true/false, "final_query": "重写后的查询或原查询"}
-
-        需要重写的场景（LLM 自主识别）：
-        - 追问："那可以吃什么药？" → "头痛可以吃什么药"
-        - 指代："布洛芬没用换什么" → "头痛布洛芬无效换什么药"
-        - 省略："还有其他办法吗" → "头痛还有其他缓解办法吗"
-
-        不需要重写的场景（LLM 自主识别）：
-        - 明确首次提问："手腕疼怎么办"、"奥司他韦一天吃几颗"
-        - 已包含完整语义的查询："高血压患者能吃布洛芬吗"
-
-    HyDE（Hypothetical Document Embeddings）原理：
-        用户的查询通常很短（如"头痛怎么办"），而知识库中的文档是长篇医学论述。
-        两者在向量空间中的距离较远，导致召回率低。
-        HyDE 先让 LLM 生成一个"假想答案"（不需要正确，只需在语义空间中接近真实文档），
-        再用假想答案做向量检索，显著提升召回率。
+    核心原则：
+        - 有对话历史 → 强制重写 + 拆解，不再问"是否需要"（追问必然依赖上下文）
+        - 无对话历史 → 跳过重写（首轮问题一定自包含）
+        - FINAL（完整问句）→ 用于答案生成和 HyDE
+        - SEARCH（关键词）→ 用于 BM25 检索
 
     检索策略：
         - Dense 检索：用 hyde_answer 做 embedding（语义空间更接近文档）
-        - Sparse 检索（BM25）：用 rewritten_query（关键词匹配，假想答案会引入噪声）
+        - Sparse 检索（BM25）：用 rewritten_query（关键词，假想答案会引入噪声）
     """
     logger.info("查询重写节点开始执行")
 
     question = state.get("question", "")
     messages = state.get("messages", [])
+    user_id = state.get("user_id") or "anonymous"
+    thread_id = state.get("thread_id", "")
 
     rewritten_query = question
+    final_question = question
     hyde_answer = None
+
+    # ===== 自包含性前置检测（方案A P0）：指代词/省略结构 → 强制重写 =====
+    _anaphora_detected = False
+    if messages and _has_anaphora_pattern(question):
+        _anaphora_detected = True
+        logger.info(f"检测到指代词/省略结构，强制进入重写：{question}")
 
     # ===== 步骤0：无对话历史 → 查询一定自包含，无需重写 =====
     if not messages:
         logger.info(f"首轮对话，查询自包含，跳过重写：{question}")
     else:
-        # ===== 步骤1：有对话历史 → LLM 一次调用完成判断+重写 =====
+        # ===== 步骤1：有对话历史 → 强制重写 + 问题拆解 =====
         try:
-            llm = get_rewrite_llm()  # glm-4-flash API（本地模型暂不用于重写）
+            llm = get_rewrite_llm()
             history_summary = _build_rewrite_context(messages)
 
-            rewrite_prompt = f"""根据对话历史判断用户最新问题是否需要重写。
-规则：如果最新问题缺少主语、含代词(它/这个)或依赖上下文，则重写为完整独立问题；否则原样输出。
+            rewrite_prompt = f"""将追问补全为自包含问题，从历史中提取症状/药物补入。输出严格两行：
 
-历史：{history_summary}
-问题：{question}
+历史：
+{history_summary}
 
-请按以下格式输出：
-REWRITE: 是/否
-QUERY: 重写后的查询（如无需重写则输出原问题）"""
+追问：{question}
+
+FINAL: <含上下文补全的完整问题>
+SEARCH: <检索关键词 空格分隔>
+
+示例：追问"还有其他什么可以吃吗？"（历史提到头痛用布洛芬）
+→ FINAL: 缓解头痛除了布洛芬还有什么药？
+SEARCH: 头痛 缓解 药物"""
 
             raw_response = llm.invoke(rewrite_prompt)
             raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
 
-            # 优先解析分隔符格式（API模型友好），兜底解析JSON（本地模型）
-            need_rewrite = False
-            final_query = ""
+            # 解析 FINAL 和 SEARCH
+            final_match = re.search(r"FINAL:\s*(.+)", raw_text, re.IGNORECASE)
+            search_match = re.search(r"SEARCH:\s*(.+)", raw_text, re.IGNORECASE)
 
-            # 方式1：分隔符格式 REWRITE: 是/否 \n QUERY: xxx
-            rewrite_match = re.search(r"REWRITE:\s*(是|否|yes|no|true|false)", raw_text, re.IGNORECASE)
-            query_match = re.search(r"QUERY:\s*(.+)", raw_text, re.IGNORECASE)
-            if rewrite_match and query_match:
-                need_rewrite = rewrite_match.group(1).lower() in ("是", "yes", "true")
-                final_query = query_match.group(1).strip()
-                logger.info(f"分隔符格式解析：need_rewrite={need_rewrite}, query={final_query[:30]}")
+            if final_match:
+                parsed_final = final_match.group(1).strip()
+                if parsed_final and not is_same_query(parsed_final, question):
+                    final_question = parsed_final
+                    logger.info(f"重写完成：{question[:30]} -> {final_question[:50]}")
+                else:
+                    logger.info(f"重写结果与原问题一致，保留原问题：{question[:30]}")
+                    final_question = question
             else:
-                # 方式2：JSON 格式兜底
-                parsed = extract_json_block(raw_text)
-                if parsed and isinstance(parsed.get("final_query"), str):
-                    need_rewrite = parsed.get("need_rewrite", False)
-                    final_query = parsed["final_query"].strip()
-                    logger.info(f"JSON格式解析：need_rewrite={need_rewrite}, query={final_query[:30]}")
-                else:
-                    # 方式3：纯文本兜底
-                    normalized = normalize_query_text(raw_text, question)
-                    if not is_same_query(normalized, question):
-                        logger.info(f"格式解析失败，文本重写：{question[:30]} -> {normalized[:30]}")
-                        rewritten_query = normalized
-                    else:
-                        logger.warning(f"格式解析失败且无有效重写，使用原查询")
-                    # 纯文本兜底后直接跳到守卫检查
-                    if rewritten_query != question:
-                        rewritten_query = _rewrite_guard_check(question, rewritten_query)
-                    raw_text = None  # 标记已处理
+                logger.warning(f"FINAL 解析失败，保留原问题")
+                final_question = question
 
-            if raw_text is not None:
-                # 分隔符/JSON 解析成功的处理逻辑
-                if need_rewrite and final_query and not is_same_query(final_query, question):
-                    logger.info(f"LLM 判断需要重写：{question[:30]} -> {final_query[:30]}")
-                    rewritten_query = final_query
-                elif need_rewrite and is_same_query(final_query, question):
-                    logger.info(f"LLM 判断需要重写但输出与原问题一致，视为无需重写：{question[:30]}")
-                else:
-                    logger.info(f"LLM 判断无需重写：{question[:30]}")
+            if search_match:
+                search_query = search_match.group(1).strip()
+                if search_query:
+                    rewritten_query = search_query
+                    logger.info(f"检索子查询：{rewritten_query}")
+            else:
+                # 兜底：用 FINAL 或原问题做检索
+                rewritten_query = final_question
+                logger.info(f"SEARCH 解析失败，用 FINAL/原问题做检索")
 
-            # 重写守卫：如果重写结果丢失了原问题的核心信息，回退到原问题
+            # 重写守卫：丢失核心信息时回退
+            if final_question != question:
+                final_question = _rewrite_guard_check(question, final_question)
             if rewritten_query != question:
                 rewritten_query = _rewrite_guard_check(question, rewritten_query)
 
+            # ===== Bad Case 自动采集 =====
+            _record_bad_case_if_needed(
+                original=question,
+                final_question=final_question,
+                rewritten_query=rewritten_query,
+                anaphora_detected=_anaphora_detected,
+                history_summary=history_summary,
+                user_id=user_id,
+                thread_id=thread_id,
+            )
+
         except Exception as e:
             logger.error(f"查询重写失败：{str(e)}")
+            final_question = question
             rewritten_query = question
 
     # ===== 步骤2：HyDE 假想答案生成（用于 Dense 向量检索） =====
-    # 查询已包含足够具体信息时跳过 HyDE，避免无意义的 3B 调用
-    # 判断标准：查询长度 > 6 且包含症状/部位/药物关键词
+    # 用 final_question（完整上下文）生成假想答案，语义更接近知识库文档
     _hyde_body_parts = ["头", "肚子", "胸", "背", "腰", "腿", "手", "脚", "腕", "膝",
                         "肩", "颈", "眼", "耳", "鼻", "喉", "皮肤", "牙", "踝", "肘"]
     _hyde_symptom_words = ["疼", "痛", "肿", "痒", "麻", "烧", "咳", "泻", "吐", "晕",
                            "炎", "出血", "骨折", "扭伤", "过敏", "发炎"]
-    _has_body_part = any(kw in rewritten_query for kw in _hyde_body_parts)
-    _has_symptom_word = any(kw in rewritten_query for kw in _hyde_symptom_words)
-    _has_drug_word = any(kw in rewritten_query for kw in _DRUG_KEYWORDS)
-    skip_hyde = (_has_body_part and _has_symptom_word and len(rewritten_query) > 4) or _has_drug_word
+    _has_body_part = any(kw in final_question for kw in _hyde_body_parts)
+    _has_symptom_word = any(kw in final_question for kw in _hyde_symptom_words)
+    _has_drug_word = any(kw in final_question for kw in _DRUG_KEYWORDS)
+    skip_hyde = (_has_body_part and _has_symptom_word and len(final_question) > 4) or _has_drug_word
 
     if skip_hyde:
-        logger.info(f"查询已包含具体信息，跳过 HyDE：{rewritten_query}")
+        logger.info(f"查询已包含具体信息，跳过 HyDE：{final_question[:50]}")
     else:
         try:
-            llm = get_rewrite_llm()  # glm-4-flash API（本地模型暂不用于HyDE）
+            llm = get_rewrite_llm()
             hyde_prompt = f"""请针对以下医学问题，写一段简短的假想性医学回答（2-3句话）。
 不需要完全正确，但要使用医学专业术语，使其在语义上接近医学文献。
 
-问题：{rewritten_query}
+问题：{final_question}
 
 假想回答："""
 
@@ -2133,7 +1970,6 @@ QUERY: 重写后的查询（如无需重写则输出原问题）"""
             hyde_answer = hyde_response.content if hasattr(hyde_response, "content") else str(hyde_response)
             hyde_answer = hyde_answer.strip()
 
-            # HyDE 质量守卫：假想答案太短（<20字）可能质量差，不使用
             if len(hyde_answer) < 20:
                 logger.warning(f"HyDE 假想答案过短（{len(hyde_answer)}字），丢弃：{hyde_answer}")
                 hyde_answer = None
@@ -2146,6 +1982,7 @@ QUERY: 重写后的查询（如无需重写则输出原问题）"""
 
     return {
         "rewritten_query": rewritten_query,
+        "final_question": final_question,
         "hyde_answer": hyde_answer,
     }
 
@@ -2174,16 +2011,148 @@ def _rewrite_guard_check(original: str, rewritten: str) -> str:
     return rewritten
 
 
+# ===== 自包含性前置检测（方案A P0） =====
+
+# 指代词/省略结构黑名单：包含这些词的追问在无上下文时语义残缺
+_ANAPHORA_PATTERNS = [
+    "其他", "还有", "别的", "另外",
+    "这个", "那个", "它", "其",
+    "上述", "前面说的", "刚才", "之前说的",
+    "继续", "再", "也",
+    "呢",  # "那儿童呢？" "布洛芬呢？"
+]
+
+# 以这些疑问词开头但缺少名词实体的查询，大概率依赖上下文
+_QUESTION_STARTS = ["怎么", "如何", "什么", "哪些", "还有"]
+
+# 领域核心实体关键词（症状/药物/疾病名）— 查询包含这些则视为自包含
+_DOMAIN_ENTITY_KEYWORDS = [
+    # 症状
+    "头痛", "头疼", "发烧", "发热", "咳嗽", "流鼻涕", "鼻塞",
+    "腹痛", "肚子疼", "胃疼", "胃痛", "恶心", "呕吐", "腹泻",
+    "胸闷", "胸痛", "呼吸困难", "过敏", "头晕", "失眠", "乏力",
+    "瘙痒", "肿胀", "麻木", "出血", "便秘", "皮疹",
+    # 常见药物
+    "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林",
+    "奥司他韦", "连花清瘟", "感冒灵", "板蓝根", "蒙脱石散",
+    "氯雷他定", "西替利嗪", "红霉素", "甲硝唑",
+    # 常见疾病
+    "感冒", "肺炎", "胃炎", "高血压", "糖尿病", "痛风", "哮喘",
+    "甲亢", "甲减", "贫血", "冠心病", "肝炎", "肾炎",
+]
 
 
-def _build_rewrite_context(messages: list, max_rounds: int = 1) -> str:
+def _has_anaphora_pattern(query: str) -> bool:
+    """检测查询是否包含指代词/省略结构（不自包含）
+
+    三层检测：
+        1. 包含指代词/省略词 → 不自包含
+        2. 极短查询（<15字）+ 有历史 → 大概率不自包含
+        3. 以疑问词开头但缺少领域实体 → 不自包含
+
+    注意：误杀代价远小于漏改导致的幻觉，宁可过度重写。
+    """
+    text = (query or "").strip()
+    if not text:
+        return False
+
+    # 1. 包含指代词/省略结构
+    if any(p in text for p in _ANAPHORA_PATTERNS):
+        return True
+
+    # 2. 极短查询（<15字）大概率依赖上下文
+    if len(text) < 15:
+        return True
+
+    # 3. 以疑问词开头但缺少领域核心实体
+    if any(text.startswith(q) for q in _QUESTION_STARTS):
+        if not any(kw in text for kw in _DOMAIN_ENTITY_KEYWORDS):
+            return True
+
+    return False
+
+
+def _record_bad_case_if_needed(
+        original: str,
+        final_question: str,
+        rewritten_query: str,
+        anaphora_detected: bool,
+        history_summary: str,
+        user_id: str,
+        thread_id: str,
+):
+    """在重写后自动检测并记录 bad case
+
+    触发条件：
+        1. 检测到指代词但重写结果与原问题一致 → LLM 未理解上下文依赖
+        2. 重写守卫回退 → 丢失核心实体
+    """
+    try:
+        from app.memory import get_long_term_memory
+        memory = get_long_term_memory()
+    except Exception:
+        return  # 长期记忆不可用，静默跳过
+
+    # Case 1: 指代词检测命中但重写结果与原问题一致 → LLM 未补全上下文
+    if anaphora_detected and is_same_query(final_question, original):
+        try:
+            memory.append_bad_case(
+                case_type="rewrite_same_as_original",
+                original_query=original,
+                rewritten_query=rewritten_query,
+                final_question=final_question,
+                history_summary=history_summary,
+                user_id=user_id,
+                thread_id=thread_id,
+                metadata={"anaphora_detected": True},
+            )
+        except Exception as e:
+            logger.warning(f"Bad case 记录失败：{e}")
+
+    # Case 2: 指代词检测命中但重写后仍缺少领域实体 → 重写不充分
+    if anaphora_detected and final_question != original:
+        has_entity = any(kw in final_question for kw in _DOMAIN_ENTITY_KEYWORDS)
+        if not has_entity:
+            try:
+                memory.append_bad_case(
+                    case_type="rewrite_missed_anaphora",
+                    original_query=original,
+                    rewritten_query=rewritten_query,
+                    final_question=final_question,
+                    history_summary=history_summary,
+                    user_id=user_id,
+                    thread_id=thread_id,
+                    metadata={"anaphora_detected": True, "has_entity_after_rewrite": False},
+                )
+            except Exception as e:
+                logger.warning(f"Bad case 记录失败：{e}")
+
+
+def _build_rewrite_context(messages: list, max_rounds: int = 2) -> str:
     """从对话历史中构建查询重写所需的上下文
 
-    只取最近1轮（上一问一答），避免过多历史干扰3B模型。
-    重写只需要知道"上一轮在聊什么"，不需要完整历史。
+    取最近 max_rounds 轮，AI 回复在截断前先扫描全文提取医疗实体（药物/症状），
+    确保药物名称不管出现在回复的哪个位置都不会因截断丢失。
     """
     if not messages:
         return ""
+
+    # 药物关键词（与 _DRUG_KEYWORDS 对齐）
+    _drug_kw = {"布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林", "奥司他韦",
+                "连花清瘟", "板蓝根", "感冒灵", "止咳糖浆", "蒙脱石散", "藿香正气",
+                "氯雷他定", "西替利嗪", "扑尔敏", "地塞米松", "红霉素", "甲硝唑",
+                "奥美拉唑", "雷尼替丁", "硝苯地平", "氨氯地平", "二甲双胍",
+                "阿卡波糖", "格列美脲", "胰岛素", "阿托伐他汀", "辛伐他汀",
+                "氯吡格雷", "华法林", "肝素", "青霉素", "左氧氟沙星",
+                "莫西沙星", "利巴韦林", "更昔洛韦", "阿昔洛韦", "伐昔洛韦",
+                "双氯芬酸", "塞来昔布", "美洛昔康", "曲马多", "可待因",
+                "地氯雷他定", "氮卓斯汀", "糠酸莫米松", "丙酸氟替卡松",
+                "mg", "ml", "剂量", "服用", "用药"}
+    # 症状关键词
+    _symptom_kw = {"头痛", "头疼", "头晕", "发烧", "发热", "咳嗽", "喉咙痛", "流鼻涕",
+                   "鼻塞", "恶心", "呕吐", "腹泻", "拉肚子", "腹痛", "肚子疼", "胸闷",
+                   "胸痛", "心悸", "气短", "乏力", "疲劳", "失眠", "过敏", "皮疹",
+                   "关节痛", "肌肉痛", "肿胀", "出血", "便秘", "消化不良"}
 
     # 只取最近 max_rounds 轮（2*max_rounds 条消息）
     max_msgs = max_rounds * 2
@@ -2196,9 +2165,26 @@ def _build_rewrite_context(messages: list, max_rounds: int = 1) -> str:
             parts.append(f"用户：{content}")
         elif isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            # AI 回复截断：重写只需要知道大致内容，不需要完整回复
-            if len(content) > 150:
-                content = content[:150] + "..."
+
+            # 截断前扫描全文提取医疗实体，确保中间部分的关键信息不丢失
+            found_entities = set()
+            for kw in _drug_kw:
+                if kw in content:
+                    found_entities.add(kw)
+            for kw in _symptom_kw:
+                if kw in content:
+                    found_entities.add(kw)
+
+            has_medical = bool(found_entities)
+            truncate_len = 500 if has_medical else 250
+            if len(content) > truncate_len:
+                head_len = truncate_len * 2 // 3
+                tail_len = truncate_len - head_len
+                content = content[:head_len] + "..." + content[-tail_len:]
+                # 将全文扫描提取的实体前置，弥补截断丢失的信息
+                if found_entities:
+                    entity_hint = "、".join(sorted(found_entities, key=lambda x: len(x))[:12])
+                    content = f"[提及：{entity_hint}] {content}"
             parts.append(f"助手：{content}")
         # 跳过 SystemMessage
 
@@ -2387,7 +2373,24 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
                                 source_query=question[:100],
                             )
             except Exception as e:
-                logger.warning(f"症状事件同步到L1失败（不影响主流程）：{e}")
+                logger.warning(f"症状事件同步到L1失败，写入本地缓冲：{e}")
+                try:
+                    from app.memory.fallback_buffer import enqueue_symptom_event
+                    buf_user_id = state.get("user_id")
+                    buf_question = state.get("question", "")
+                    if buf_user_id:
+                        for symptom_name, onset_info in onset_dates.items():
+                            if isinstance(onset_info, dict) and onset_info.get("ts"):
+                                enqueue_symptom_event(
+                                    user_id=buf_user_id,
+                                    symptom_name=symptom_name,
+                                    onset_iso=onset_info.get("iso", ""),
+                                    onset_ts=onset_info["ts"],
+                                    precision=onset_info.get("precision", "default"),
+                                    source_query=buf_question[:100],
+                                )
+                except Exception as buf_err:
+                    logger.error(f"本地缓冲写入也失败（事件将丢失）：{buf_err}")
 
         # ===== 用药记录同步到 L1 =====
         try:
@@ -2405,7 +2408,23 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
                             source_query=question[:100],
                         )
         except Exception as e:
-            logger.warning(f"用药记录同步到L1失败（不影响主流程）：{e}")
+            logger.warning(f"用药记录同步到L1失败，写入本地缓冲：{e}")
+            try:
+                from app.memory.fallback_buffer import enqueue_medication_event
+                user_id = state.get("user_id")
+                question = state.get("question", "")
+                if user_id and new_checkpoint.get("medication_history"):
+                    for med in new_checkpoint["medication_history"]:
+                        if isinstance(med, dict) and med.get("drug"):
+                            enqueue_medication_event(
+                                user_id=user_id,
+                                drug=med["drug"],
+                                dosage=med.get("dosage"),
+                                effect=med.get("effect"),
+                                source_query=question[:100],
+                            )
+            except Exception as buf_err:
+                logger.error(f"本地缓冲写入也失败（事件将丢失）：{buf_err}")
 
         # 删除已提取的消息（滑动窗口：保留最近3轮，删除其余）
         delete_messages = [RemoveMessage(id=m.id) for m in messages_to_extract if hasattr(m, 'id') and m.id]
@@ -2534,7 +2553,8 @@ async def stream_answer_generation(state: MedicalAssistantState):
     logger.info(f"流式答案生成节点开始执行")
     start_time = time.time()
 
-    question = state.get("question", "")
+    # 优先使用重写后的完整问题（含上下文），无重写时用原问题
+    question = state.get("final_question") or state.get("rewritten_query") or state.get("question", "")
     retrieved_docs = state.get("retrieved_docs")
     context_prompt = get_user_context_prompt(state.get("user_profile"))
     if context_prompt:
@@ -2581,15 +2601,17 @@ async def stream_direct_answer(state: MedicalAssistantState):
     question = state.get("question", "")
     user_profile = state.get("user_profile")
 
-    # 优化：简单问候直接返回，不调用LLM
+    # 优化：简单问候直接返回（仅对原问题判断，不判断重写后的长问题）
     quick_answer = _is_simple_greeting(question)
     if quick_answer:
         logger.info(f"简单问候直接返回，跳过LLM调用：{question}")
         yield quick_answer
         return
 
+    # 优先使用重写后的完整问题（含上下文）
+    final_q = state.get("final_question") or question
     prompt = build_direct_answer_prompt(
-        question=question,
+        question=final_q,
         user_profile=user_profile,
         state=state,
     )

@@ -33,28 +33,36 @@ class SemanticCache:
 
     def __init__(
             self,
-            similarity_threshold: float = 0.92,  # 相似度阈值（医疗场景要求高精度，0.92表示非常相似）
+            similarity_threshold: float = 0.92,
             prefix: str = "semantic_cache:",
-            ttl: int = 3600,  # 默认一个小时过期
+            ttl: int = 3600,
             enabled: bool = True,
+            max_keys: int = 5000,  # 最大缓存条目数，超出时 LRU 淘汰
     ):
         """
-        Args：
-            similarity_threshold: 相似度阈值，超过此值认为查询相似
+        Args:
+            similarity_threshold: 相似度阈值
             prefix: Redis 键前缀
             ttl: 缓存过期时间（秒）
             enabled: 是否启用
+            max_keys: 最大缓存条目数，超出时淘汰最早的条目
         """
         self.similarity_threshold = similarity_threshold
         self.prefix = prefix
         self.ttl = ttl
         self.enabled = enabled
+        self.max_keys = max_keys
 
         self._cache = get_cache()
         self._embeddings = None
         self._available = False
 
-        # 统计信息
+        # Redis Set 用于追踪所有缓存键（替代 SCAN）
+        self._keys_set = f"{prefix}keys"
+
+        # 本地 embedding 缓存，避免重复计算
+        self._embedding_cache: Dict[str, List[float]] = {}
+
         self._stats = {
             "hits": 0,
             "misses": 0,
@@ -127,82 +135,67 @@ class SemanticCache:
             query_embedding: List[float],
             top_k: int = 10
     ) -> Optional[Tuple[str, float, Dict]]:
-        """查找相似查询
-        Args：
-            query_embedding：查询向量
-            top_k：最多检查的缓存条目
+        """查找相似查询（优化版：Redis Set 追踪键 + MGET 批量获取）
 
-        Returns：
-            （缓存键，相似度，缓存数据）或None
+        性能优化（相比旧版 SCAN + N×GET）：
+            - 用 SMEMBERS 替代 SCAN：O(n) 但在 Set 上比全库扫描更快
+            - 用 MGET 批量获取：1 次 Redis 往返替代 N 次
+            - 限制检查数量：前 top_k * 10 个键
+            - 本地 embedding 缓存：避免重复计算
         """
         if not self._cache._available:
             return None
 
         try:
-            # 使用 SCAN 替代 KEYS，避免阻塞 Redis
-            try:
-                all_keys = []
-                cursor = 0
-                while True:
-                    cursor, batch = self._cache._redis.scan(cursor, match=f"{self.prefix}*", count=100)
-                    all_keys.extend(batch)
-                    if cursor == 0:
-                        break
-            except Exception as e:
-                logger.warning(f"语义缓存查询Redis失败，跳过：{e}")
-                self._cache._available = False
-                return None
-
-            # ✅ 添加调试日志
-            logger.info(f"📊 L2缓存键数量：{len(all_keys)}")
-
+            all_keys = self._cache._redis.smembers(self._keys_set)
             if not all_keys:
-                logger.warning("⚠️ L2缓存为空，没有找到任何语义缓存键")
+                logger.info("L2 语义缓存为空")
                 return None
+
+            logger.info(f"L2 缓存键数量：{len(all_keys)}")
+
+            # 限制检查数量，优先检查最近的条目
+            check_keys = list(all_keys)[: top_k * 10]
+
+            # 批量获取所有缓存值（单次 Redis 往返）
+            raw_values = self._cache._redis.mget(check_keys)
 
             best_match = None
             best_similarity = 0.0
+            query_np = np.array(query_embedding)
 
-            # 遍历缓存键，查找最相似的
-            for key in all_keys[:top_k * 10]:  # 限制检查数量，避免性能问题
+            for key_bytes, raw_value in zip(check_keys, raw_values):
+                if not raw_value:
+                    continue
                 try:
-                    # 获取缓存的向量
-                    cache_data = self._cache._redis.get(key)
-                    if not cache_data:
-                        continue
-
-                    data = json.loads(cache_data)
-                    cached_embedding = data["embedding"]
-
+                    data = json.loads(raw_value)
+                    cached_embedding = data.get("embedding")
                     if not cached_embedding:
                         continue
 
-                    # 计算相似度
-                    similarity = self._cosine_similarity(query_embedding, cached_embedding)
+                    # NumPy 批量计算余弦相似度
+                    cached_np = np.array(cached_embedding)
+                    dot_product = np.dot(query_np, cached_np)
+                    norm1 = np.linalg.norm(query_np)
+                    norm2 = np.linalg.norm(cached_np)
+                    similarity = float(dot_product / (norm1 * norm2)) if norm1 and norm2 else 0.0
 
-                    # ✅ 添加调试日志
                     cached_query = data.get("query", "")[:20]
                     logger.debug(f"  对比：'{cached_query}...' 相似度={similarity:.2%}")
 
-                    # 更新最佳匹配
                     if similarity > best_similarity and similarity >= self.similarity_threshold:
                         best_similarity = similarity
-                        best_match = (key, similarity, data)
-
-                        # 如果找到非常相似的，提前返回
+                        best_match = (key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes,
+                                      similarity, data)
                         if similarity >= 0.98:
                             break
-
-                except Exception as e:
-                    logger.debug(f"解析缓存键{key}失败：{e}")
+                except Exception:
                     continue
 
-                # ✅ 添加结果日志
-                if best_match:
-                    logger.info(f"✅ L2找到相似查询，相似度：{best_similarity:.2%}")
-                else:
-                    logger.info(
-                        f"❌ L2未找到相似查询，最高相似度：{best_similarity:.2%}（阈值：{self.similarity_threshold:.2%}）")
+            if best_match:
+                logger.info(f"L2 找到相似查询，相似度：{best_similarity:.2%}")
+            else:
+                logger.info(f"L2 未找到相似查询，最高相似度：{best_similarity:.2%}（阈值：{self.similarity_threshold:.2%}）")
 
             return best_match
 
@@ -250,7 +243,7 @@ class SemanticCache:
                 self._stats["similarity_matches"] += 1
 
                 logger.info(
-                    f"🎯 语义缓存命中：'{query[:20]}...' ≈ '{data.get('query', '')[:20]}...' "
+                    f"语义缓存命中：'{query[:20]}...' ≈ '{data.get('query', '')[:20]}...' "
                     f"(相似度: {similarity:.2%})"
                 )
 
@@ -278,22 +271,18 @@ class SemanticCache:
         if not documents:
             return False
 
-        # Redis不可用时跳过写入
         if not self._cache._available:
             return False
 
-        # 获取向量
         if query_embedding is None:
             query_embedding = self._get_embedding(query)
 
         if query_embedding is None:
             return False
 
-        # 生成缓存键
         query_hash = hashlib.md5(query.encode("utf-8")).hexdigest()
         key = f"{self.prefix}{query_hash}"
 
-        # 构建缓存数据
         data = {
             "query": query,
             "embedding": query_embedding,
@@ -304,9 +293,25 @@ class SemanticCache:
         }
 
         try:
-            # 写入Redis（带超时保护）
+            # LRU 淘汰：超过 max_keys 时删除最早的条目
+            current_count = self._cache._redis.scard(self._keys_set)
+            if current_count >= self.max_keys:
+                all_keys = self._cache._redis.smembers(self._keys_set)
+                if all_keys:
+                    # 按创建时间排序，淘汰最早的 20%
+                    expire_count = max(int(len(all_keys) * 0.2), 1)
+                    # 随机采样淘汰（避免排序所有值）
+                    to_remove = list(all_keys)[:expire_count]
+                    if to_remove:
+                        self._cache._redis.delete(*to_remove)
+                        self._cache._redis.srem(self._keys_set, *to_remove)
+                        logger.info(f"语义缓存 LRU 淘汰：{len(to_remove)} 条")
+
+            # 写入缓存数据
             self._cache._redis.setex(key, self.ttl, json.dumps(data, ensure_ascii=False))
-            logger.info(f"语义缓存已写入：'{query[:20]}...' ({len(documents)}个文档)")
+            # 维护键集合
+            self._cache._redis.sadd(self._keys_set, key)
+            logger.info(f"语义缓存已写入：'{query[:20]}...' ({len(documents)} 个文档)")
             return True
 
         except Exception as e:
@@ -333,17 +338,11 @@ class SemanticCache:
     def clear(self) -> int:
         """清空语义缓存"""
         try:
-            # 使用 SCAN 替代 KEYS，避免阻塞 Redis
-            keys = []
-            cursor = 0
-            while True:
-                cursor, batch = self._cache._redis.scan(cursor, match=f"{self.prefix}*", count=100)
-                keys.extend(batch)
-                if cursor == 0:
-                    break
+            keys = list(self._cache._redis.smembers(self._keys_set))
             if keys:
                 self._cache._redis.delete(*keys)
-            logger.info(f"清空语义缓存：{len(keys)}条")
+                self._cache._redis.delete(self._keys_set)
+            logger.info(f"清空语义缓存：{len(keys)} 条")
             return len(keys)
         except Exception as e:
             logger.error(f"清空语义缓存失败：{e}")

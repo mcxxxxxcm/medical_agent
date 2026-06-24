@@ -1,5 +1,449 @@
 # 系统优化更新日志
 
+## v5.0 - 自包含性检测 + Bad Case 采集 + 低分澄清
+
+### 问题
+
+"语法完整性陷阱"：查询"还有其他什么可以吃的吗？"语法完美但语义残缺，
+缺少核心实体（头痛/缓解药物），传统基于"查询质量/长度/语法"的静态规则完全失效。
+低分检索结果直接进入 LLM 自由生成，产生幻觉回答。
+
+### 修复
+
+**1. 自包含性前置检测（方案A P0）**
+
+| 维度 | 修复前 | 修复后 |
+|------|--------|--------|
+| 指代词检测 | ❌ 无 | ✅ 15个指代词黑名单（其他/还有/这个/那个/它/呢/...） |
+| 极短查询 | ❌ 无 | ✅ <15字 + 有历史 → 强制重写 |
+| 疑问词+缺实体 | ❌ 无 | ✅ 以"怎么/如何/什么/哪些"开头但缺少领域实体 → 强制重写 |
+
+三层检测逻辑：`_has_anaphora_pattern(query)` → 误杀代价远小于漏改导致的幻觉
+
+**2. Bad Case 自动采集**
+
+| 采集点 | 触发条件 | case_type |
+|--------|----------|-----------|
+| 重写后 | 指代词检测命中但重写结果与原问题一致 | `rewrite_same_as_original` |
+| 重写后 | 指代词检测命中但重写后仍缺领域实体 | `rewrite_missed_anaphora` |
+| 低分时 | 检索低分但未触发澄清 | `low_score_no_clarify` |
+
+存储：PostgresStore `("bad_cases", user_id)` 命名空间，支持人工审核补填 `expected_rewrite` 和 `is_self_contained`
+
+**3. 低分澄清机制（消除幻觉出口）**
+
+| 场景 | 修复前 | 修复后 |
+|------|--------|--------|
+| 无检索文档 | 降级为 LLM 自由生成（幻觉风险） | 返回结构化澄清追问 |
+| 低分检索 | 直接生成兜底答案 | 记录 bad case + 澄清追问 |
+
+**4. 测试集和工具**
+
+- 种子测试集：20 条手工标注 bad case（`tests/data/self_containment_test_set.jsonl`）
+- 导出脚本：`scripts/export_bad_cases.py`（PostgresStore → JSONL）
+- 回归测试：`tests/test_self_containment.py`（验证 `_has_anaphora_pattern` 准确率）
+
+### 修改文件
+
+- `app/graph/nodes/nodes.py` — 新增 `_has_anaphora_pattern`、`_record_bad_case_if_needed`、`_ANAPHORA_PATTERNS`、`_QUESTION_STARTS`、`_DOMAIN_ENTITY_KEYWORDS`；`query_rewrite_node` 增加前置检测和 bad case 采集
+- `app/graph/streaming.py` — 新增 `_build_clarification_answer`、`_record_low_score_bad_case`；无检索文档时返回澄清追问
+- `app/memory/long_term_memory.py` — 新增 `append_bad_case`、`get_bad_cases`、`update_bad_case_review`
+- `tests/data/self_containment_test_set.jsonl` — 新增种子测试集（20条）
+- `scripts/export_bad_cases.py` — 新增导出脚本
+- `tests/test_self_containment.py` — 新增回归测试脚本
+
+---
+
+## v4.4 - 修复：`_build_rewrite_context` 截断导致药物名丢失
+
+### 问题
+
+`_build_rewrite_context` 对 AI 回复做头尾截断（保留前 2/3 + 后 1/3）时，
+LLM 推荐的具体药品名称可能出现在回复的**中间部分**（如药理说明段落），截断后丢失。
+后续用户追问"还有什么药可以吃？"时，重写提示词中看不到第一次推荐的药物名，
+只能依赖用户问题中残留的关键词，造成上下文断层。
+
+### 修复
+
+**截断前全文扫描提取医疗实体**：
+1. AI 回复**截断前**，先扫描全文匹配药物关键词（与 `_DRUG_KEYWORDS` 对齐，~45个）和症状关键词（~30个）
+2. 匹配到的实体以 `[提及：布洛芬、对乙酰氨基酚]` 格式前置到截断文本前
+3. 实体上限 12 个（按长度排），避免提示词膨胀
+4. 即使药物名在回复中间第 400 个字符处，截断后也能通过前置标签找回
+
+### 关键逻辑
+
+```
+AI 回复全文（可能 800+ 字）
+  ↓ 先扫描全文 → found_entities = {布洛芬, 头痛, 剂量}
+  ↓ 再截断头尾（head...tail，丢失中间药物名）
+  ↓ 前置实体标签 → "[提及：布洛芬、头痛、剂量] 头部内容...尾部内容"
+```
+
+### 修改文件
+
+- `app/graph/nodes/nodes.py` — `_build_rewrite_context` 重构
+
+---
+
+## v4.3 - TTFT 优化：首 token 目标 <5s
+
+### 问题
+
+第二次提问"还有其他什么可以吃吗？"TTFT = 9341ms，远超 5s 目标。
+耗时分解：症状解析 (2871ms, 31%) + 查询重写 (3577ms, 38%) + 检索 (1675ms,18%) + L2缓存 (397ms, 4%) + 答案LLM (817ms, 9%)
+
+### 优化
+
+**1. 症状解析追问短路**（2871ms → 0ms）
+- `symptom_analysis_node`：有对话历史且问题不含症状词时，跳过本地模型调用
+- 理由：追问"还有其他什么可以吃吗？"不含任何症状词，LLM 推理 2.8s 只返回 `[]`
+- 症状由节点末尾的快照继承逻辑补充
+
+**2. 路由优先，按类型缓存**（397ms → 0ms for symptom）
+- `streaming.py` `run()`：先跑路由（规则+上下文 0ms），再按类型决定缓存深度
+- `symptom` / `general` → 仅 L0 答案缓存（无 embedding API）
+- `knowledge` → L0 + L2 语义缓存（知识查询常重复）
+- 新增 `_check_l0_cache()` 方法
+
+**3. 重写提示词精简**（3577ms → ~1500ms）
+- `query_rewrite_node`：Prompt 从 ~1500 字缩减到 ~300 字
+- 移除冗长规则说明和重复示例，保留核心输出格式
+- 减少 token 数 → 降低 LLM 首 token 延迟
+
+### 预期收益
+
+| 阶段 | 优化前 | 优化后 |
+|------|--------|--------|
+| 症状解析 | 2871ms | 0ms (短路) |
+| L2 语义缓存 | 397ms | 0ms (跳过) |
+| 查询重写 | 3577ms | ~1500ms (短 prompt) |
+| 知识检索 | 1675ms | 1675ms (不变) |
+| 答案 LLM | 817ms | 817ms (不变) |
+| **TTFT** | **9341ms** | **~4000ms** |
+
+### 修改文件
+
+- `app/graph/nodes/nodes.py` — `symptom_analysis_node` 追问短路；`query_rewrite_node` prompt 精简
+- `app/graph/streaming.py` — `run()` 路由优先 → 按类型缓存；新增 `_check_l0_cache()`
+
+---
+
+## v4.2 - 重构：查询强制重写 + 问题拆解
+
+### 问题
+
+上一版修复了上下文注入缺失，但查询重写仍存在"是否要重写"的判断门。
+对"还有其他什么可以吃吗？"这类追问，LLM 偶尔返回 `need_rewrite=False`，
+导致问句未补全，后续检索和答案生成都缺少上下文。
+
+### 方案
+
+参考业界 2026 年多轮 RAG 最佳实践（Constrained Rewrite + Query Decomposition）：
+
+1. **废除判断门**：有对话历史 → 强制重写，不再问"是否需要"
+2. **一次调用产出两份结果**：
+   - `FINAL`：完整的自包含问句 → 用于答案生成 + HyDE
+   - `SEARCH`：检索关键词 → 用于 BM25 稀疏检索
+3. **对话历史完整保留**：AI 回复不再粗暴截断 150 字，医疗关键词消息保留 500 字
+
+流程示例：
+```
+追问："还有其他什么可以吃吗？"
+  → FINAL:  "缓解头痛，除了布洛芬，还有什么药物可以服用？"
+  → SEARCH: "头痛 缓解 药物"
+  → Dense: HyDE(FINAL)  → 向量检索
+  → Sparse: BM25(SEARCH) → 关键词检索
+  → 生成: build_rag_prompt(FINAL, docs, history)
+```
+
+### 修改文件
+
+- `app/graph/state.py` — 新增 `final_question` 字段
+- `app/graph/nodes/nodes.py`：
+  - `query_rewrite_node`：重写提示词重构为 FINAL/SEARCH 双输出格式；
+    移除 yes/no 判断门，有历史就强制重写+拆解；
+    HyDE 改用 FINAL（完整上下文）生成假想答案
+  - `_build_rewrite_context`：取最近 2 轮对话，
+    AI 回复根据医疗关键词智能截断（500/250 字），保留头尾关键信息
+  - `answer_generation_node` / `stream_answer_generation` / `stream_direct_answer`：
+    答案生成统一使用 `final_question`（无重写时回退到原问题）
+
+### 收益
+
+- 追问不再被误判为"无需重写"，上下文可靠传递到检索和生成
+- 检索用关键词 + 生成用完整问句，各司其职
+- HyDE 用完整问句生成假想答案，语义召回更精准
+
+---
+
+## v4.1 - 修复：短期记忆丢失——追问上下文链路断裂
+
+### 问题
+
+用户追问"还有其他什么可以吃吗？"时，系统完全丢失了上文"头痛→布洛芬"的上下文，
+推荐了无关内容。日志分析发现三层逐级断裂：
+
+1. **查询重写误判**：LLM 提示词太宽松，对明确追问返回 `need_rewrite=False`
+2. **症状提取为空**：追问本身不含症状词，提取结果 `[]`
+3. **直接回答无对话历史**：RAG 降级到 `direct_answer` 后，
+   `build_direct_answer_prompt` 未注入 L3 对话历史，LLM 只看到孤立的追问
+
+### 修改内容
+
+- `app/graph/nodes/nodes.py` — 三处修复：
+  - `query_rewrite_node`：重写提示词重构，从"是否需重写"改为"必须补全上下文"，
+    新增 3 个正反示例（追问药物/剂量/重复），降低误判率
+  - `symptom_analysis_node`：追问症状继承——当前问题无显式症状时，
+    从 `clinical_checkpoint` 补充历史症状/部位/发作时间
+  - `build_direct_answer_prompt`：新增 L3 对话历史注入，
+    追加指令"追问必须结合对话历史中的症状和药物回答"
+  - `stream_vision_answer`：新增 L1+L2+L3 三层上下文注入，
+    追加指令"结合对话历史中的症状/用药信息解读图片"
+
+---
+
+## v3.9 - 紧急修复：路由结果被丢弃导致 RAG 全部跳过
+
+### 问题
+
+`streaming.py` 的 `run()` 方法中，路由和缓存并行执行后，
+`asyncio.gather(_check(), self._run_route_sync())` 的返回值未被接收。
+`_run_route_sync()` 返回的 `Command`（含 `goto=symptom_analysis` 等路由目标）
+被丢弃，导致 `route_command` 始终为 `None`。
+
+下游判断逻辑 `route_command or "direct_answer"` 永远命中默认值，
+**所有无缓存请求都走 `direct_answer`，RAG 管道被完全绕过。**
+
+### 修复
+
+- `app/graph/streaming.py` — `_, route_command = await asyncio.gather(...)` 接收路由结果
+
+---
+
+## v3.7 - 运维优化：配置热更新接口
+
+### 优化背景
+
+缓存 TTL、速率限制、模型参数等配置修改后需要重启服务才能生效，
+开发调试和运维应急时不够灵活。
+
+### 修改内容
+
+**修改文件**：
+- `app/core/config.py` — 新增 `reload_config()` 函数：
+  - 重新读取 `.env` 文件创建新 Settings 实例
+  - 对比新旧值，返回变更字段列表
+  - 异常时回退到旧配置，保证服务不中断
+- `app/api/routes.py` — 新增 `POST /api/admin/reload-config` 端点：
+  - 需要 `X-Admin-API-Key` 认证（复用已有 `_verify_admin_key`）
+  - 返回变更字段列表和重载状态
+
+**使用方式**：
+```bash
+curl -X POST http://localhost:8000/api/admin/reload-config \
+  -H "X-Admin-API-Key: your-admin-key"
+```
+
+**响应示例**：
+```json
+{"reloaded": true, "changed_fields": ["CACHE_TTL_SECONDS", "RATE_LIMIT_PER_MINUTE"],
+ "message": "配置已重新加载，2 个字段发生变化"}
+```
+
+**可热更新的配置项**：所有 `Settings` 字段均支持热更新，包括 `CACHE_TTL_SECONDS`、
+`RATE_LIMIT_PER_MINUTE`、`MODEL_TEMPERATURE`、`ENABLE_SAFETY_CHECK` 等。
+
+---
+
+## v3.8 - 运维优化：Dockerfile 路径环境变量化
+
+### 优化背景
+
+Dockerfile 中 `/app/models` 路径硬编码，docker-compose.yml 中
+`RERANKER_MODEL_PATH` 也写死为容器内绝对路径，本地开发时需手动覆盖。
+
+### 修改内容
+
+**修改文件**：
+- `Dockerfile` — `RUN mkdir -p /app/models` 改为 `ARG MODEL_DIR=/app/models` + `RUN mkdir -p ${MODEL_DIR}`，支持构建时通过 `--build-arg MODEL_DIR=/custom/path` 覆盖
+- `docker-compose.yml` — `RERANKER_MODEL_PATH` 从硬编码改为 `${RERANKER_MODEL_PATH:-/app/models/bge-reranker-onnx}`，支持 `.env` 文件或环境变量覆盖
+- `app/core/config.py` — `RERANKER_MODEL_PATH` 默认值从 `/app/models/bge-reranker-onnx` 改为 `PROJECT_ROOT / "bge-reranker-onnx"`，本地开发无需额外配置
+
+**使用方式**：
+```bash
+# .env 文件中覆盖
+RERANKER_MODEL_PATH=/home/user/models/bge-reranker-onnx
+
+# 或 docker-compose 构建时
+docker compose build --build-arg MODEL_DIR=/opt/models
+```
+
+---
+
+## v3.6 - 质量保障：核心节点单元测试
+
+### 优化背景
+
+项目缺少单元测试。LangGraph 节点的纯函数特性非常适合单元测试，
+但没有覆盖时，重构和回归都缺乏安全网。
+
+### 修改内容
+
+**新增文件**：
+- `tests/__init__.py`
+- `tests/conftest.py` — pytest 配置和共享 fixtures（mock_llm, base_state 等）
+- `tests/test_helpers.py` — `extract_json_block` 5 层回退、`_coerce_list_fields` 列表规范化、
+  药物关键词常量测试（共 14 个用例）
+- `tests/test_nodes.py` — 路由规则、标签规范化、症状规则提取、查询相似性、
+  文档评分振荡检测测试（共 19 个用例）
+- `pytest.ini` — pytest 配置
+
+**修改文件**：
+- `requirements.txt` — 添加 `pytest~=8.0`
+
+**测试覆盖**：
+- `extract_json_block`: 直接 JSON / Markdown 代码块 / 嵌套 / 花括号提取 / 空输入
+- `_coerce_list_fields`: 字符串转列表 / 已是列表 / None / 嵌套展平 / 中文逗号
+- `detect_rule_based_route`: 症状/知识/问候/未知/优先级 路由
+- `normalize_router_label`: 合法标签 / 中文标签 / 兜底默认值
+- `_extract_symptoms_by_rules`: 单症状 / 多症状 / 严重程度 / 部位 / 持续时间 / 去重 / 疼痛模式兜底
+- `grade_documents_node`: 振荡检测无改善时跳过重试
+
+**运行方式**：
+```bash
+cd D:/Agent/medical_assistant_agent
+pytest tests/ -v
+```
+
+---
+
+## v3.5 - 可靠性优化：自纠正循环振荡检测
+
+### 优化背景
+
+`grade_documents_node` 在检索结果不相关时触发自纠正（重写→检索→评分），上限 2 次。
+但如果 Reranker 分数刚好在阈值附近反复横跳，重试不会改善结果，反而浪费 3-5s。
+
+### 修改内容
+
+**修改文件**：
+- `app/graph/nodes/nodes.py` — `grade_documents_node()` 增加振荡检测：
+  - 重试前记录 `_prev_max_score` 和 `_prev_relevant_count` 到状态
+  - 重试后检测：score_delta < 0.05 且 doc_delta < 1 → 无改善，跳过二次重试
+  - 无检索文档且前次有重试历史时同样检测
+- `app/graph/streaming.py` — `_run_rag_pipeline()` 重试时递增 `retrieval_attempts`
+
+**收益**：
+- 避免无效重试，节省 3-5s 的无关等待
+- 日志明确记录每次重试前后的分数变化
+
+---
+
+## v3.4 - 可靠性优化：L1 写入失败本地缓冲
+
+### 优化背景
+
+快照更新中的 L1 写入（症状事件/用药记录同步到 PostgresStore）失败时只打 warning 日志，
+不做任何补偿。如果 PostgresStore 暂时不可用，症状事件会永久丢失。
+
+### 修改内容
+
+**新增文件**：
+- `app/memory/fallback_buffer.py` — 本地 SQLite 缓冲队列：
+  - `enqueue_symptom_event()` / `enqueue_medication_event()` — L1 写入失败时入队
+  - `flush()` — 服务恢复时重新写入 L1，超过 10 次重试自动丢弃
+  - `start_background_flush()` — 启动时立即 flush + 每 5 分钟定期 flush
+  - 过期清理：超过 7 天的事件自动删除
+
+**修改文件**：
+- `app/graph/nodes/nodes.py` — `update_clinical_snapshot_node()` 的 except 块增加缓冲写入
+- `app/api/routes.py` — lifespan 启动/关闭时调用 `start_background_flush()` / `stop_background_flush()`
+
+**收益**：
+- L1 不可用时症状事件不再丢失，恢复后自动补写
+- 双重保险：缓冲写入失败时才丢失事件（概率极低）
+
+---
+
+## v3.3 - 性能优化：语义缓存 SCAN 替换为 Set + MGET
+
+### 优化背景
+
+语义缓存的 `_find_similar_query` 每次都用 SCAN 遍历所有 `semantic_cache:*` 键，
+然后对每个键单独执行 GET，N 个条目需要 N+1 次 Redis 往返。随着缓存增长到数千条，
+这会成为显著的性能瓶颈。
+
+### 修改内容
+
+**修改文件**：
+- `app/cache/semantic_cache.py`：
+  - 新增 Redis Set (`semantic_cache:keys`) 追踪所有缓存键，`set()` 时 SADD，`clear()` 时 SMEMBERS + DEL
+  - `_find_similar_query` 用 SMEMBERS 替代 SCAN + N×GET 改为单次 MGET，从 N+1 次往返降为仅 2 次
+  - `set()` 方法增加 LRU 淘汰：超过 `max_keys`（默认 5000）时删除最早 20% 的条目
+  - 空集合检查改用 SCARD（O(1)）
+- `app/graph/streaming.py`：L2 缓存为空检查改用 `scard()` 替代 SCAN
+
+**收益**：
+- 缓存查找从 O(n) 次 Redis 往返降为 2 次（SMEMBERS + MGET）
+- 缓存写入自动淘汰，防止无限增长
+- 1000 条缓存时查找耗时从 ~50ms 降到 ~5ms
+
+---
+
+## v3.2 - 架构优化：拆分 nodes.py 为子模块包
+
+### 优化背景
+
+`nodes.py` 包含 2600+ 行代码、17 个节点函数 + 10+ 个辅助函数 + 7 个 Pydantic 模型，
+是项目中最庞大的单文件。修改任何节点都需在巨型文件中定位。
+
+### 修改内容
+
+**新增文件**：
+- `app/graph/nodes/__init__.py` — 包入口，重导出所有公开接口，保持向后兼容
+- `app/graph/nodes/helpers.py` (221 行) — 工具函数：药物关键词常量、计时装饰器、
+  `extract_json_block`（5 层 JSON 回退解析）、`invoke_structured_with_fallback` 等
+- `app/graph/nodes/models.py` (61 行) — 7 个 Pydantic 结构化输出模型
+
+**移动文件**：
+- `app/graph/nodes.py` → `app/graph/nodes/nodes.py` — 原文件移入包内，删除已迁移的
+  常量/装饰器/模型/工具函数定义，改为从子模块相对导入
+
+**收益**：
+- nodes.py 从 2619 行缩减到 2382 行，移除了 ~240 行已提取的代码
+- helpers.py 和 models.py 可独立导入和测试，无需加载整个节点模块
+- 外部代码通过 `from app.graph.nodes import router_node` 继续工作，零破坏性变更
+
+---
+
+## v3.1 - 架构优化：流式编排模块化
+
+### 优化背景
+
+routes.py 中的 `event_generator()` 闭包包含了 400+ 行的节点编排逻辑，
+与 graph.py 中的边定义形成双维护。每次修改 Graph 节点都需手动同步两处代码。
+
+### 修改内容
+
+**新增文件**：
+- `app/graph/streaming.py` — `StreamingOrchestrator` 类，封装完整的流式编排逻辑：
+  - 缓存检查（L0 答案缓存 + L2 语义缓存）
+  - 并行路由 + 缓存检查
+  - RAG 流水线编排（症状→重写→检索→评分→自纠正）
+  - 对话历史保存 + 后台快照更新
+  - SSE 事件发射
+
+**修改文件**：
+- `app/api/routes.py` — stream 端点从 400+ 行削减到 35 行，仅负责参数提取和 SSE 响应包装。移除了不再需要的节点级导入和 L0 缓存函数
+
+**收益**：
+- routes.py 代码量减少 ~40%（845 → 500 行）
+- 消除 routes.py 和 graph.py 的双维护问题——编排逻辑现在是 graph 定义的唯一消费者
+- `validate_streaming_sync()` 仍作为安全网在启动时自动检测一致性
+
+---
+
 ## v3.0 - 参考蚂蚁阿福方案的功能增强
 
 ### 增强背景

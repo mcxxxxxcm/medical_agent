@@ -92,7 +92,8 @@ class Settings(BaseSettings):
     SEMANTIC_CACHE_THRESHOLD: float = 0.92  # 语义相似度阈值（医疗场景要求高精度，0.92 = 92% 相似）
 
     # ===== RERANKER_MODEL本地路径 =====
-    RERANKER_MODEL_PATH: str = "/app/models/bge-reranker-onnx"
+    # Docker 默认路径为 /app/models/...，本地开发可通过环境变量或 .env 覆盖
+    RERANKER_MODEL_PATH: str = str(PROJECT_ROOT / "bge-reranker-onnx")
 
     class Config:
         extra = "ignore"
@@ -108,3 +109,25 @@ settings = Settings()
 def get_config() -> Settings:
     """获取配置实例"""
     return settings
+
+
+def reload_config() -> dict:
+    """热更新配置：重新读取 .env 文件并更新全局 settings。
+
+    Returns:
+        dict: {"changed": [...], "reloaded": True/False, "error": "..."}
+    """
+    import copy
+    global settings
+    old_values = {k: getattr(settings, k, None) for k in settings.model_fields.keys()}
+    try:
+        new_settings = Settings()
+        settings = new_settings
+        changed = [
+            k for k in old_values
+            if str(old_values[k]) != str(getattr(new_settings, k, None))
+        ]
+        return {"changed": changed, "reloaded": True}
+    except Exception as e:
+        settings = Settings.model_validate(old_values)
+        return {"changed": [], "reloaded": False, "error": str(e)}
