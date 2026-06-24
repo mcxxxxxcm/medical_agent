@@ -44,11 +44,12 @@ class VectorStoreManager:
             for i in range(0, len(documents), batch_size):
                 batch = documents[i:i + batch_size]
                 if i == 0:
-                    # 第一批：创建向量库
+                # 第一批：创建向量库（使用 cosine 距离，而非默认 L2）
                     self.vector_store = Chroma.from_documents(
                         documents=batch,
                         embedding=self.embeddings,
                         persist_directory=str(self.persist_directory),
+                        collection_metadata={"hnsw:space": "cosine"},
                     )
                 else:
                     # 后续批次：追加到已有向量库

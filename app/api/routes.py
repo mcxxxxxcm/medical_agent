@@ -87,6 +87,15 @@ class HealthResponse(BaseModel):
     reranker: str
 
 
+class FeedbackRequest(BaseModel):
+    """用户反馈请求模型"""
+    user_id: str = Field("default", description="用户ID")
+    thread_id: Optional[str] = Field(None, description="会话线程ID")
+    reason: str = Field(..., description="反馈原因：answer_inaccurate/not_answering/missing_info/unsafe_content/other")
+    note: Optional[str] = Field(None, description="补充说明", max_length=500)
+    answer_preview: Optional[str] = Field(None, description="AI回答预览（前500字）")
+
+
 # 生命周期管理
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -523,6 +532,52 @@ async def reload_config(request: Request):
         "changed_fields": result["changed"],
         "message": f"配置已重新加载，{len(result['changed'])} 个字段发生变化" if result["changed"] else "配置已重新加载，无字段变化",
     }
+
+
+@app.post("/api/feedback")
+async def submit_feedback(request: Request):
+    """用户反馈接口
+
+    接收用户对 AI 回答的反馈（👍/👎），将负面反馈写入 bad_cases 存储。
+
+    反馈原因：
+        - answer_inaccurate: 答案不准确
+        - not_answering: 没回答我的问题
+        - missing_info: 缺少关键信息
+        - unsafe_content: 内容不安全
+        - other: 其他
+    """
+    try:
+        body = await request.json()
+        feedback = FeedbackRequest(**body)
+    except Exception:
+        return JSONResponse(status_code=400, content={"detail": "请求格式错误"})
+
+    try:
+        from app.memory import get_long_term_memory
+        memory = get_long_term_memory()
+        memory.append_bad_case(
+            case_type="user_negative_feedback",
+            original_query="",  # 前端未传原始问题，可通过 thread_id 查询
+            rewritten_query="",
+            final_question="",
+            answer_preview=feedback.answer_preview or "",
+            user_id=feedback.user_id,
+            thread_id=feedback.thread_id or "",
+            metadata={
+                "reason": feedback.reason,
+                "note": feedback.note or "",
+            },
+        )
+        logger.info(
+            f"用户反馈已记录：user_id={feedback.user_id}, "
+            f"thread_id={feedback.thread_id}, reason={feedback.reason}"
+        )
+    except Exception as e:
+        logger.warning(f"用户反馈记录失败：{e}")
+        # 不影响用户体验，静默处理
+
+    return {"status": "ok", "message": "反馈已收到"}
 
 
 # 启动入口

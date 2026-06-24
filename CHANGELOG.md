@@ -1,5 +1,347 @@
 # 系统优化更新日志
 
+## v5.7 - 修复：LangGraph BaseStore.search() namespace_prefix 位置参数兼容
+
+### 问题
+
+日志持续输出警告：
+```
+从L1加载症状首发时间失败（不影响主流程）：
+BaseStore.search() got some positional-only arguments passed as keyword arguments: 'namespace_prefix'
+```
+
+LangGraph 新版中 `BaseStore.search()` 的 `namespace_prefix` 参数改为**位置参数**（positional-only），
+不能再以关键字形式传递。`long_term_memory.py` 中 5 处 `store.search(namespace_prefix=xxx)` 全部报此警告。
+
+虽说不影响主流程（try/except 兜底），但症状历史、用药记录、查询记录等 L1 数据实际未被加载，
+影响症状快照继承和上下文补全的准确性。
+
+### 修复
+
+5 处调用全部改为位置参数：
+```python
+# 修复前
+items = self.store.search(namespace_prefix=("symptom_history", user_id))
+
+# 修复后
+items = self.store.search(("symptom_history", user_id))
+```
+
+涉及方法：`get_symptom_history`、`get_query_history`、`get_symptom_events`、`get_bad_cases`、`get_medication_events`
+
+### 修改文件
+
+- `app/memory/long_term_memory.py` — 5 处 `store.search()` 调用 `namespace_prefix=` → 位置参数
+
+---
+
+## v5.6 - 查询重写切换本地模型 + 前端新会话按钮
+
+### 1. 查询重写 LLM 从远端 API 切换到本地模型
+
+`query_rewrite_node` 的重写和 HyDE 生成原来使用 `get_rewrite_llm()`（调用智譜 API，~4.5s），
+现改为 `get_local_llm()`，逻辑如下：
+
+```
+LOCAL_MODEL_ENABLED=true  → Ollama qwen2.5:1.5b（本地 GPU 推理，<1s）
+LOCAL_MODEL_ENABLED=false → 降级回 API（glm-4-flash）
+```
+
+- 本地模型不再有网络延迟，重写耗时预计从 4.5s 降至 <1s
+- 通过 `.env` 的 `LOCAL_MODEL_ENABLED` 控制切换，无需改代码
+- 当 v5.5 的短路逻辑生效（自包含查询跳过重写）时，此切换不影响首轮查询
+
+### 2. 前端"新会话"按钮
+
+**问题**：`thread_id` 留空时自动从 `user_id` 派生（`thread_{user_id}`），
+同一用户多次请求会共享 checkpointer 历史，导致自包含查询被误判为追问。
+
+**修复**：在配置栏新增"新会话"按钮，点击后：
+- 生成唯一 `thread_id`（`thread_` + UUID 前 8 位）
+- 填入 thread_id 输入框
+- 清空对话界面，显示"新会话已创建"提示
+
+与"清空对话"的区别：
+- 清空对话：仅清 UI，thread_id 不变 → checkpointer 历史继续累积
+- 新会话：生成新 thread_id → checkpointer 从零开始
+
+### 修改文件
+
+- `app/graph/nodes/nodes.py` — `query_rewrite_node` 和 HyDE 的 LLM 调用从 `get_rewrite_llm` 改为 `get_local_llm`
+- `app/static/index.html` — 新增"新会话"按钮 + `newSession()` 函数
+
+---
+
+## v5.5 - TTFT 优化：自包含查询跳过远端 LLM 重写
+
+### 问题
+
+v5.4 Reranker 修复后 RAG 管道走通，但 TTFT = 7269ms，仍超 5s 目标。
+耗时分解：查询重写 4536ms (62%) + 知识检索 1926ms (26%) + 其他 807ms。
+
+问题出在 `query_rewrite_node`：只要 checkpointer 中有历史消息（即使是旧会话残留），
+就对**所有**问题调用远端 LLM 重写，包括完全自包含的首轮问题"头痛怎么办？"。
+
+更严重的是，LLM 重写时把历史中的"发烧、持续3天"编入了当前问题，
+产生了**幻觉症状**："头痛伴有发烧，持续3天"——实际问题根本没提发烧。
+
+```
+代码缺陷：
+  if not messages:     ← 跳过重写
+  else:                ← 不管问题是否自包含，一律调 LLM！
+      llm.invoke()     ← 4536ms，还可能编造症状
+```
+
+`_anaphora_detected` 在上方已算出为 `False`（"头痛怎么办？"无指代词），但未被使用。
+
+### 修复
+
+新增 `elif not _anaphora_detected` 分支：有历史但查询自包含 → 跳过重写。
+
+```
+修复前：not messages → skip | else → LLM rewrite（4536ms）
+修复后：not messages → skip | not anaphora → skip | else → LLM rewrite
+```
+
+### 收益
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 查询重写 | 4536ms | **0ms** |
+| 重写引入幻觉症状 | ✅ 可能发生 | ❌ 杜绝 |
+| TTFT | 7269ms | **~2700ms** |
+| 智譜 API 调用次数 | 每请求 1 次 | 仅追问时 1 次（减少 ~70%） |
+
+### 修改文件
+
+- `app/graph/nodes/nodes.py` — `query_rewrite_node` 添加 `elif not _anaphora_detected` 短路分支
+
+---
+
+## v5.4 - 修复：Reranker 双重截断导致文档评分失效
+
+### 问题
+
+v5.3 修复了 ChromaDB 距离度量（L2→cosine），`top1_dense_dist` 从 0.9333 降到 0.4666。
+但 Reranker 分数仍为 0.0031（远低于 0.02 阈值），文档评分节点依然判定"无相关文档"跳过 RAG。
+
+根因是 **Reranker 对文档做了双重截断**，大部分内容在到达模型前就被丢弃了：
+
+```
+文档 500 字符（含头痛诊断、治疗方案、药物推荐）
+  → truncate_for_rerank: 取前 400 字符（丢弃后 100 字符）
+  → tokenizer max_length=128: 只取前 ~80 字符（丢弃剩余 320 字符）
+  → Reranker 只看到文档的前 80 字符 = 16% 的内容
+  → 治疗方案/药物推荐在截断部分 → 评分 0.0031
+```
+
+两层截断叠加后，Reranker 实际只看到文档的 **前 ~80 个中文字符**（约 16%），
+如果头痛的治疗建议在后半段，模型根本看不到。
+
+### 为什么 max_length=128 对中文太短
+
+| 维度 | 英文 | 中文（BERT tokenizer） |
+|------|------|----------------------|
+| 1 个 token 覆盖 | 0.75 个单词 | 0.5-0.7 个汉字 |
+| 128 tokens 覆盖 | ~96 个单词 | **~65-90 个汉字** |
+| 400 字文档覆盖率 | ~100% | **~20%** |
+
+中文在 BERT tokenizer 下每个汉字常被拆为 1-3 个 subword token，
+128 token 窗口对英文够用但对中文严重不足。
+
+### 修复
+
+**1. tokenizer max_length：128 → 512**
+
+BGE-reranker 模型上限为 512 tokens，之前仅用了 25%。
+512 tokens 可覆盖约 300 个中文字符 + query + 特殊 token。
+
+**2. 截断策略：纯取头 → 头尾各取**
+
+| 维度 | 修复前 | 修复后 |
+|------|--------|--------|
+| 策略 | `text[:400]` | `text[:200] + text[-100:]` |
+| 保留开头（诊断/主题） | ✅ | ✅ |
+| 保留结尾（治疗/药物） | ❌ 被丢弃 | ✅ 保留最后 100 字 |
+| 文档有效覆盖率 | ~16%（80/500） | ~60%（300/500） |
+
+**3. MAX_RERANK_DOC_CHARS：400 → 300**
+
+300 字中文 ≈ 450-500 tokens，加上 query + 特殊 token 可稳定装入 512 窗口，
+避免 BERT tokenizer 的二次截断。
+
+### 修改文件
+
+- `app/rag/reranker.py` — `max_length` 128→512；`truncate_for_rerank` 改为头尾各取；`MAX_RERANK_DOC_CHARS` 400→300
+
+---
+
+## v5.3 - 修复：ChromaDB L2 距离导致检索相似度异常
+
+### 问题
+
+用户问"头疼怎么缓解？"，知识库中有头痛处理文档，但 Dense 检索 `top1_dense_dist=0.9333`，
+Reranker 最高分仅 0.0031，最终判定为"无相关文档"，返回澄清追问。
+
+根因是 **ChromaDB 默认使用 L2 距离**（欧几里得距离），而代码注释和阈值全部按余弦距离设计。
+ChromaDB `space="l2"` 时，`similarity_search_by_vector_with_score` 返回的是 L2² 距离而非余弦距离。
+
+### 为什么 RAG 场景必须用余弦相似度而非 L2 距离
+
+Embedding 模型的本质是将文本映射为高维空间中的向量，其中**方向编码语义，长度编码强度**。
+
+**L2 距离（欧几里得距离）——量尺子**
+
+计算两个向量在多维空间中的直线距离：`√(Σ(ai - bi)²)`
+
+```
+向量A（查询"头疼怎么缓解"）: 方向↗, 长度=1.0
+向量B（文档"头痛的治疗方法包括..."）: 方向↗, 长度=3.2
+
+L2 距离 = 很大  ← 虽然方向一致，但长度差拉大了距离
+```
+
+问题：文本较长的文档 chunk 的向量模长天然更大，L2 会把"长度差异"误判为"语义差异"。
+
+**余弦相似度——量角器**
+
+计算两个向量的夹角：`cos(θ) = (A·B) / (|A|·|B|)`
+
+```
+向量A（查询"头疼怎么缓解"）: 方向↗, 长度任意
+向量B（文档"头痛的治疗方法包括..."）: 方向↗, 长度任意
+
+余弦相似度 ≈ 1.0  ← 只看方向，与长度无关
+```
+
+余弦相似度**归一化了向量长度**，只比较方向。这意味着：
+- 短查询"头疼"和长文档"头痛的病理机制与临床治疗指南..."可以正确匹配
+- 高频词导致的向量模长膨胀不会影响相似度
+- 语义相同但字数差异巨大的文本不会被误判
+
+**为什么现代 Embedding 模型都为余弦设计**
+
+| 模型 | 训练目标 | 输出 |
+|------|----------|------|
+| OpenAI text-embedding-3 | 余弦相似度对比学习 | 自动归一化 |
+| 智谱 embedding-3 | 余弦相似度对比学习 | 自动归一化 |
+| BGE / M3E 系列 | InfoNCE + 余弦损失 | 自动归一化 |
+
+所有主流 Embedding 模型的训练目标都是**最小化正样本对的余弦距离、最大化负样本对的余弦距离**。归一化后的向量落在单位超球面上，此时 L2² = 2×(1−cos_sim)，两种度量等价——但前提是**索引和查询使用同一种距离**。ChromaDB 默认 L2，而模型为余弦优化，这正是错配的根源。
+
+**一句话总结：语义存在于方向中，不在长度中。余弦相似度度量的是"两个文本在说什么"，L2 度量的是"两个向量有多长"。RAG 需要前者。**
+
+### 三个叠加问题
+
+**1. ChromaDB 距离度量错误（主因）**
+
+| 维度 | 修复前 | 修复后 |
+|------|--------|--------|
+| ChromaDB 空间 | `l2`（默认） | `cosine` |
+| 距离 0.9333 的含义 | L2² 距离 ≈ 余弦相似度 0.53 | cosine 距离 ≈ 余弦相似度 0.88 |
+| HIGH_CONFIDENCE_THRESHOLD | 0.08（注释写余弦但实际对 L2 无效） | 0.08（与 cosine 距离正确对应） |
+
+- `vector_store.py`：`Chroma.from_documents()` 时显式传入 `collection_metadata={"hnsw:space": "cosine"}`
+- 需重建向量库：`python scripts/rebuild_vector_store.py`
+
+**2. 文档分块参数不匹配**
+
+- `loader.py` `split_documents()` 默认 `chunk_size=1000`，但 config 配置为 500
+- 1000 字符的 chunk 会稀释短查询的语义信号
+- 修复：默认参数改为 `chunk_size=500, chunk_overlap=50`，对齐 config
+
+**3. 高置信度绕过逻辑失效**
+
+- `hybrid_retriever.py` 的 `HIGH_CONFIDENCE_THRESHOLD = 0.08` 注释写"cosine distance"
+- L2 距离下此阈值永远无法触发，导致所有查询都走 Reranker（额外 627ms）
+- 切换 cosine 后阈值自然生效
+
+### 修改文件
+
+- `app/rag/vector_store.py` — `Chroma.from_documents()` 添加 `collection_metadata={"hnsw:space": "cosine"}`
+- `app/rag/loader.py` — `split_documents()` 默认参数对齐 config（500/50）
+
+### 部署注意
+
+**必须重建向量库**才能使 cosine 距离生效：
+```bash
+python scripts/rebuild_vector_store.py
+```
+旧 L2 空间的 ChromaDB 集合不会自动迁移。
+
+---
+
+## v5.2 - 前端用户反馈通道 + 正例测试集
+
+### 问题
+
+Bad case 采集完全依赖后端自动检测，缺少真实用户反馈信号。
+测试集 20 条全为负例（不自包含的追问），`_has_anaphora_pattern` 的误杀率未被测量。
+
+### 修复
+
+**1. 前端反馈按钮（👍/👎）**
+
+- 每条 AI 回答后显示 👍/👎 按钮
+- 点击 👎 弹出反馈面板，选择原因：
+  - 答案不准确 / 没回答我的问题 / 缺少关键信息 / 内容不安全 / 其他
+- 支持补充说明文字
+- 反馈以 `user_negative_feedback` 类型写入 bad_cases
+- 后端新增 `POST /api/feedback` 端点
+
+**2. 正例测试集（18 条自包含查询）**
+
+- 新增 `bc_pos_001` ~ `bc_pos_018`，均为自包含的医疗查询
+  （如"布洛芬的副作用是什么？""头痛怎么缓解？"）
+- 测试集从 20 条扩至 38 条：负例 20 + 正例 18
+
+**3. 修复 `_has_anaphora_pattern` 误杀**
+
+- 第二层（<15字短查询）增加领域实体检测：
+  `len(text) < 15 AND 缺少领域实体 → 不自包含`
+- 修复前：`"头痛怎么缓解？"`（7字）被误判为不自包含
+- 修复后：含实体的短查询正确识别为自包含
+- 准确率：100%（漏检 0/20，误杀 0/18）
+
+### 修改文件
+
+- `app/static/index.html` — 反馈按钮 UI + Modal + JS 逻辑
+- `app/api/routes.py` — 新增 `FeedbackRequest` 模型 + `POST /api/feedback` 端点
+- `app/graph/nodes/nodes.py` — `_has_anaphora_pattern` 短查询实体检测修复
+- `tests/data/self_containment_test_set.jsonl` — 新增 18 条正例
+
+---
+
+## v5.1 - Bad Case 采集面扩展（3 个新采集点）
+
+### 问题
+
+Bad case 只覆盖了查询重写环节（3 个采集点），以下关键失败模式完全未被采集：
+- LLM 在答案中编造检索文档不存在的药物（幻觉）
+- 检索返回零文档（索引/查询词匹配问题）
+- 含症状词的问题被错误路由到 direct_answer
+
+### 新增采集点
+
+| 采集点 | 触发条件 | case_type | 位置 |
+|--------|----------|-----------|------|
+| 幻觉检测 | 答案含药物名但检索文档中未出现 | `hallucination_suspected` | `streaming.py` RAG 答案生成后 |
+| 检索失败 | RAG 管道返回零文档 | `retrieval_miss` | `streaming.py` 零文档分支 |
+| 路由异常 | 问题含症状词但路由到 direct_answer | `route_misclassification` | `streaming.py` direct_answer 分支 |
+
+### 配套更新
+
+- `long_term_memory.py`：`append_bad_case` docstring 补充 5 个新 case_type
+- `scripts/export_bad_cases.py`：`--case-type` 选项新增所有类型
+
+### 修改文件
+
+- `app/graph/streaming.py` — 新增 `_check_hallucination`、`_record_retrieval_miss`、`_check_route_misclassification` 三个方法；在 `run()` 的关键路径插入调用
+- `app/memory/long_term_memory.py` — 更新 case_type 文档
+- `scripts/export_bad_cases.py` — 扩展 `--case-type` 选项
+
+---
+
 ## v5.0 - 自包含性检测 + Bad Case 采集 + 低分澄清
 
 ### 问题

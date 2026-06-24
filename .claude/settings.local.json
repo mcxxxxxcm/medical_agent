@@ -9,7 +9,21 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('D:/Agent/medical_assistant_agent/app/api/routes.py'\\).read\\(\\)\\); print\\('routes.py: OK'\\)\")",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('D:/Agent/medical_assistant_agent/app/graph/graph.py'\\).read\\(\\)\\); print\\('graph.py: OK'\\)\")",
       "WebSearch",
-      "Bash(py *)"
+      "Bash(py *)",
+      "Bash(python3 -c ' *)",
+      "Bash(where python3 *)",
+      "Bash(where python *)",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python3.exe -c ' *)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)",
+      "Bash(sqlite3 *)",
+      "Read(//c/Users/86176/AppData/Local/Python/bin/**)",
+      "Bash(/c/Users/86176/AppData/Local/Microsoft/WindowsApps/python3.exe --version)",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python3.exe --version)",
+      "Bash(pip list *)",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python3.exe *)",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/pip.exe list *)",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/pip3.exe list *)"
     ]
   },
   "enableAllProjectMcpServers": true,

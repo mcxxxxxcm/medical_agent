@@ -1869,13 +1869,16 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         _anaphora_detected = True
         logger.info(f"检测到指代词/省略结构，强制进入重写：{question}")
 
-    # ===== 步骤0：无对话历史 → 查询一定自包含，无需重写 =====
+    # ===== 步骤0：无历史 或 查询自包含 → 跳过重写 =====
+    # 只有追问/指代词（如"还有什么药？"）才需要从历史补全上下文
     if not messages:
         logger.info(f"首轮对话，查询自包含，跳过重写：{question}")
+    elif not _anaphora_detected:
+        logger.info(f"查询自包含（无指代词/省略结构），跳过重写：{question}")
     else:
-        # ===== 步骤1：有对话历史 → 强制重写 + 问题拆解 =====
+        # ===== 步骤1：追问 → 强制重写 + 问题拆解 =====
         try:
-            llm = get_rewrite_llm()
+            llm = get_local_llm()
             history_summary = _build_rewrite_context(messages)
 
             rewrite_prompt = f"""将追问补全为自包含问题，从历史中提取症状/药物补入。输出严格两行：
@@ -1958,7 +1961,7 @@ SEARCH: 头痛 缓解 药物"""
         logger.info(f"查询已包含具体信息，跳过 HyDE：{final_question[:50]}")
     else:
         try:
-            llm = get_rewrite_llm()
+            llm = get_local_llm()
             hyde_prompt = f"""请针对以下医学问题，写一段简短的假想性医学回答（2-3句话）。
 不需要完全正确，但要使用医学专业术语，使其在语义上接近医学文献。
 
@@ -2045,12 +2048,14 @@ _DOMAIN_ENTITY_KEYWORDS = [
 def _has_anaphora_pattern(query: str) -> bool:
     """检测查询是否包含指代词/省略结构（不自包含）
 
-    三层检测：
+    四层检测（从快到慢）：
         1. 包含指代词/省略词 → 不自包含
-        2. 极短查询（<15字）+ 有历史 → 大概率不自包含
+        2. 极短查询（<15字）且缺少领域实体 → 不自包含
+           （含实体的短查询如"头痛怎么缓解？"是自包含的，不能误杀）
         3. 以疑问词开头但缺少领域实体 → 不自包含
+        4. 查询纯疑问词/纯语气词 → 不自包含
 
-    注意：误杀代价远小于漏改导致的幻觉，宁可过度重写。
+    设计原则：含领域实体的短查询是自包含的，不应被误判。
     """
     text = (query or "").strip()
     if not text:
@@ -2060,9 +2065,11 @@ def _has_anaphora_pattern(query: str) -> bool:
     if any(p in text for p in _ANAPHORA_PATTERNS):
         return True
 
-    # 2. 极短查询（<15字）大概率依赖上下文
+    # 2. 极短查询（<15字）+ 缺少领域实体 → 不自包含
+    #    含实体的短查询（如"布洛芬的副作用是什么？"12字）是自包含的
     if len(text) < 15:
-        return True
+        if not any(kw in text for kw in _DOMAIN_ENTITY_KEYWORDS):
+            return True
 
     # 3. 以疑问词开头但缺少领域核心实体
     if any(text.startswith(q) for q in _QUESTION_STARTS):

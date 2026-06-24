@@ -266,6 +266,114 @@ class StreamingOrchestrator:
         except Exception as e:
             logger.warning(f"低分 bad case 记录失败：{e}")
 
+    def _check_hallucination(self, answer: str):
+        """检测答案中的医疗实体是否来自检索文档（忠实度检测）
+
+        扫描答案中的药物/症状实体，与检索文档内容比对。
+        如果答案提到文档中不存在的具体药物名，记录为疑似幻觉。
+        """
+        if not answer or not self._state.get("retrieved_docs"):
+            return
+
+        from app.graph.nodes.helpers import _DRUG_KEYWORDS
+
+        docs_text = " ".join(
+            doc.page_content for doc in self._state["retrieved_docs"]
+            if hasattr(doc, "page_content")
+        )
+
+        drugs_in_answer = {kw for kw in _DRUG_KEYWORDS if kw in answer}
+        drugs_in_docs = {kw for kw in _DRUG_KEYWORDS if kw in docs_text}
+        unsupported_drugs = drugs_in_answer - drugs_in_docs
+
+        if unsupported_drugs:
+            logger.info(
+                f"疑似幻觉检测：答案提到 {unsupported_drugs}，"
+                f"但检索文档中未出现这些药物名"
+            )
+            try:
+                from app.memory import get_long_term_memory
+                memory = get_long_term_memory()
+                user_id = self._state.get("user_id") or "anonymous"
+                memory.append_bad_case(
+                    case_type="hallucination_suspected",
+                    original_query=self.question,
+                    rewritten_query=self._state.get("rewritten_query") or self.question,
+                    final_question=self._state.get("final_question") or self.question,
+                    answer_preview=answer[:200],
+                    user_id=user_id,
+                    thread_id=self.thread_id,
+                    metadata={
+                        "unsupported_drugs": list(unsupported_drugs),
+                        "retrieved_docs_count": len(self._state["retrieved_docs"]),
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"幻觉 bad case 记录失败：{e}")
+
+    def _record_retrieval_miss(self):
+        """记录检索完全失败（零文档召回）的 bad case"""
+        try:
+            from app.memory import get_long_term_memory
+            memory = get_long_term_memory()
+            user_id = self._state.get("user_id") or "anonymous"
+            memory.append_bad_case(
+                case_type="retrieval_miss",
+                original_query=self.question,
+                rewritten_query=self._state.get("rewritten_query") or self.question,
+                final_question=self._state.get("final_question") or self.question,
+                user_id=user_id,
+                thread_id=self.thread_id,
+                metadata={
+                    "has_drugs_in_query": any(
+                        kw in self.question for kw in [
+                            "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林"
+                        ]
+                    ),
+                    "retrieval_attempts": self._state.get("retrieval_attempts", 0),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"检索 miss bad case 记录失败：{e}")
+
+    def _check_route_misclassification(self, route_type: str):
+        """检测路由异常：问题含症状词但被路由到 direct_answer"""
+        if route_type != "direct_answer":
+            return
+
+        _core_symptoms = [
+            "头痛", "头疼", "肚子疼", "腹痛", "胃痛", "发烧", "发热",
+            "咳嗽", "恶心", "呕吐", "腹泻", "拉肚子", "胸闷", "胸痛",
+            "过敏", "头晕", "失眠", "乏力", "咽痛", "喉咙痛", "流鼻涕",
+            "关节痛", "肌肉酸痛", "呼吸困难", "心悸", "便血", "皮疹",
+        ]
+        has_symptom = any(s in self.question for s in _core_symptoms)
+        if not has_symptom:
+            return
+
+        logger.info(
+            f"路由异常检测：问题含症状词但路由到 direct_answer，"
+            f"question={self.question[:30]}..."
+        )
+        try:
+            from app.memory import get_long_term_memory
+            memory = get_long_term_memory()
+            user_id = self._state.get("user_id") or "anonymous"
+            memory.append_bad_case(
+                case_type="route_misclassification",
+                original_query=self.question,
+                rewritten_query="",
+                final_question="",
+                route=route_type,
+                user_id=user_id,
+                thread_id=self.thread_id,
+                metadata={
+                    "matched_symptoms": [s for s in _core_symptoms if s in self.question],
+                },
+            )
+        except Exception as e:
+            logger.warning(f"路由异常 bad case 记录失败：{e}")
+
     async def _run_rag_pipeline(self, route_node: str):
         """执行 RAG 流水线：症状解析 → 重写 → 检索 → 评分（含自纠正）"""
         if route_node == "symptom_analysis":
@@ -430,8 +538,10 @@ class StreamingOrchestrator:
                 async for token in stream_answer_generation(self._state):
                     self._full_answer += token
                     yield await self._emit(token)
-                if self._full_answer and not has_profile:
-                    _save_answer_cache(self.question, self._full_answer)
+                if self._full_answer:
+                    if not has_profile:
+                        _save_answer_cache(self.question, self._full_answer)
+                    self._check_hallucination(self._full_answer)
 
             else:
                 next_node = (
@@ -445,6 +555,7 @@ class StreamingOrchestrator:
                 )
 
                 if next_node == "direct_answer":
+                    self._check_route_misclassification(next_node)
                     async for token in stream_direct_answer(self._state):
                         yield await self._emit(token)
 
@@ -478,8 +589,10 @@ class StreamingOrchestrator:
                         async for token in stream_answer_generation(self._state):
                             self._full_answer += token
                             yield await self._emit(token)
-                        if self._full_answer and not has_profile:
-                            _save_answer_cache(self.question, self._full_answer)
+                        if self._full_answer:
+                            if not has_profile:
+                                _save_answer_cache(self.question, self._full_answer)
+                            self._check_hallucination(self._full_answer)
 
                     else:
                         # 无检索文档 → 澄清追问而非自由生成（消除幻觉出口）
@@ -488,6 +601,7 @@ class StreamingOrchestrator:
                             f"thread_id={self.thread_id}"
                         )
                         self._record_low_score_bad_case()
+                        self._record_retrieval_miss()
                         clarification = self._build_clarification_answer()
                         self._full_answer = clarification
                         yield await self._emit(clarification)

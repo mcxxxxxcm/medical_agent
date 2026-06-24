@@ -263,6 +263,92 @@
         .clear-btn:hover {
             background: #e0e0e0;
         }
+
+        .feedback-btns {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .feedback-btns button {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #999;
+        }
+
+        .feedback-btns button:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .feedback-btns button.active-up { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+        .feedback-btns button.active-down { background: #fbe9e7; color: #c62828; border-color: #ef9a9a; }
+
+        .feedback-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .feedback-modal.show { display: flex; }
+        .feedback-modal .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 360px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .feedback-modal h3 { margin-bottom: 16px; font-size: 16px; }
+        .feedback-modal .reason-option {
+            display: block;
+            padding: 8px 12px;
+            margin: 4px 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+        .feedback-modal .reason-option:hover, .feedback-modal .reason-option.selected {
+            background: #f3e5f5;
+            border-color: #764ba2;
+        }
+        .feedback-modal textarea {
+            width: 100%;
+            margin-top: 8px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            resize: vertical;
+            min-height: 48px;
+            font-family: inherit;
+        }
+        .feedback-modal .modal-actions {
+            margin-top: 16px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .feedback-modal .modal-actions button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .feedback-modal .btn-cancel { background: #f5f5f5; color: #666; }
+        .feedback-modal .btn-submit { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
     </style>
 </head>
 <body>
@@ -284,6 +370,7 @@
     </select>
 
     <button class="clear-btn" onclick="clearChat()">清空对话</button>
+    <button class="clear-btn" onclick="newSession()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">新会话</button>
 </div>
 
 <div class="chat-container" id="chatContainer">
@@ -312,6 +399,27 @@
     ></textarea>
     <button id="sendBtn" onclick="sendMessage()">发送</button>
 </div>
+
+<div class="feedback-modal" id="feedbackModal">
+    <div class="modal-content">
+        <h3>告诉我们哪里做得不好</h3>
+        <div id="feedbackReasons">
+            <div class="reason-option" data-reason="answer_inaccurate">答案不准确</div>
+            <div class="reason-option" data-reason="not_answering">没回答我的问题</div>
+            <div class="reason-option" data-reason="missing_info">缺少关键信息</div>
+            <div class="reason-option" data-reason="unsafe_content">内容不安全</div>
+            <div class="reason-option" data-reason="other">其他</div>
+        </div>
+        <textarea id="feedbackNote" placeholder="补充说明（可选）"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeFeedbackModal()">取消</button>
+            <button class="btn-submit" onclick="submitFeedback()">提交</button>
+        </div>
+    </div>
+</div>
+
+<input type="hidden" id="pendingFeedbackMsgId" value="">
+<input type="hidden" id="pendingAnswerText" value="">
 
 <script>
     const API_BASE = window.location.origin;
@@ -463,8 +571,9 @@
                         sourcesDiv.className = 'sources';
                         sourcesDiv.innerHTML = `📚 来源：${currentSources.map(s => s.source).join(', ')}`;
                         loadingDiv.appendChild(sourcesDiv);
-                        scrollToBottom();
                     }
+                    addFeedbackButtons(loadingDiv, fullAnswer);
+                    scrollToBottom();
                     continue;
                 }
 
@@ -523,6 +632,7 @@
         }
 
         loadingDiv.innerHTML = html;
+        addFeedbackButtons(loadingDiv, data.answer || '');
         scrollToBottom();
     }
 
@@ -547,6 +657,128 @@
     function scrollToBottom() {
         const container = document.getElementById('chatContainer');
         container.scrollTop = container.scrollHeight;
+    }
+
+    // ===== 用户反馈 =====
+    let _feedbackActiveMsgEl = null;
+    let _selectedReason = '';
+
+    function addFeedbackButtons(msgDiv, answerText) {
+        const existing = msgDiv.querySelector('.feedback-btns');
+        if (existing) existing.remove();
+
+        const btns = document.createElement('div');
+        btns.className = 'feedback-btns';
+        btns.innerHTML = '<span style="font-size:12px;color:#999;">有帮助吗？</span>';
+
+        const upBtn = document.createElement('button');
+        upBtn.textContent = '👍';
+        upBtn.title = '有帮助';
+        upBtn.onclick = () => {
+            upBtn.classList.toggle('active-up');
+            const downBtn = btns.querySelector('.down-btn');
+            if (downBtn) downBtn.classList.remove('active-down');
+        };
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'down-btn';
+        downBtn.textContent = '👎';
+        downBtn.title = '不准确';
+        downBtn.onclick = () => {
+            downBtn.classList.toggle('active-down');
+            upBtn.classList.remove('active-up');
+            if (downBtn.classList.contains('active-down')) {
+                _feedbackActiveMsgEl = msgDiv;
+                document.getElementById('pendingAnswerText').value = answerText.substring(0, 500);
+                _selectedReason = '';
+                document.querySelectorAll('#feedbackReasons .reason-option').forEach(el => el.classList.remove('selected'));
+                document.getElementById('feedbackNote').value = '';
+                document.getElementById('feedbackModal').classList.add('show');
+            } else {
+                closeFeedbackModal();
+            }
+        };
+
+        btns.appendChild(upBtn);
+        btns.appendChild(downBtn);
+        msgDiv.appendChild(btns);
+    }
+
+    function closeFeedbackModal() {
+        document.getElementById('feedbackModal').classList.remove('show');
+        _selectedReason = '';
+        _feedbackActiveMsgEl = null;
+    }
+
+    // 反馈原因选择
+    document.getElementById('feedbackReasons').addEventListener('click', (e) => {
+        if (e.target.classList.contains('reason-option')) {
+            document.querySelectorAll('#feedbackReasons .reason-option').forEach(el => el.classList.remove('selected'));
+            e.target.classList.add('selected');
+            _selectedReason = e.target.dataset.reason;
+        }
+    });
+
+    // 点击模态背景关闭
+    document.getElementById('feedbackModal').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('feedbackModal')) {
+            closeFeedbackModal();
+        }
+    });
+
+    async function submitFeedback() {
+        if (!_selectedReason) {
+            alert('请选择一个原因');
+            return;
+        }
+
+        const userId = document.getElementById('userId').value || 'default';
+        const threadId = document.getElementById('threadId').value || '';
+        const note = document.getElementById('feedbackNote').value;
+        const answerText = document.getElementById('pendingAnswerText').value;
+
+        try {
+            await fetch(`${API_BASE}/api/feedback`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    user_id: userId,
+                    thread_id: threadId,
+                    reason: _selectedReason,
+                    note: note,
+                    answer_preview: answerText,
+                })
+            });
+        } catch (e) {
+            console.warn('反馈提交失败:', e);
+        }
+
+        closeFeedbackModal();
+        // 显示已收到反馈
+        if (_feedbackActiveMsgEl) {
+            const btns = _feedbackActiveMsgEl.querySelector('.feedback-btns');
+            if (btns) {
+                const thanks = document.createElement('span');
+                thanks.style.cssText = 'font-size:12px;color:#999;';
+                thanks.textContent = '感谢反馈';
+                btns.innerHTML = '';
+                btns.appendChild(thanks);
+            }
+        }
+    }
+
+    // 生成新的会话ID
+    function newSession() {
+        const newId = 'thread_' + crypto.randomUUID().slice(0, 8);
+        document.getElementById('threadId').value = newId;
+        document.getElementById('chatContainer').innerHTML = `
+                <div class="message assistant">
+                    您好！我是医疗助手，可以为您解答健康相关问题。请问有什么可以帮助您的？
+                </div>
+                <div style="text-align:center;margin-top:8px;font-size:12px;color:#999;">
+                    新会话已创建：${newId}
+                </div>
+            `;
     }
 
     // 清空对话

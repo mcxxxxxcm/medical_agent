@@ -142,8 +142,8 @@ def print_docs(docs: List[Document]) -> None:
 
 def split_documents(
     docs: List[Document],
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
     use_markdown_splitter: bool = True,
 ) -> List[Document]:
     """将文档切分成小块chunks

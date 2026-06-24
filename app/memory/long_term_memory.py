@@ -37,9 +37,7 @@ class LongTermMemoryManager:
             limit: int = 10
     ) -> List[Dict[str, Any]]:
         """获取症状历史记录 (按时间倒序)"""
-        items = self.store.search(
-            namespace_prefix=("symptom_history", user_id)
-        )
+        items = self.store.search(("symptom_history", user_id))
 
         # 🔴 关键：应用层排序
         # 提取 value 并过滤掉没有 timestamp 的脏数据
@@ -75,9 +73,7 @@ class LongTermMemoryManager:
             limit: int = 10
     ) -> List[Dict[str, Any]]:
         """获取查询历史记录 (按时间倒序)"""
-        items = self.store.search(
-            namespace_prefix=("query_history", user_id)
-        )
+        items = self.store.search(("query_history", user_id))
 
         records = []
         for item in items:
@@ -206,9 +202,7 @@ class LongTermMemoryManager:
         Returns:
             症状事件列表，按 onset_ts 倒序
         """
-        items = self.store.search(
-            namespace_prefix=("symptom_events", user_id)
-        )
+        items = self.store.search(("symptom_events", user_id))
         records = []
         for item in items:
             if not item.value or "onset_ts" not in item.value:
@@ -296,6 +290,10 @@ class LongTermMemoryManager:
             - "rewrite_lost_entity": 重写丢失核心实体（守卫回退）
             - "rewrite_same_as_original": 重写结果与原问题一致（LLM未理解上下文）
             - "low_score_no_clarify": 检索低分但未触发澄清（幻觉出口）
+            - "hallucination_suspected": 答案含检索文档中不存在的药物/实体（忠实度问题）
+            - "retrieval_miss": 检索返回零文档（索引/查询词匹配问题）
+            - "route_misclassification": 含症状词的问题被路由到 direct_answer
+            - "user_negative_feedback": 用户显式标记答案不准确（前端反馈）
             - "manual_flag": 人工标注的 bad case
 
         Args:
@@ -360,9 +358,7 @@ class LongTermMemoryManager:
         Returns:
             bad case 列表，按创建时间倒序
         """
-        items = self.store.search(
-            namespace_prefix=("bad_cases", user_id)
-        )
+        items = self.store.search(("bad_cases", user_id))
         records = []
         for item in items:
             if not item.value or "case_id" not in item.value:
@@ -450,9 +446,7 @@ class LongTermMemoryManager:
             limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """获取用户的用药事件列表"""
-        items = self.store.search(
-            namespace_prefix=("medication_events", user_id)
-        )
+        items = self.store.search(("medication_events", user_id))
         records = []
         for item in items:
             if not item.value or "drug" not in item.value:

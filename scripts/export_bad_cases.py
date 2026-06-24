@@ -94,7 +94,10 @@ def main():
                         help="输出文件路径（相对于项目根目录）")
     parser.add_argument("--case-type", default=None,
                         choices=["rewrite_missed_anaphora", "rewrite_same_as_original",
-                                 "rewrite_lost_entity", "low_score_no_clarify", "manual_flag"],
+                                 "rewrite_lost_entity", "low_score_no_clarify",
+                                 "hallucination_suspected", "retrieval_miss",
+                                 "route_misclassification", "user_negative_feedback",
+                                 "manual_flag"],
                         help="按类型过滤")
     parser.add_argument("--unreviewed-only", action="store_true",
                         help="仅导出未审核的 bad case")

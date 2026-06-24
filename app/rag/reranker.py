@@ -39,7 +39,7 @@ RERANKER_MODELS = {
     "bce-base": "maidalun1020/bce-reranker-base_v1",
 }
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
-MAX_RERANK_DOC_CHARS = 400  # 从600降到400，减少token数量加速推理
+MAX_RERANK_DOC_CHARS = 300  # 头尾各取 200+100，确保 300 字中文能装入 512 token 窗口
 
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)
@@ -52,11 +52,17 @@ def clean_text(text: str) -> str:
 
 
 def truncate_for_rerank(text: str, max_chars: int = MAX_RERANK_DOC_CHARS) -> str:
-    """对重排序输入文档做轻量截断，降低 tokenizer / ONNX 推理开销。"""
+    """对重排序输入文档做截断，头尾各取保留关键信息。
+
+    BGE cross-encoder 对位置敏感：开头通常包含主题/诊断，结尾常含治疗/结论。
+    纯取头会丢失后半段的关键信息（如药物推荐、注意事项）。
+    """
     text = (text or "").strip()
     if len(text) <= max_chars:
         return text
-    return text[:max_chars]
+    head_len = max_chars * 2 // 3  # 200 chars
+    tail_len = max_chars - head_len  # 100 chars
+    return text[:head_len] + text[-tail_len:]
 
 
 class Reranker:
@@ -171,12 +177,13 @@ class Reranker:
                 f"Reranker 输入：docs={len(documents)}, valid_docs={len(valid_docs)}, top_k={top_k}, max_doc_chars={MAX_RERANK_DOC_CHARS}"
             )
 
-            # Tokenize（max_length=128：400字符中文约100-128 tokens，足够覆盖）
+            # Tokenize：max_length=512 是 BGE-reranker 的上限
+            # 300字中文 ≈ 450-500 tokens，加上 query + 特殊 token 可稳定装入 512 窗口
             features = self._tokenizer(
                 pairs,
                 padding=True,
                 truncation=True,
-                max_length=128,
+                max_length=512,
                 return_tensors="np",
             )
 
