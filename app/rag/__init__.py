@@ -24,6 +24,12 @@ from app.rag.hybrid_retriever import (
     get_hybrid_retriever
 )
 
+# ✅ 新增：导入父子索引管理器
+from app.rag.parent_child_store import (
+    ParentChildManager,
+    get_parent_child_manager,
+)
+
 __all__ = [
     # Loader
     "load_medical_documents",
@@ -40,9 +46,13 @@ __all__ = [
 
     # QA Chain
     "QAChain",
-    "get_qa_chain"
+    "get_qa_chain",
 
-    # ✅ 新增：Hybrid Retriever
+    # Hybrid Retriever
     "HybridRetriever",
     "get_hybrid_retriever",
+
+    # Parent-Child Index
+    "ParentChildManager",
+    "get_parent_child_manager",
 ]

@@ -1,5 +1,63 @@
 # 系统优化更新日志
 
+## v6.2 - 父子索引（Parent-Child Index）：检索精度 + 上下文完整性双提升
+
+### 背景
+
+用户提问"布洛芬的用法用量"，文档中包含完整答案但系统未能正确回答。根因：`build_rag_prompt` 将文档盲目截断到 300 字符，导致上下文丢失。提高截断限制（如 500）只是推迟问题——如果信息在第 800 字符处仍然会丢失。
+
+### 核心改动：Parent-Child Index 架构
+
+```
+旧架构（盲目截断）：
+  文档 400 字符 → 截断到 300 字符 → 送入 LLM（可能丢失关键信息）
+
+新架构（父子索引）：
+  Parent（完整章节 ~400 字符）→ 切分为 Child（~150 字符）
+  Child 写入向量库 + BM25（精准匹配）
+  Child 经 Reranker 重排（序列更短 = 推理更快）
+  → 取回完整 Parent → 送入 LLM（无需截断）
+```
+
+### 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `app/rag/parent_child_store.py` | ParentChildManager：父子索引管理器（InMemoryStore + 磁盘持久化） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/rag/hybrid_retriever.py` | Reranker 后增加 `parent_manager.get_parents()` 映射；BM25 缓存兼容检测（无 parent_id 视为旧缓存重建） |
+| `app/graph/nodes/nodes.py` | `build_rag_prompt` 移除 300 字符截断，仅对 >2000 字符做安全兜底 |
+| `app/rag/__init__.py` | 导出 ParentChildManager |
+| `scripts/rebuild_vector_store.py` | 重建脚本支持父子索引：Parent 切分 → Child 入库 → Parent 持久化 |
+
+### 技术栈对比
+
+| 维度 | 旧方案 | 新方案 |
+|------|--------|--------|
+| 索引粒度 | 单层（大 chunk ~400 字符） | 双层（Parent ~400 + Child ~150） |
+| 检索精度 | 大 chunk 语义模糊 | Child 小块精准匹配 |
+| 上下文完整性 | 截断到 300 字符 | 完整 Parent 注入 |
+| Reranker 性能 | 5 篇 × 300 字符 = ~969ms | 5 篇 × ~80 字符 = 预期 ~400ms |
+| 信息丢失风险 | 高（第 301+ 字符丢失） | 无（Parent 完整保留） |
+
+### 使用方式
+
+```bash
+# 重建向量库（自动构建父子索引）
+python scripts/rebuild_vector_store.py
+```
+
+### 兼容性
+
+- 未重建索引时，系统自动降级为旧模式（child 文档无 parent_id → 跳过 parent 映射）
+- BM25 缓存自动检测旧版数据并重建
+
+---
+
 ## v6.1 - 性能修复：Dense 检索 759ms → ~100ms（三个根因修复）
 
 ### 背景

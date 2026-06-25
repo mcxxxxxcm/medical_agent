@@ -27,6 +27,7 @@ except ImportError:
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.reranker import get_reranker
 from app.rag.vector_store import get_vector_store, load_documents_from_store
+from app.rag.parent_child_store import get_parent_child_manager
 from app.core.embeddings import get_embeddings
 from app.core.app_logging import get_logger
 from app.core.config import get_config
@@ -141,15 +142,22 @@ class HybridRetriever(BaseRetriever):
         logger.info(f"EnsembleRetriever 初始化完成 (alpha={self.alpha}, c=60)")
 
     def _load_bm25_documents(self, use_cache: bool = True) -> List[Document]:
-        """加载 BM25 所需的文档（支持缓存）"""
+        """加载 BM25 所需的文档（支持缓存）
+
+        父子索引兼容：检测缓存中的文档是否含 parent_id，不含则视为旧缓存并重建
+        """
         if use_cache and os.path.exists(BM25_CACHE_PATH):
             try:
                 logger.info(f"从磁盘加载 BM25 缓存：{BM25_CACHE_PATH}")
                 with open(BM25_CACHE_PATH, 'rb') as f:
                     data = pickle.load(f)
                     documents = data['documents']
-                    logger.info(f"BM25 缓存加载成功，文档数：{len(documents)}")
-                    return documents
+                    # 父子索引兼容检测：旧缓存无 parent_id，需重建
+                    if documents and not documents[0].metadata.get("parent_id"):
+                        logger.info("BM25 缓存为旧版（无 parent_id），重新从向量库加载")
+                    else:
+                        logger.info(f"BM25 缓存加载成功，文档数：{len(documents)}")
+                        return documents
             except Exception as e:
                 logger.warning(f"加载 BM25 缓存失败，将重新构建：{e}")
 
@@ -398,8 +406,24 @@ class HybridRetriever(BaseRetriever):
             final_docs = candidates[:self.k]
 
         retrieval_time = (time.time() - retrieval_start) * 1000
+
+        # 父子索引：child → parent 映射
+        # 检索/重排的是 child chunk，送入 LLM 的是完整 parent 文档
+        parent_lookup_ms = 0.0
+        parent_manager = get_parent_child_manager()
+        if parent_manager.is_initialized and final_docs:
+            parent_lookup_start = time.time()
+            parent_docs = parent_manager.get_parents(final_docs)
+            parent_lookup_ms = (time.time() - parent_lookup_start) * 1000
+            if parent_docs:
+                final_docs = parent_docs
+                logger.info(f"父子索引生效：返回 {len(final_docs)} 个完整父文档")
+            else:
+                logger.warning("父子映射未取回任何 parent，使用 child 文档兜底")
+        # 未初始化时直接使用 child 文档（兼容旧索引）
+
         logger.info(
-            "检索完成，耗时：%.2fms（query_embedding=%.2fms, semantic_lookup=%.2fms, dense=%.2fms, sparse=%.2fms, fusion=%.2fms, rerank=%.2fms, top1_dense_dist=%.4f）",
+            "检索完成，耗时：%.2fms（query_embedding=%.2fms, semantic_lookup=%.2fms, dense=%.2fms, sparse=%.2fms, fusion=%.2fms, rerank=%.2fms, parent_lookup=%.2fms, top1_dense_dist=%.4f）",
             retrieval_time,
             query_embedding_ms,
             semantic_lookup_ms,
@@ -407,6 +431,7 @@ class HybridRetriever(BaseRetriever):
             sparse_ms,
             fusion_ms,
             rerank_ms,
+            parent_lookup_ms,
             top1_dense_score,
         )
 

@@ -1218,9 +1218,11 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     for i, doc in enumerate(retrieved_docs, 1):
         source = doc.metadata.get("source", "未知来源")
         content = doc.page_content
-        # 截断文档内容，控制 prompt token 数（约300字≈150 token）
-        if len(content) > 300:
-            content = content[:300] + "..."
+        # 父子索引：parent 文档完整注入，不再截断
+        # child chunk ~150 字符，parent ~400 字符，均远小于 LLM 上下文窗口
+        # 仅对异常长文档做安全兜底（>2000 字符时截断）
+        if len(content) > 2000:
+            content = content[:2000] + "..."
         # 当前轮文档存入 Redis，供后续轮次 MicroCompact 引用
         doc_id = f"{uuid.uuid4().hex[:8]}"
         try:
