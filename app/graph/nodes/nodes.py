@@ -38,6 +38,7 @@ from app.core.llm import (
 from app.graph.state import MedicalAssistantState
 from app.memory import get_long_term_memory
 from app.rag.hybrid_retriever import get_hybrid_retriever
+from app.skills import run_rule_based_review, get_block_template
 
 logger = get_logger(__name__)
 config = get_config()
@@ -1391,78 +1392,100 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
 @timing_decorator("安全检查")
 def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """安全检查节点
-    
-    功能描述：
-        审核生成的内容是否安全合规
-        识别风险并添加必要的警告信息
-    
+    """医疗合规与安全审查节点（Skill 增强）
+
+    基于「医疗回答合规与安全审查 Skill」的结构化 SOP 执行：
+        1. 规则引擎审查（0ms）：诊断性断言检测 + 紧急风险拦截 + 免责声明注入
+        2. LLM 深度审查（仅规则引擎标记高风险时触发）：用药安全核查
+        3. 审查决策：pass（透传）/ revise（替换）/ block（拒答）
+
     Args：
-        state：当前状态，包含final_answer字段
-    
+        state：当前状态，包含 final_answer 和 clinical_checkpoint
+
     Returns：
-        Dict[str, Any]：需要更新的状态字段
-    
-    设计理念：
-        1、内容审核
-        2、风险评估
-        3、紧急提醒
-        4、警告累计（使用add reducer）
-    
-    风险等级：
-        high：涉及紧急医疗情况
-        medium：涉及处方药、需要专业诊断
-        low：一般健康建议
+        Dict[str, Any]：更新 final_answer（如有修订）+ warnings
     """
-    logger.info("安全检查节点开始执行")
+    logger.info("医疗合规安全审查节点开始执行")
+    start_time = time.time()
 
     content = state.get("final_answer", "")
+    if not content:
+        return {"warnings": []}
 
-    try:
-        llm = get_local_llm_json()  # JSON Mode：Ollama response_format=json_object
+    clinical_checkpoint = state.get("clinical_checkpoint")
 
-        prompt = f"""你是一位医疗安全审核专家，负责审核医疗建议的安全性。
+    # ===== 第一步：规则引擎审查（0ms） =====
+    rule_result = run_rule_based_review(content, clinical_checkpoint)
+    risk_tags = rule_result.get("risk_tags", [])
+    status = rule_result["status"]
+    revised_answer = rule_result["revised_answer"]
+
+    logger.info(f"规则引擎审查完成：status={status}, risk_tags={risk_tags}, "
+                f"耗时={(time.time() - start_time) * 1000:.1f}ms")
+
+    # ===== 第二步：LLM 深度审查（仅高风险时触发） =====
+    warnings = []
+
+    if risk_tags or status == "revise":
+        try:
+            llm = get_local_llm_json()
+            llm_prompt = f"""你是一位医疗安全审核专家，负责审核医疗建议的安全性。
 【待审核内容】
-{content}
+{revised_answer}
+
+【用户临床快照】
+{clinical_checkpoint or '无'}
 
 请判断：
-1. 内容是否安全
-2. 风险等级
-3. 检测到的问题
-4. 是否需要就医
-
-风险判断标准：
-- high：涉及紧急医疗情况、严重症状、可能延误治疗
-- medium：涉及处方药、需要专业诊断、症状不明确
-- low：一般健康建议、家庭护理、预防措施
+1. 用药安全：是否存在超说明书用药、禁忌人群用药或剂量错误
+2. 风险等级：high/medium/low
+3. 是否需要紧急就医
 
 【输出格式】
-必须输出合法的 JSON 对象，字段如下：
-- is_safe: 布尔值（true/false）
-- risk_level: 字符串（"low"/"medium"/"high"）
+必须输出合法的 JSON 对象：
+- is_safe: 布尔值
+- risk_level: "low"/"medium"/"high"
 - detected_issues: 字符串数组
-- requires_medical_attention: 布尔值（true/false）
+- requires_medical_attention: 布尔值
 
-只输出 JSON，不要输出任何其他内容："""
+只输出 JSON："""
 
-        result: SafetyCheckOutput = invoke_json_once_with_fallback(
-            llm,
-            prompt,
-            SafetyCheckOutput,
-        )
+            result: SafetyCheckOutput = invoke_json_once_with_fallback(
+                llm,
+                llm_prompt,
+                SafetyCheckOutput,
+            )
 
-        warnings = result.detected_issues.copy()
-        if result.requires_medical_attention:
-            warnings.append("紧急提醒：建议立刻就医")
+            warnings = result.detected_issues.copy()
+            if result.requires_medical_attention:
+                warnings.append("紧急提醒：建议立刻就医")
+                # LLM 判定需要就医但回答中未包含 → 升级为 block
+                if result.risk_level == "high" and "emergency_risk_missed" not in risk_tags:
+                    status = "block"
+
+            logger.info(f"LLM 深度审查完成：risk_level={result.risk_level}, "
+                        f"总耗时={time.time() - start_time:.2f}s")
+
+        except Exception as e:
+            logger.warning(f"LLM 深度审查失败（规则引擎结果仍生效）：{e}")
+
+    # ===== 第三步：执行审查决策 =====
+    if status == "block":
+        revised_answer = get_block_template()
+        warnings.append("回答因安全风险已被拦截，返回安全引导模板")
+        logger.warning("安全审查决策：BLOCK — 回答被拦截")
+    elif status == "revise":
+        logger.info("安全审查决策：REVISE — 回答已修订")
+
+    # 免责声明
+    if "本回答仅供参考" not in " ".join(warnings):
         warnings.append("本回答仅供参考，不能替代专业医生的诊断和治疗建议")
 
-        logger.info(f"安全检查完成，风险等级：{result.risk_level}")
+    result_update = {"warnings": warnings}
+    if status in ("revise", "block"):
+        result_update["final_answer"] = revised_answer
 
-        return {"warnings": warnings}
-
-    except Exception as e:
-        logger.error(f"安全检查失败：{str(e)}")
-        return {"warnings": ["本回答仅供参考，不能替代专业医生的诊断和治疗建议"]}
+    return result_update
 
 @timing_decorator("长期记忆加载")
 def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:

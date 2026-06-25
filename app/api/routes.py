@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
 
     # 3. 预热向量库和 BM25
     logger.info("预热混合检索器...")
-    get_hybrid_retriever()
+    get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=5)
     logger.info("混合检索器预热完成")
 
     # 4. 预热Redis缓存和语义缓存（避免首次请求2s连接延迟）

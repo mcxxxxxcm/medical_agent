@@ -1,5 +1,98 @@
 # 系统优化更新日志
 
+## v6.1 - 性能修复：Dense 检索 759ms → ~100ms（三个根因修复）
+
+### 背景
+
+日志分析发现 Dense 检索耗时 759ms（244 篇文档的向量库，正常应 <100ms）。排查发现三个叠加问题导致 Chroma 被重复实例化、Embedding API 被重复调用。
+
+### 三个根因与修复
+
+| 根因 | 文件 | 问题 | 修复 |
+|------|------|------|------|
+| Chroma 重复实例化 | `vector_store.py` | `create_vector_store()` 每次调用都新建 Chroma 实例，即使已存在 | 增加 `if self.vector_store is not None and not force_rebuild: return self.vector_store` |
+| lru_cache 参数不匹配 | `routes.py` | 启动预热 `get_hybrid_retriever()`（k=5, rerank_top_k=10）与搜索节点 `get_hybrid_retriever(k=3, rerank_top_k=5)` 参数不同 → 缓存未命中 → 新建 HybridRetriever → 触发 Chroma 重新加载 | 启动预热改为 `get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=5)` |
+| Embedding 未预计算 | `hybrid_retriever.py` | `elif query_embedding is None` 在 L2 缓存开启时永远不会执行（`if` 条件已为 True）→ `query_embedding` 为 None → Chroma 内部调 Embedding API（~200-300ms） | `elif` 改为 `if`，L2 缓存为空时仍计算 embedding 供 Dense 复用 |
+
+### 修复前后对比
+
+| 指标 | 修复前 | 修复后（预期） |
+|------|--------|--------------|
+| Dense 检索耗时 | 759ms | ~100ms |
+| Chroma 实例化 | 每次请求重新加载 | 启动时加载一次，后续复用 |
+| Embedding API 调用 | Chroma 内部调用（不可控） | 预计算后传入 Chroma（可复用） |
+| BM25 缓存加载 | 每次请求从磁盘重新加载 | lru_cache 命中后跳过 |
+
+### 修改文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| `app/rag/vector_store.py` | `create_vector_store()` 增加实例缓存判断 |
+| `app/api/routes.py` | 启动预热参数与搜索节点一致（k=3, rerank_top_k=5） |
+| `app/rag/hybrid_retriever.py` | `elif query_embedding is None` → `if query_embedding is None` |
+
+---
+
+## v6.0 - Skill 增强：医疗合规与安全审查（结构化 Prompt 范式）
+
+### 背景
+
+项目原有的 `safety_check_node` 仅调用 LLM 做简单风险评估，追加 warnings，不修改回答内容。在医疗场景中，大模型即使拿到正确文档，仍可能在生成阶段出现超适应症建议、诊断性断言或遗漏紧急就医指引。本次升级基于 Anthropic Skill 范式（结构化 Prompt），将安全审查从"附加警告"升级为"三态决策阀门"。
+
+### Skill 定义
+
+新增 [medical_safety_review.md](file:///d:/Agent/medical_assistant_agent/app/skills/medical_safety_review.md)，按 Anthropic Skill 范式定义五大模块：
+- 🎯 Trigger：答案生成后、缓存写入前自动触发
+- ⚙️ Workflow：5 步审查流程（诊断断言→用药安全→紧急风险→免责声明→决策输出）
+- 📤 Output：{status: pass|revise|block, revised_answer, risk_tags}
+- 🛡️ Guardrails：禁止生成新医学建议、800ms 超时兜底、规则引擎优先
+
+### 技术栈对比
+
+| 维度 | 旧方案（v5.x） | 新方案（v6.0） |
+|------|---------------|---------------|
+| 审查架构 | 仅 LLM 单步审查 | 规则引擎（0ms）+ LLM 深度审查（高风险时触发） |
+| 审查决策 | 仅追加 warnings | 三态决策：pass（透传）/ revise（修订）/ block（拦截） |
+| 诊断性断言 | 未检测 | 10 类正则模式检测 + 自动替换为风险提示句式 |
+| 紧急风险 | 未关联快照 | 交叉检查 clinical_checkpoint 中的危急重症信号 |
+| 免责声明 | 固定追加 | 检测缺失后自动注入 |
+| 流式集成 | 未集成 | 流式结束后执行审查，修订时发送 safety_revision SSE 事件 |
+| 缓存保护 | 无 | block 的回答不写入 Redis，防止污染缓存 |
+
+### 审查流程
+
+```
+答案生成 → [规则引擎 0ms] → 无风险 → pass → 缓存写入
+                         ↓ 有风险
+                    [LLM 深度审查] → revise → 修订后缓存 + 发送修正 SSE
+                                  → block → 不缓存 + 返回安全拒答模板
+```
+
+### 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `app/skills/__init__.py` | Skills 模块入口 |
+| `app/skills/medical_safety_review.md` | 结构化 Skill 定义（Anthropic 范式） |
+| `app/skills/safety_review_engine.py` | 规则引擎：诊断断言检测 + 紧急风险拦截 + 免责声明注入 |
+
+### 修改文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| `app/graph/nodes/nodes.py` | `safety_check_node` 重写：规则引擎 → LLM 深度审查 → 三态决策 |
+| `app/graph/streaming.py` | 新增 `_run_safety_review()` 方法；所有答案路径（direct/vision/RAG/cached_docs）流式结束后执行安全审查，block 不缓存 |
+
+### 设计要点
+
+1. **规则引擎优先**：0ms 正则检测诊断性断言、紧急症状、免责声明，仅高风险时才触发 LLM
+2. **三态决策**：pass（透传）/ revise（自动替换诊断断言 + 注入紧急提示 + 补全免责声明）/ block（返回安全引导模板）
+3. **流式安全修正**：流式输出已发送给用户后，如审查发现风险，发送 `safety_revision` SSE 事件推送修正
+4. **缓存保护**：block 的回答不写入 Redis，避免错误回答被缓存后持续返回
+5. **临床快照关联**：审查时读取 `clinical_checkpoint`，检测用户症状快照中的危急重症信号是否在回答中被遗漏
+
+---
+
 ## v5.7 - 修复：LangGraph BaseStore.search() namespace_prefix 位置参数兼容
 
 ### 问题

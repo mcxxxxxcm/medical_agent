@@ -34,6 +34,10 @@ class VectorStoreManager:
         Returns:
             Chroma: 向量库实例
         """
+        # 已有实例且非强制重建 → 直接复用，避免重复加载
+        if self.vector_store is not None and not force_rebuild:
+            return self.vector_store
+
         if force_rebuild or not self.persist_directory.exists():
             abs_path = self.persist_directory.resolve()
             print(f"向量库位于：{abs_path}")

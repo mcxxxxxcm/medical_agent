@@ -346,7 +346,8 @@ class HybridRetriever(BaseRetriever):
             except Exception as l2_err:
                 logger.warning(f"L2缓存检查异常，跳过：{l2_err}")
 
-        elif query_embedding is None:
+        # L2 缓存为空或未开启时，仍需计算 query_embedding 供 Dense 检索复用
+        if query_embedding is None:
             embedding_start = time.time()
             try:
                 # HyDE：用假想答案做 embedding（语义空间更接近文档）

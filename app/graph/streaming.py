@@ -28,6 +28,7 @@ from app.graph.nodes import (
     profile_extraction_node,
     query_rewrite_node,
     router_node,
+    safety_check_node,
     should_update_snapshot,
     stream_answer_generation,
     stream_direct_answer,
@@ -109,6 +110,44 @@ class StreamingOrchestrator:
             )
             self._first_token_sent = True
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    async def _run_safety_review(self) -> tuple:
+        """流式输出完成后的安全审查
+
+        对已流式输出的答案执行规则引擎 + LLM 审查。
+        如发现风险，返回修正 SSE 事件供调用方 yield。
+
+        Returns:
+            (can_cache: bool, revision_sse: str | None)
+        """
+        if not self._full_answer:
+            return True, None
+
+        self._state["final_answer"] = self._full_answer
+        review_result = safety_check_node(self._state)
+
+        if "final_answer" in review_result:
+            revised = review_result["final_answer"]
+            if revised != self._full_answer:
+                revision_payload = {
+                    "type": "safety_revision",
+                    "original": self._full_answer,
+                    "revised": revised,
+                    "warnings": review_result.get("warnings", []),
+                }
+                revision_sse = f"data: {json.dumps(revision_payload, ensure_ascii=False)}\n\n"
+                logger.info(
+                    f"安全审查发现风险，发送修正：request_id={self.request_id}, "
+                    f"warnings={review_result.get('warnings', [])}"
+                )
+                self._full_answer = revised
+                return True, revision_sse  # revise 可以缓存修订版
+
+        if any("拦截" in w for w in review_result.get("warnings", [])):
+            logger.warning(f"安全审查拦截，不缓存：request_id={self.request_id}")
+            return False, None
+
+        return True, None
 
     async def _load_initial_state(self):
         """加载用户档案和对话历史"""
@@ -539,7 +578,10 @@ class StreamingOrchestrator:
                     self._full_answer += token
                     yield await self._emit(token)
                 if self._full_answer:
-                    if not has_profile:
+                    can_cache, revision_sse = await self._run_safety_review()
+                    if revision_sse:
+                        yield revision_sse
+                    if can_cache and not has_profile:
                         _save_answer_cache(self.question, self._full_answer)
                     self._check_hallucination(self._full_answer)
 
@@ -556,24 +598,42 @@ class StreamingOrchestrator:
 
                 if next_node == "direct_answer":
                     self._check_route_misclassification(next_node)
+                    self._full_answer = ""
                     async for token in stream_direct_answer(self._state):
+                        self._full_answer += token
                         yield await self._emit(token)
+                    if self._full_answer:
+                        can_cache, revision_sse = await self._run_safety_review()
+                        if revision_sse:
+                            yield revision_sse
+                        if can_cache and not has_profile:
+                            _save_answer_cache(self.question, self._full_answer)
 
                 elif next_node == "vision_analysis":
                     logger.info(
                         f"开始流式图片问诊：request_id={self.request_id}, "
                         f"thread_id={self.thread_id}"
                     )
+                    self._full_answer = ""
                     async for token in stream_vision_answer(self._state):
+                        self._full_answer += token
                         yield await self._emit(token)
+                    if self._full_answer:
+                        can_cache, revision_sse = await self._run_safety_review()
+                        if revision_sse:
+                            yield revision_sse
 
                 else:
                     grade_next = await self._run_rag_pipeline(next_node)
 
                     if grade_next == "answer_generation" and self._state.get("final_answer"):
-                        yield await self._emit(self._state["final_answer"])
-                        if not has_profile:
-                            _save_answer_cache(self.question, self._state["final_answer"])
+                        self._full_answer = self._state["final_answer"]
+                        yield await self._emit(self._full_answer)
+                        can_cache, revision_sse = await self._run_safety_review()
+                        if revision_sse:
+                            yield revision_sse
+                        if can_cache and not has_profile:
+                            _save_answer_cache(self.question, self._full_answer)
 
                     elif self._state.get("retrieved_docs"):
                         logger.info(
@@ -590,7 +650,10 @@ class StreamingOrchestrator:
                             self._full_answer += token
                             yield await self._emit(token)
                         if self._full_answer:
-                            if not has_profile:
+                            can_cache, revision_sse = await self._run_safety_review()
+                            if revision_sse:
+                                yield revision_sse
+                            if can_cache and not has_profile:
                                 _save_answer_cache(self.question, self._full_answer)
                             self._check_hallucination(self._full_answer)
 
