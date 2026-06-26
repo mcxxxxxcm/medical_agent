@@ -62,8 +62,7 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 输出字段 =====
     final_answer: Optional[str]
-    warnings: List[str]  # 覆盖警告信息
-    # warnings: Annotated[List[str], add] 累加警告信息
+    warnings: Annotated[List[str], add]  # 累积警告信息（多个节点的 warnings 自动合并）
     sources: Annotated[List[Dict[str, str]], add]
 
     # ===== 中间字段 =====

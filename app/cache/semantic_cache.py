@@ -15,6 +15,7 @@
 """
 from datetime import datetime
 import hashlib
+import time
 import json
 from typing import Optional, List, Tuple, Dict
 
@@ -57,7 +58,10 @@ class SemanticCache:
         self._embeddings = None
         self._available = False
 
-        # Redis Set 用于追踪所有缓存键（替代 SCAN）
+        # Redis Sorted Set 用于 LRU 淘汰（score = 最后访问时间戳）
+        # 替代原来的 Redis Set（Set 无序，无法实现真正的 LRU）
+        self._keys_zset = f"{prefix}lru_zset"
+        # 保留旧 Set 的引用，用于兼容
         self._keys_set = f"{prefix}keys"
 
         # 本地 embedding 缓存，避免重复计算
@@ -242,6 +246,12 @@ class SemanticCache:
                 self._stats["hits"] += 1
                 self._stats["similarity_matches"] += 1
 
+                # LRU 访问刷新：更新 ZSET 的 score 为当前时间戳
+                try:
+                    self._cache._redis.zadd(self._keys_zset, {key: time.time()})
+                except Exception:
+                    pass
+
                 logger.info(
                     f"语义缓存命中：'{query[:20]}...' ≈ '{data.get('query', '')[:20]}...' "
                     f"(相似度: {similarity:.2%})"
@@ -293,23 +303,25 @@ class SemanticCache:
         }
 
         try:
-            # LRU 淘汰：超过 max_keys 时删除最早的条目
-            current_count = self._cache._redis.scard(self._keys_set)
+            # LRU 淘汰：超过 max_keys 时删除最久未访问的条目
+            current_count = self._cache._redis.zcard(self._keys_zset)
             if current_count >= self.max_keys:
-                all_keys = self._cache._redis.smembers(self._keys_set)
-                if all_keys:
-                    # 按创建时间排序，淘汰最早的 20%
-                    expire_count = max(int(len(all_keys) * 0.2), 1)
-                    # 随机采样淘汰（避免排序所有值）
-                    to_remove = list(all_keys)[:expire_count]
-                    if to_remove:
-                        self._cache._redis.delete(*to_remove)
-                        self._cache._redis.srem(self._keys_set, *to_remove)
-                        logger.info(f"语义缓存 LRU 淘汰：{len(to_remove)} 条")
+                # ZRANGE 按 score 升序 → score 最小 = 最久未访问
+                to_remove = self._cache._redis.zrange(self._keys_zset, 0, max(int(current_count * 0.2), 1) - 1)
+                if to_remove:
+                    # 删除缓存数据和 LRU 索引
+                    self._cache._redis.delete(*to_remove)
+                    for k in to_remove:
+                        self._cache._redis.zrem(self._keys_zset, k)
+                        self._cache._redis.srem(self._keys_set, k)  # 兼容清理
+                    logger.info(f"语义缓存 LRU 淘汰：{len(to_remove)} 条（真 LRU，按访问时间排序）")
 
             # 写入缓存数据
             self._cache._redis.setex(key, self.ttl, json.dumps(data, ensure_ascii=False))
-            # 维护键集合
+            # 维护 LRU Sorted Set（score = 当前时间戳，越大越新）
+            now_ts = time.time()
+            self._cache._redis.zadd(self._keys_zset, {key: now_ts})
+            # 兼容：同时维护旧 Set
             self._cache._redis.sadd(self._keys_set, key)
             logger.info(f"语义缓存已写入：'{query[:20]}...' ({len(documents)} 个文档)")
             return True
@@ -342,6 +354,7 @@ class SemanticCache:
             if keys:
                 self._cache._redis.delete(*keys)
                 self._cache._redis.delete(self._keys_set)
+                self._cache._redis.delete(self._keys_zset)
             logger.info(f"清空语义缓存：{len(keys)} 条")
             return len(keys)
         except Exception as e:

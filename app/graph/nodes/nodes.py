@@ -73,31 +73,24 @@ def detect_rule_based_route(question: str) -> Optional[str]:
         2. 再检查知识关键词
         3. 最后检查 general（精确匹配，避免误判）
         4. 无法匹配时返回 None，交给 LLM 判断
+
+    优化：
+        使用 AC 自动机替代线性扫描，O(m) 一次扫描匹配所有关键词
     """
     text = (question or "").strip().lower()
     if not text:
         return "general"
 
-    # 1. 先检查症状关键词（最高优先级）
-    symptom_keywords = [
-        "怎么办", "咋办", "吃什么药", "挂什么科", "严不严重", "缓解", "疼", "痛", "痒", "肿",
-        "发烧", "咳嗽", "流鼻涕", "头痛", "头疼", "嗓子疼", "喉咙痛", "腹痛", "肚子疼",
-        "恶心", "呕吐", "腹泻", "拉肚子", "胸闷", "胸痛", "呼吸困难", "发炎", "不舒服",
-        "过敏", "便秘", "失眠", "头晕", "乏力", "麻木", "出血", "溃疡", "骨折",
-        "扭伤", "抽筋", "水肿", "贫血", "结石", "鼻炎", "咽炎", "皮炎", "湿疹",
-        "哮喘", "痛风", "甲亢", "甲减", "颈椎", "腰椎", "关节炎",
-    ]
-    if any(keyword in text for keyword in symptom_keywords):
+    from app.core.keyword_matcher import get_route_symptom_matcher, get_route_knowledge_matcher
+
+    # 1. 先检查症状关键词（最高优先级）—— AC 自动机 O(m)
+    symptom_matcher = get_route_symptom_matcher()
+    if symptom_matcher.contains_any(text, use_boundary=False):
         return "symptom"
 
-    # 2. 再检查知识关键词
-    knowledge_keywords = [
-        "是什么", "什么是", "原因", "症状", "治疗", "预防", "护理", "诊断", "检查",
-        "高血压", "糖尿病", "感冒", "肺炎", "胃炎", "肝炎", "肾炎", "支气管炎",
-        "冠心病", "脑梗", "脂肪肝", "胃溃疡", "甲状腺", "贫血", "痛风", "哮喘",
-        "怎么吃", "注意什么", "禁忌", "副作用", "用量", "用法",
-    ]
-    if any(keyword in text for keyword in knowledge_keywords):
+    # 2. 再检查知识关键词 —— AC 自动机 O(m)
+    knowledge_matcher = get_route_knowledge_matcher()
+    if knowledge_matcher.contains_any(text, use_boundary=False):
         return "knowledge"
 
     # 3. 最后检查 general（精确匹配，避免误判）
@@ -125,69 +118,46 @@ def _extract_symptoms_by_rules(question: str) -> Optional[Dict[str, Any]]:
 
     当用户描述中包含明确的症状关键词时，直接提取结构化信息。
     返回 None 表示规则无法处理，需要交给 LLM。
+
+    优化：使用 AC 自动机替代线性遍历，O(m) 一次扫描匹配所有症状关键词
     """
     text = (question or "").strip()
     if not text:
         return None
 
-    # 症状关键词映射（关键词 -> 标准症状名）
-    symptom_map = {
-        "发烧": "发烧", "发热": "发烧",
-        "咳嗽": "咳嗽", "咳": "咳嗽",
-        "感冒": "感冒", "伤风": "感冒",
-        "流鼻涕": "流鼻涕", "鼻塞": "鼻塞",
-        "头痛": "头痛", "头疼": "头痛",
-        "嗓子疼": "嗓子疼", "喉咙痛": "嗓子疼", "咽痛": "嗓子疼",
-        "腹痛": "腹痛", "肚子疼": "腹痛", "胃疼": "腹痛", "胃痛": "腹痛",
-        "恶心": "恶心",
-        "呕吐": "呕吐", "吐": "呕吐",
-        "腹泻": "腹泻", "拉肚子": "腹泻",
-        "胸闷": "胸闷",
-        "胸痛": "胸痛",
-        "呼吸困难": "呼吸困难",
-        "过敏": "过敏",
-        "痒": "瘙痒", "瘙痒": "瘙痒",
-        "肿": "肿胀", "肿胀": "肿胀",
-        "发炎": "发炎", "炎症": "发炎",
-        "头晕": "头晕", "眩晕": "头晕", "晕": "头晕",
-        "乏力": "乏力", "没力气": "乏力", "疲劳": "乏力",
-        "失眠": "失眠", "睡不着": "失眠",
-        "出血": "出血", "流血": "出血",
-        "麻木": "麻木", "发麻": "麻木",
-        "抽筋": "抽筋", "痉挛": "抽筋",
-        "皮疹": "皮疹", "起疹子": "皮疹",
-        "水肿": "水肿", "浮肿": "水肿",
-        "便秘": "便秘",
-        # 常见疾病名称（用户常以疾病名提问，如"高血压怎么办"）
-        "高血压": "高血压",
-        "糖尿病": "糖尿病",
-        "肺炎": "肺炎",
-        "胃炎": "胃炎",
-        "肝炎": "肝炎",
-        "肾炎": "肾炎",
-        "支气管炎": "支气管炎",
-        "鼻炎": "鼻炎",
-        "肠炎": "肠炎",
-        "关节炎": "关节炎",
-        "冠心病": "冠心病",
-        "心脏病": "心脏病",
-        "哮喘": "哮喘",
-        "痛风": "痛风",
-        "贫血": "贫血",
-        "甲亢": "甲亢", "甲状腺": "甲亢",
-        "胃溃疡": "胃溃疡",
-        "颈椎病": "颈椎病",
-        "腰椎": "腰椎病",
-    }
+    # 使用 AC 自动机提取症状（集中定义于 keyword_matcher.py）
+    from app.core.keyword_matcher import get_symptom_matcher
+    symptom_matcher = get_symptom_matcher()
+    found_symptoms = symptom_matcher.get_matched_keywords(text, use_boundary=False)
 
-    # 严重程度关键词
+    # 通用疼痛模式兜底：匹配"X疼/X痛"（如"手腕疼"、"膝盖痛"）
+    # 仅在特定关键词未命中时补充，避免与已有映射重复
+    if not found_symptoms:
+        pain_matches = re.findall(r"([\u4e00-\u9fff]{1,4})(疼|痛)", text)
+        for part_name, _ in pain_matches:
+            symptom_name = f"{part_name}疼痛"
+            if symptom_name not in found_symptoms:
+                found_symptoms.append(symptom_name)
+
+    if not found_symptoms:
+        return None
+
+    # 去重
+    found_symptoms = list(dict.fromkeys(found_symptoms))
+
+    # 提取严重程度（优先取最严重的）
     severity_map = {
         "很严重": "严重", "非常严重": "严重", "剧痛": "严重", "剧烈": "严重",
-        "有点": "轻微", "轻微": "轻微", "稍微": "轻微", "一点": "轻微",
         "严重": "严重",
+        "有点": "轻微", "轻微": "轻微", "稍微": "轻微", "一点": "轻微",
     }
+    severity = None
+    for keyword, level in severity_map.items():
+        if keyword in text:
+            severity = level
+            # 不 break：继续检查是否匹配更严重的级别
 
-    # 身体部位关键词
+    # 提取身体部位
     body_part_map = {
         "头": "头部", "脑袋": "头部",
         "嗓子": "咽喉", "喉咙": "咽喉", "咽": "咽喉",
@@ -207,36 +177,6 @@ def _extract_symptoms_by_rules(question: str) -> Optional[Dict[str, Any]]:
         "皮肤": "皮肤",
         "牙": "牙齿", "牙齿": "牙齿",
     }
-
-    # 提取症状
-    found_symptoms = []
-    for keyword, symptom_name in symptom_map.items():
-        if keyword in text:
-            found_symptoms.append(symptom_name)
-
-    # 通用疼痛模式兜底：匹配"X疼/X痛"（如"手腕疼"、"膝盖痛"）
-    # 仅在特定关键词未命中时补充，避免与已有映射重复
-    if not found_symptoms:
-        pain_matches = re.findall(r"([\u4e00-\u9fff]{1,4})(疼|痛)", text)
-        for part_name, _ in pain_matches:
-            symptom_name = f"{part_name}疼痛"
-            if symptom_name not in found_symptoms:
-                found_symptoms.append(symptom_name)
-
-    if not found_symptoms:
-        return None
-
-    # 去重
-    found_symptoms = list(dict.fromkeys(found_symptoms))
-
-    # 提取严重程度
-    severity = None
-    for keyword, level in severity_map.items():
-        if keyword in text:
-            severity = level
-            break
-
-    # 提取身体部位
     body_parts = []
     for keyword, part in body_part_map.items():
         if keyword in text:
@@ -1540,8 +1480,9 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 # 仅在 L2 快照为空或没有 symptom_onset_dates 时填充
                 existing_checkpoint = state.get("clinical_checkpoint")
                 existing_onset = (existing_checkpoint or {}).get("symptom_onset_dates") or {}
-                # 合并：L2 已有的优先（当前会话更新过），L1 补充缺失的
-                merged_onset = {**l1_onset_dates, **existing_onset}
+                # 合并：同一症状取最早的首发时间（ts 最小值）
+                # L1 是跨会话事实真相源，L2 是当前会话工作缓存
+                merged_onset = _merge_onset_dates(l1_onset_dates, existing_onset)
                 if merged_onset != existing_onset:
                     # 需要更新 clinical_checkpoint
                     checkpoint = existing_checkpoint or {}
@@ -2070,6 +2011,39 @@ _DOMAIN_ENTITY_KEYWORDS = [
 ]
 
 
+def _merge_onset_dates(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """深度合并症状首发时间，同一症状取 ts 最小值（最早记录）
+
+    Args:
+        base: 基础字典（通常是旧快照/L1 记录）
+        override: 覆盖字典（通常是新快照/当前轮解析）
+
+    Returns:
+        合并后的字典，同一症状取 ts 更小（更早）的记录
+    """
+    merged = dict(base)
+    for name, info in override.items():
+        if name not in merged:
+            merged[name] = info
+            continue
+        # 两条记录都有 → 取 ts 更小的（更早的首发时间）
+        existing_info = merged[name]
+        existing_ts = (existing_info or {}).get("ts") if isinstance(existing_info, dict) else None
+        new_ts = (info or {}).get("ts") if isinstance(info, dict) else None
+        # 新记录没有 ts → 保留旧的
+        if new_ts is None:
+            continue
+        # 旧记录没有 ts → 用新的
+        if existing_ts is None:
+            merged[name] = info
+            continue
+        # 都有 ts → 取更小的（更早）
+        if new_ts < existing_ts:
+            merged[name] = info
+            logger.debug(f"首发时间更新：{name} ts {existing_ts} → {new_ts}（取更早记录）")
+    return merged
+
+
 def _has_anaphora_pattern(query: str) -> bool:
     """检测查询是否包含指代词/省略结构（不自包含）
 
@@ -2165,26 +2139,15 @@ def _build_rewrite_context(messages: list, max_rounds: int = 2) -> str:
 
     取最近 max_rounds 轮，AI 回复在截断前先扫描全文提取医疗实体（药物/症状），
     确保药物名称不管出现在回复的哪个位置都不会因截断丢失。
+
+    优化：使用 AC 自动机替代线性遍历，O(m) 一次扫描提取所有实体
     """
     if not messages:
         return ""
 
-    # 药物关键词（与 _DRUG_KEYWORDS 对齐）
-    _drug_kw = {"布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林", "奥司他韦",
-                "连花清瘟", "板蓝根", "感冒灵", "止咳糖浆", "蒙脱石散", "藿香正气",
-                "氯雷他定", "西替利嗪", "扑尔敏", "地塞米松", "红霉素", "甲硝唑",
-                "奥美拉唑", "雷尼替丁", "硝苯地平", "氨氯地平", "二甲双胍",
-                "阿卡波糖", "格列美脲", "胰岛素", "阿托伐他汀", "辛伐他汀",
-                "氯吡格雷", "华法林", "肝素", "青霉素", "左氧氟沙星",
-                "莫西沙星", "利巴韦林", "更昔洛韦", "阿昔洛韦", "伐昔洛韦",
-                "双氯芬酸", "塞来昔布", "美洛昔康", "曲马多", "可待因",
-                "地氯雷他定", "氮卓斯汀", "糠酸莫米松", "丙酸氟替卡松",
-                "mg", "ml", "剂量", "服用", "用药"}
-    # 症状关键词
-    _symptom_kw = {"头痛", "头疼", "头晕", "发烧", "发热", "咳嗽", "喉咙痛", "流鼻涕",
-                   "鼻塞", "恶心", "呕吐", "腹泻", "拉肚子", "腹痛", "肚子疼", "胸闷",
-                   "胸痛", "心悸", "气短", "乏力", "疲劳", "失眠", "过敏", "皮疹",
-                   "关节痛", "肌肉痛", "肿胀", "出血", "便秘", "消化不良"}
+    from app.core.keyword_matcher import get_drug_matcher, get_symptom_matcher
+    drug_matcher = get_drug_matcher()
+    symptom_matcher = get_symptom_matcher()
 
     # 只取最近 max_rounds 轮（2*max_rounds 条消息）
     max_msgs = max_rounds * 2
@@ -2198,14 +2161,10 @@ def _build_rewrite_context(messages: list, max_rounds: int = 2) -> str:
         elif isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
 
-            # 截断前扫描全文提取医疗实体，确保中间部分的关键信息不丢失
+            # 截断前用 AC 自动机扫描全文提取医疗实体
             found_entities = set()
-            for kw in _drug_kw:
-                if kw in content:
-                    found_entities.add(kw)
-            for kw in _symptom_kw:
-                if kw in content:
-                    found_entities.add(kw)
+            found_entities.update(drug_matcher.get_matched_originals(content, use_boundary=False))
+            found_entities.update(symptom_matcher.get_matched_originals(content, use_boundary=False))
 
             has_medical = bool(found_entities)
             truncate_len = 500 if has_medical else 250
@@ -2361,11 +2320,11 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
         new_checkpoint = result.model_dump()
 
         # 合并症状首发日期（代码层维护，LLM 不参与计算）
-        # 关键：先保留旧快照中已有的时间记录，再合并当前轮新增的
+        # 关键：同一症状取最早的首发时间（ts 最小值），而非简单覆盖
         # 存储结构：{"头痛": {"iso": "2026-06-22T10:00:00", "ts": 1784567890, "precision": "exact"}}
         existing_onset_dates = (existing_checkpoint or {}).get("symptom_onset_dates", {}) or {}
         # LLM 可能输出空的 symptom_onset_dates，用旧快照的值兜底
-        onset_dates = {**existing_onset_dates, **(new_checkpoint.get("symptom_onset_dates") or {})}
+        onset_dates = _merge_onset_dates(existing_onset_dates, new_checkpoint.get("symptom_onset_dates") or {})
 
         # 合并当前轮症状解析的时间记录（覆盖旧值，以最新为准）
         symptoms_data = state.get("symptoms")

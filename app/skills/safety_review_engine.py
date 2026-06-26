@@ -95,33 +95,44 @@ def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str,
             "needs_emergency_alert": bool,  # True 表示需要追加紧急提示
         }
     """
-    # 从临床快照中提取症状
+    # 从临床快照中提取症状（使用 AC 自动机精确匹配）
     emergency_in_snapshot = []
     if clinical_checkpoint:
-        # 检查 symptoms 字段
-        symptoms = clinical_checkpoint.get("symptoms", [])
-        if isinstance(symptoms, list):
-            for sym in symptoms:
+        try:
+            from app.core.keyword_matcher import get_emergency_matcher
+            emergency_matcher = get_emergency_matcher()
+
+            # 检查 symptoms 字段
+            symptoms = clinical_checkpoint.get("symptoms", [])
+            if isinstance(symptoms, list):
+                for sym in symptoms:
+                    if isinstance(sym, str) and emergency_matcher.contains_any(sym, use_boundary=False):
+                        emergency_in_snapshot.append(sym)
+
+            # 检查 symptom_onset_dates 字段
+            onset_dates = clinical_checkpoint.get("symptom_onset_dates", {})
+            if isinstance(onset_dates, dict):
+                for sym_name in onset_dates:
+                    if emergency_matcher.contains_any(sym_name, use_boundary=False):
+                        if sym_name not in emergency_in_snapshot:
+                            emergency_in_snapshot.append(sym_name)
+        except Exception:
+            # 降级为原有逻辑
+            for sym in (clinical_checkpoint.get("symptoms", []) if isinstance(clinical_checkpoint.get("symptoms"), list) else []):
                 if isinstance(sym, str):
                     for emerg in EMERGENCY_SYMPTOMS:
                         if emerg in sym or sym in emerg:
                             emergency_in_snapshot.append(sym)
-        
-        # 检查 symptom_onset_dates 字段
-        onset_dates = clinical_checkpoint.get("symptom_onset_dates", {})
-        if isinstance(onset_dates, dict):
-            for sym_name in onset_dates:
-                for emerg in EMERGENCY_SYMPTOMS:
-                    if emerg in sym_name or sym_name in emerg:
-                        if sym_name not in emergency_in_snapshot:
-                            emergency_in_snapshot.append(sym_name)
-    
-    # 也检查当前问题中的紧急症状
-    # (从 answer 反推是否提到了紧急症状但没给就医建议)
+
+    # 也检查当前问题中的紧急症状（使用 AC 自动机）
     answer_has_emergency = False
-    for emerg in EMERGENCY_SYMPTOMS:
-        if emerg in answer:
-            answer_has_emergency = True
+    try:
+        from app.core.keyword_matcher import get_emergency_matcher
+        answer_has_emergency = get_emergency_matcher().contains_any(answer, use_boundary=False)
+    except Exception:
+        for emerg in EMERGENCY_SYMPTOMS:
+            if emerg in answer:
+                answer_has_emergency = True
             if emerg not in emergency_in_snapshot:
                 emergency_in_snapshot.append(emerg)
     

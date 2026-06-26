@@ -1,5 +1,82 @@
 # 系统优化更新日志
 
+## v7.0 - 系统性代码质量审计：P0/P1 缺陷修复 + AC 自动机引擎
+
+### 背景
+
+对项目所有模块进行了系统性审查，识别出 30 个"朴素实现可用更优算法替代"的问题（类似"300 字符截断"模式）。按优先级从 P0 开始修复，本次修复 4 项。
+
+### 修复 1：warnings 字段覆盖→累积（P0 Bug）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 声明 | `warnings: List[str]  # 覆盖警告信息` | `warnings: Annotated[List[str], add]` |
+| 行为 | 后序节点的 warnings 覆盖前序节点 | 多个节点的 warnings 自动合并累积 |
+| Bug | `knowledge_retrieval_node` 的检索警告被 `safety_check_node` 覆盖丢失 | 所有节点的 warnings 都保留 |
+
+**改动**：[state.py](file:///d:/Agent/medical_assistant_agent/app/graph/state.py#L65) 1 行
+
+### 修复 2：onset_dates 合并语义错误→取最早 ts（P0 Bug）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 合并方式 | `{**a, **b}` 简单覆盖 | `_merge_onset_dates(a, b)` 深度合并 |
+| 同一症状 | 后值覆盖前值（L2 覆盖 L1） | 取 `ts` 更小（更早首发）的记录 |
+| Bug | L1 记录"头痛首次出现在3天前"，L2 记录"头痛出现在1天前"→ 1天前覆盖3天前 | 保留3天前（更早的首发时间） |
+
+**改动**：[nodes.py](file:///d:/Agent/medical_assistant_agent/app/graph/nodes/nodes.py#L2074-L2104) 新增 `_merge_onset_dates()` 函数，替换 2 处简单字典合并
+
+### 修复 3：关键词匹配→AC 自动机（P1 性能+精度）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 算法 | `any(keyword in text for keyword in keywords)` 线性扫描 | Aho-Corasick 自动机 O(m) 一次扫描 |
+| 复杂度 | O(n×m)（n=关键词数，m=文本长度） | O(m)（与关键词数无关） |
+| 误匹配 | "心疼"命中"疼"→误判为症状 | AC 自动机 + 边界检测消除子串误匹配 |
+| 关键词维护 | 5 个文件各自维护一份列表 | 集中式 `keyword_matcher.py`，单一真相源 |
+| 降级策略 | 无 | pyahocorasick 未安装时自动降级为线性扫描 |
+
+**受影响的模块**：
+
+| 模块 | 旧方式 | 新方式 |
+|------|--------|--------|
+| `detect_rule_based_route` | 2 个关键词列表 × 线性扫描 | `get_route_symptom_matcher()` / `get_route_knowledge_matcher()` |
+| `_extract_symptoms_by_rules` | 70+ 条 `symptom_map` × 线性遍历 | `get_symptom_matcher().get_matched_keywords()` |
+| `_build_rewrite_context` | 2 个内联关键词集合 × 线性扫描 | `get_drug_matcher()` / `get_symptom_matcher()` |
+| `_check_emergency_risks` | 双向子串 `emerg in sym or sym in emerg` | `get_emergency_matcher().contains_any()` |
+
+**新增文件**：[keyword_matcher.py](file:///d:/Agent/medical_assistant_agent/app/core/keyword_matcher.py) — AC 自动机引擎 + 5 个集中式匹配器构建器
+
+**新增依赖**：`pyahocorasick`（纯 C 实现，<1MB，自动降级）
+
+### 修复 4：语义缓存伪 LRU→真 LRU（P1 正确性）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 数据结构 | Redis Set（无序） | Redis Sorted Set（score=访问时间戳） |
+| 淘汰策略 | `list(all_keys)[:20%]` → 本质是随机淘汰 | `ZRANGE` 按 score 升序 → 淘汰最久未访问的 |
+| 访问刷新 | 无（命中不更新顺序） | 命中时 `ZADD` 更新 score → 最近访问的排在后面 |
+| 与注释一致性 | 注释说"LRU"但实际是随机淘汰 ❌ | 真正的 LRU 行为 ✅ |
+
+**改动**：[semantic_cache.py](file:///d:/Agent/medical_assistant_agent/app/cache/semantic_cache.py)
+- 新增 `_keys_zset` Sorted Set 索引
+- `set()` 写入时 `ZADD {key: timestamp}`
+- `get()` 命中时 `ZADD` 刷新时间戳（读时刷新）
+- 淘汰时 `ZRANGE` 按 score 升序取最早的 20%
+- `clear()` 同时清理 ZSET
+
+### 修改文件清单
+
+| 文件 | 改动类型 |
+|------|---------|
+| `app/graph/state.py` | Bug 修复：warnings 覆盖→累积 |
+| `app/graph/nodes/nodes.py` | Bug 修复：onset_dates 深度合并；AC 自动机集成（4 处） |
+| `app/core/keyword_matcher.py` | 新增：AC 自动机引擎 + 5 个集中式匹配器 |
+| `app/skills/safety_review_engine.py` | 优化：紧急症状检测使用 AC 自动机 |
+| `app/cache/semantic_cache.py` | 修复：伪 LRU→真 LRU（Sorted Set + 读时刷新） |
+
+---
+
 ## v6.2 - 父子索引（Parent-Child Index）：检索精度 + 上下文完整性双提升
 
 ### 背景
