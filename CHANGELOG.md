@@ -1,5 +1,133 @@
 # 系统优化更新日志
 
+## v8.0 - Skills 体系扩展 + Bad Case 回归测试闭环 + RAGAS 评估重写
+
+### 背景
+
+项目已具备基础的医疗安全审查 Skill、Bad Case 自动采集和 RAGAS 评估模块，但三个方向均存在明显短板：
+- **Skills**：仅有 `medical_safety_review` 1 个 Skill，用药指导和症状分诊等高频场景无覆盖
+- **Bad Case**：自动采集（4 触发点）+ 导出脚本 + 人工审核 API 已有，但缺回归测试运行器，无法验证修复效果
+- **RAGAS 评估**：基础代码存在但硬编码 `gpt-4o`、兼容层冗余、无增量评估、无版本对比、未接入 bad case 数据
+
+### 改动 1：新增 2 个结构化 Skill（Anthropic 范式）
+
+#### 1.1 用药指导 Skill（`medication_guide`）
+
+| 维度 | 说明 |
+|------|------|
+| Trigger | 用户问题涉及药物用法用量、相互作用、禁忌人群时触发 |
+| Workflow | 药物实体识别 → 禁忌人群交叉检查 → 相互作用初筛 → 用量安全验证 → 规范性校验 |
+| 输出 | `{status: pass/revise, revised_answer, risk_tags}` |
+
+规则引擎覆盖：
+- **药物实体识别**：AC 自动机匹配 + 正则兜底（剂型后缀"XX片""XX胶囊"）
+- **禁忌人群交叉检查**：6 类人群（孕妇/儿童/老年/肝肾功能不全/消化道溃疡）与 4 种常见药物安全规则交叉
+- **药物相互作用**：布洛芬↔阿司匹林/华法林等已知高风险组合
+- **用量安全**：检测回答中剂量是否超过每日上限（如布洛芬 1200mg）
+- **5 字段完整性**：适应症/用法用量/注意事项/禁忌/如症状持续请就医
+
+#### 1.2 症状分诊 Skill（`symptom_triage`）
+
+| 维度 | 说明 |
+|------|------|
+| Trigger | 路由为 `symptom_analysis` 时触发 |
+| Workflow | 紧急度分级 → 危险症状组合检测 → 持续时间评估 → 分诊建议生成 |
+| 输出 | `{status: pass/revise, triage_result, advice_text, risk_tags}` |
+
+分诊等级：
+- 🔴 紧急（立即就医/120）：胸痛+呼吸困难、意识不清、大出血等 12 类
+- 🟡 建议就诊（48h 内）：症状 >72h 无缓解、反复发作、用药无改善
+- 🟢 居家观察：轻微症状、首次出现、无危险信号
+
+危险症状组合（5 种）：
+- 头痛+发热+颈僵 → 脑膜炎高风险
+- 胸痛+呼吸困难+冷汗 → 心梗高风险
+- 头痛+呕吐+视力模糊 → 颅内压增高
+- 发热+皮疹+呼吸困难 → 严重过敏反应
+- 腹痛+发热+呕吐 → 急腹症
+
+### 改动 2：Bad Case 回归测试闭环
+
+| 维度 | 旧方案 | 新方案 |
+|------|--------|--------|
+| 采集 | ✅ 4 触发点自动采集 | ✅ 不变 |
+| 导出 | ✅ JSONL 导出脚本 | ✅ 不变 |
+| 人工审核 | ✅ API + PostgresStore | ✅ 不变 |
+| **回归测试** | ❌ 无 | ✅ `BadCaseRegressionRunner` |
+| **统计报告** | ❌ 无 | ✅ 按类型/通过率/失败分布 |
+| **CLI 运行** | ❌ 无 | ✅ `scripts/run_bad_case_regression.py` |
+
+回归测试流程：
+```
+加载 JSONL 测试集 → 构建 state → 调用 query_rewrite_node → 
+模糊匹配对比(三级) → 生成统计报告 → 保存
+```
+
+模糊匹配三级策略（任一通过即算 PASS）：
+1. 归一化精确匹配（去标点/空格后相等）
+2. 子串包含（期望是实际的子串）
+3. 核心实体覆盖（期望中的药物/症状词全部在实际中出现）
+
+### 改动 3：RAGAS 评估模块重写
+
+| 维度 | 旧方案 | 新方案 |
+|------|--------|--------|
+| 评估 LLM | 硬编码 `gpt-4o` | 项目配置 `get_llm()` |
+| RAGAS 兼容 | 逐指标 try/except 冗长链 | 顶层一次性导入，仅支持 `>=0.1` |
+| 降级策略 | 无（报错退出） | 规则引擎简易评估（关键词覆盖率） |
+| 增量评估 | ❌ 每次全量重跑 | ✅ 按 question 去重跳过已评估 |
+| 版本对比 | ❌ 无 | ✅ A/B 对比 + delta + 改进方向 |
+| 测试集 | 内嵌 5 条 | JSONL 文件 10 条（4 类场景） |
+| Bad Case 接入 | ❌ 不支持 | ✅ 自动识别 bad case 格式 |
+
+四维评估指标：
+- **Faithfulness（忠实度）**：答案是否基于检索上下文
+- **Answer Relevance（答案相关性）**：答案是否切题
+- **Context Precision（上下文精确度）**：检索结果中相关文档的比例
+- **Context Relevance（上下文相关性）**：检索结果与问题的相关程度
+
+规则引擎降级指标（ragas 未安装时）：
+- `rule_based_faithfulness`：答案关键词在上下文中的覆盖率
+- `rule_based_relevance`：问题关键词在答案中的覆盖率
+- `rule_based_context_relevance`：问题关键词在上下文中的覆盖率
+- `rule_based_context_precision`：上下文中与问题相关文档的比例
+
+### 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `app/skills/medication_guide.md` | 用药指导 Skill 定义（Anthropic 范式） |
+| `app/skills/medication_guide_engine.py` | 用药指导规则引擎 |
+| `app/skills/symptom_triage.md` | 症状分诊 Skill 定义（Anthropic 范式） |
+| `app/skills/symptom_triage_engine.py` | 症状分诊规则引擎 |
+| `app/evaluation/__init__.py` | 评估模块入口 |
+| `app/evaluation/bad_case_runner.py` | Bad Case 回归测试运行器 |
+| `scripts/run_bad_case_regression.py` | Bad Case 回归测试 CLI |
+| `tests/data/rag_eval_test_set.jsonl` | RAGAS 评估测试集（10 条/4 类场景） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/skills/__init__.py` | 新增用药指导 + 症状分诊导出 |
+| `app/rag/evaluation.py` | 重写：项目 LLM + 增量评估 + 版本对比 + bad case 接入 |
+| `scripts/evaluate_rag.py` | 重写：新参数 + 版本对比 CLI |
+
+### 使用方式
+
+```bash
+# Bad Case 回归测试
+python scripts/run_bad_case_regression.py
+python scripts/run_bad_case_regression.py --test-set tests/data/custom.jsonl --verbose
+
+# RAGAS 评估
+python scripts/evaluate_rag.py
+python scripts/evaluate_rag.py --test-set tests/data/bad_cases_export.jsonl
+python scripts/evaluate_rag.py --compare data/evaluation/eval_v1.json data/evaluation/eval_v2.json
+```
+
+---
+
 ## v7.0 - 系统性代码质量审计：P0/P1 缺陷修复 + AC 自动机引擎
 
 ### 背景
