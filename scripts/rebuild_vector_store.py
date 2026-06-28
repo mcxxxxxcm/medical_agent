@@ -40,6 +40,12 @@ def rebuild():
     # 3. 构建父子索引：Parent → Child 切分
     print("\n[3/5] 构建父子索引...")
     reset_parent_child_manager()
+    # 删除旧版 parent_store.pkl，避免旧数据叠加
+    import os
+    old_pkl = project_root / "data" / "parent_store.pkl"
+    if old_pkl.exists():
+        os.remove(old_pkl)
+        print(f"  已删除旧版 parent_store.pkl")
     parent_manager = get_parent_child_manager()
     child_chunks = parent_manager.build_index(parent_docs, child_chunk_size=150)
     print(f"  生成 {len(child_chunks)} 个 Child chunk")

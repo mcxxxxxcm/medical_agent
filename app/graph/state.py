@@ -67,6 +67,7 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 中间字段 =====
     retrieved_docs: Optional[List[Document]]
+    all_retrieved_docs: Optional[List[Document]]  # 过滤前的完整检索文档（供幻觉检测等使用）
     symptoms: Optional[Dict[str, Any]]
 
     # ===== 错误处理 =====
@@ -110,6 +111,7 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "warnings": [],
         "sources": [],
         "retrieved_docs": None,
+        "all_retrieved_docs": None,
         "symptoms": None,
         "error": None,
         "user_profile": None,

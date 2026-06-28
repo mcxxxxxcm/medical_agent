@@ -54,7 +54,14 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50
     DEFAULT_K: int = 5
     DEFAULT_SEARCH_TYPE: str = "similarity"
-    RERANKER_THRESHOLD: float = 0.1  # sigmoid归一化后的阈值，仅过滤极低分文档，排序交给Reranker，过滤交给下游
+    RERANKER_THRESHOLD: float = 0.02  # sigmoid归一化后的阈值，仅过滤极低分文档（<0.02≈完全不相关）
+    # v8.2：0.1 → 0.02。旧值 0.1 过于严格，导致"头痛怎么办"只有1篇通过（0.26），
+    # 其余神经系统文档（0.031）被过滤，parent 不含布洛芬 → 幻觉检测误报
+    # Reranker 的核心价值是排序，不是过滤；过滤交给下游 grade_documents_node
+
+    # ===== 邻域扩展配置 =====
+    SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节
+    MAX_SIBLING_CHARS: int = 2000  # 邻域扩展后最大总字符数，防止撑爆 LLM 上下文
 
     # ===== 路径配置 =====
     DOCS_DIR: Path = PROJECT_ROOT / "docs" / "medical"

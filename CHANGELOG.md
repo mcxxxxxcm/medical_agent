@@ -1,5 +1,164 @@
 # 系统优化更新日志
 
+## v8.3 - 邻域扩展（Sibling Expansion）：跨章节信息补全 + 幻觉消除
+
+### 背景
+
+用户问"头痛怎么办？"，答案天然分布在"危险信号（排除禁忌）"+"药物选择（治疗）"+"非药物治疗（辅助）"等多个 Parent 中。但 Reranker 只返回了 1 个 Parent（"头痛危险信号"），而"头痛的药物选择"（含布洛芬等药物信息）不在检索候选中（Dense 排名 #50+）。
+
+LLM 拿到不含药物的文档，被迫靠自身知识编造布洛芬/对乙酰氨基酚 → 幻觉检测误报。
+
+根因：Embedding 对"怎么办"和"药物选择"的语义映射不够，Dense 召回不了跨章节的相关内容。这不是调参能解决的——调大 top_k 从 6 到 50 不现实。
+
+### 解决方案：Parent 邻域扩展
+
+利用 Markdown 文档结构，检索命中后自动拉取同一文档中的相邻章节：
+
+```
+Reranker 返回：Parent section=5 "头痛危险信号"
+    ↓ 邻域扩展 window=1
+自动拉取：Parent section=4 "头痛的药物选择"（含布洛芬）  ← 补足！
+自动拉取：Parent section=6 "头晕"
+    ↓ 合并去重
+注入 LLM：3 个 Parent（含药物选择）→ 无幻觉
+```
+
+### 技术栈对比
+
+| 维度 | 旧方案（v8.2） | 新方案（v8.3） |
+|------|---------------|---------------|
+| 检索粒度 | 仅 Reranker 返回的 Parent | Parent + 相邻兄弟章节 |
+| 跨章节信息 | 缺失 → LLM 编造 → 幻觉 | 邻域扩展自动补全 |
+| 新增元数据 | 无 | `doc_id`（所属文档）+ `section_index`（章节序号） |
+| 字符上限 | 无 | `MAX_SIBLING_CHARS=2000`（防撑爆 LLM 上下文） |
+| 额外延迟 | — | <1ms（内存查找） |
+| 幻觉检测 | 误报（文档不含布洛芬） | 正确（扩展后含布洛芬） |
+
+### 实测效果
+
+```
+查询"头痛怎么办？"
+  Reranker 返回：1 个 Parent（section=5，头痛危险信号）
+  邻域扩展：1 → 3 个（+2 个兄弟章节），总字符数=432
+
+  [1] 🔍 原始  | section=5 | "头痛危险信号（红旗征）"          ← Reranker 召回
+  [2] 📱 扩展 💊 | section=4 | "头痛的药物选择"（含布洛芬）   ← 邻域扩展
+  [3] 📱 扩展  | section=6 | "头晕"                           ← 邻域扩展
+```
+
+### 配置项
+
+| 配置 | 默认值 | 说明 |
+|------|--------|------|
+| `SIBLING_WINDOW` | 1 | 邻域窗口大小，1=前后各取1个章节 |
+| `MAX_SIBLING_CHARS` | 2000 | 扩展后最大总字符数 |
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/rag/parent_child_store.py` | 新增 `expand_with_siblings()` 方法；`build_index()` 写入 `doc_id`+`section_index` 元数据；持久化格式升级（含章节索引） |
+| `app/rag/hybrid_retriever.py` | parent 映射后调用 `expand_with_siblings()` |
+| `app/core/config.py` | 新增 `SIBLING_WINDOW`、`MAX_SIBLING_CHARS` 配置项 |
+| `scripts/rebuild_vector_store.py` | 重建前删除旧 parent_store.pkl，避免旧数据叠加 |
+
+### 兼容性
+
+- 旧版 `parent_store.pkl`（无 `doc_id`/`section_index`）自动降级：`_rebuild_index_from_store()` 从 Parent 元数据中重建索引
+- 无章节索引时跳过邻域扩展，不影响现有功能
+
+---
+
+## v8.2 - 严重 Bug 修复：Dense 检索分数永远为 0.0 → Reranker 被误跳过 → 召回错误文档 + 幻觉检测误报
+
+### 背景
+
+用户查询"头痛怎么办？"，系统返回了**皮肤疾病诊疗指南**的内容，而非**神经系统症状鉴别指南**（包含头痛药物选择）。LLM 拿到无关文档后自由编造了布洛芬/曲马多等药物名，触发幻觉检测。但幻觉检测也误报了——文档中实际包含布洛芬等药物。
+
+日志追踪：
+```
+top1_dense_dist=0.0000        ← 看似"完美匹配"，实际是 Bug
+Dense Top-1 置信度极高（distance=0.0000 < 0.08），跳过重排  ← Reranker 被误跳过
+文档启发式过滤结果：3 -> 1 相关   ← 神经系统文档也被误过滤
+疑似幻觉检测：答案提到 {'布洛芬', '曲马多', '对乙酰氨基酚'}，但检索文档中未出现  ← 误报
+```
+
+### 根因 1：`similarity_search_by_vector_with_score` 方法不存在
+
+| 维度 | 旧代码 | 实际 |
+|------|--------|------|
+| 调用方法 | `Chroma.similarity_search_by_vector_with_score()` | **此方法不存在！** |
+| `hasattr` 检查 | `if hasattr(...)` → `False` → 跳过 | 永远跳过带分数的分支 |
+| 回退路径 | `similarity_search_by_vector()` → 无分数 | `top1_score` 保持默认值 `0.0` |
+| High-Confidence Bypass | `0 <= 0.0 < 0.08` = `True` → 跳过 Reranker | **每次请求都跳过 Reranker！** |
+
+**langchain_chroma.Chroma 的正确方法名**：
+- `similarity_search_with_score` → 文本查询 + ChromaDB distance ✅
+- `similarity_search_by_vector_with_relevance_scores` → 向量查询 + 归一化分数 ✅
+- ~~`similarity_search_by_vector_with_score`~~ → **不存在** ❌
+
+### 根因 2：幻觉检测读取过滤后的文档
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 检测依据 | `state["retrieved_docs"]`（过滤后） | `state["all_retrieved_docs"]`（过滤前） |
+| 问题 | grade_documents_node 过滤后只剩 1 篇不相关文档 | 全量文档包含所有检索结果 |
+| 后果 | 布洛芬在神经系统文档中，但该文档已被过滤 → 误报幻觉 | 正确识别布洛芬在检索文档中存在 |
+
+### 根因 3：`has_query_overlap` 口语虚词误判
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 查询 "头痛怎么办？" | tokens = ["头痛", "怎么办"] | tokens = ["头痛"]（过滤"怎么办"虚词） |
+| 神经系统文档 | "头痛"匹配1个，"怎么办"不匹配 → match=1 → `1 >= 1.5` = **False** | "头痛"匹配1个 → `1 >= 1` = **True** ✅ |
+| 后果 | 含"头痛"的正确文档被误过滤掉 | 正确保留 |
+
+### 修复 1：三层回退策略获取真实 distance
+
+| 优先级 | 策略 | 方法 | 返回值 |
+|--------|------|------|--------|
+| 1 | 底层 collection 直接查询 | `col.query(query_embeddings=..., include=["distances"])` | ChromaDB cosine distance ✅ |
+| 2 | LangChain 向量查询 | `similarity_search_by_vector_with_relevance_scores` | 归一化分数 → 转换为 distance |
+| 3 | 无分数兜底 | `similarity_search_by_vector` | 默认值 1.0（不触发 Bypass） |
+
+### 修复 2：`top1_score` 默认值 0.0 → 1.0
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 默认值 | `0.0` | `1.0` |
+| 异常时返回 | `([], 0.0)` → 触发 Bypass | `([], 1.0)` → 不触发 Bypass |
+
+### 修复 3：幻觉检测使用过滤前文档 + 口语虚词过滤
+
+- 新增 `all_retrieved_docs` state 字段，保存知识检索节点的完整结果
+- 幻觉检测优先读 `all_retrieved_docs`
+- `has_query_overlap` 增加 `ORAL_FILLERS` 过滤"怎么办/怎么样/好不好"等口语虚词
+- 过滤后只需 1 个实质关键词命中即判定相关
+
+### 修复后 Dense 检索实际排名（查询"头痛怎么办？"）
+
+| 排名 | distance | 文档 | Reranker 执行 |
+|------|----------|------|--------------|
+| 1 | 0.4212 | 皮肤疾病诊疗指南 | ✅ 正常执行 |
+| 5 | 0.4646 | 神经系统症状鉴别指南 | ✅ Reranker 可将其提升至 Top-3 |
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/rag/hybrid_retriever.py` | `_dense_search()` 重写：三层回退策略获取真实 distance；默认值 0.0→1.0 |
+| `app/graph/state.py` | 新增 `all_retrieved_docs` 字段 |
+| `app/graph/nodes/nodes.py` | 知识检索节点保存 `all_retrieved_docs`；`has_query_overlap` 口语虚词过滤 |
+| `app/graph/streaming.py` | 幻觉检测优先读 `all_retrieved_docs` |
+
+### 验证方式
+
+```bash
+D:\Agent\software\envs\my_medical_env\python.exe scripts\diagnose_dense.py
+```
+
+---
+
 ## v8.1 - 紧急修复：Embedding 超时失效 + High-Confidence Bypass 误排除完美匹配
 
 ### 背景
@@ -7,7 +166,7 @@
 日志分析发现单次查询耗时 **62 秒**，其中 Embedding API 调用占 60 秒：
 ```
 query_embedding=60177.97ms    ← 60秒！Embedding API 一个调用
-top1_dense_dist=0.0000        ← 完美匹配，但没触发 High-Confidence Bypass
+top1_dense_dist=0.0000        ← 完美匹配，但没触发 High-Confidence Bypass（注：此0.0实际是v8.2修复的Bug）
 rerank=2007.90ms              ← 本可跳过，浪费2秒
 总耗时=62337.51ms
 ```

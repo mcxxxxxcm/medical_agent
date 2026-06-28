@@ -756,6 +756,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
         return {
             "retrieved_docs": docs,
+            "all_retrieved_docs": docs,  # 保存过滤前的完整检索文档
             "sources": sources,
             "retrieval_attempts": retrieval_attempts,
         }
@@ -1041,16 +1042,30 @@ def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit:
 def has_query_overlap(question: str, doc_content: str) -> bool:
     """基于关键词重叠的轻量相关性判断
 
-    改进：要求至少2个关键词命中才算相关，避免单字/泛化词误匹配
+    改进：
+    1. 要求至少2个关键词命中才算相关，避免单字/泛化词误匹配
+    2. 过滤口语虚词（怎么办/怎么样/好不好等），避免因这些词不命中文档
+       而把真正相关的文档（如含"头痛"的文档）误判为不相关
     """
-    tokens = [token for token in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower()) if len(token) >= 2]
+    # 口语虚词过滤：这些词在正式医学文档中几乎不会出现，
+    # 但用户查询中很常见（如"头痛怎么办"中的"怎么办"）
+    ORAL_FILLERS = {"怎么办", "怎么样", "好不好", "怎么治", "怎么处理",
+                    "怎么缓解", "什么药", "吃什么", "如何", "该如何"}
+
+    tokens = [token for token in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower())
+              if len(token) >= 2 and token not in ORAL_FILLERS]
     if not tokens:
-        return False  # 空查询不应匹配任何文档
+        # 查询只剩口语虚词时，降级为单字匹配
+        raw_tokens = [t for t in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower()) if len(t) >= 2]
+        if not raw_tokens:
+            return False
+        content = (doc_content or "").lower()
+        return any(t in content for t in raw_tokens)
 
     content = (doc_content or "").lower()
     match_count = sum(1 for token in tokens if token in content)
-    # 至少匹配2个关键词，或匹配超过一半的关键词
-    return match_count >= min(2, len(tokens) / 2 + 0.5)
+    # 至少匹配1个实质关键词（过滤掉虚词后，1个关键词命中即算相关）
+    return match_count >= 1
 
 
 def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
@@ -1059,6 +1074,13 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
     策略：
     - Reranker 已执行：信任排序结果，保留 Top 文档（Reranker分数范围不固定，不能用绝对阈值）
     - Reranker 未执行：用关键词重叠做启发式过滤
+    - 全部过滤掉时返回空列表，由上层走 direct_answer（不喂不相关文档给 LLM）
+
+    设计决策（v8.2）：
+    - 去除兜底逻辑 `filtered_docs or retrieved_docs[:1]`
+    - 旧逻辑：全过滤掉 → 硬塞第1篇（可能是最不相关的）→ LLM 产生幻觉
+    - 新逻辑：全过滤掉 → 返回空列表 → 走 direct_answer + 警告"知识库无相关文档"
+    - 理由：喂一篇不相关的文档比不喂文档更糟，不相关文档会误导 LLM 编造答案
     """
     if not retrieved_docs:
         return []
@@ -1081,7 +1103,9 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
             else:
                 logger.info(f"文档启发式过滤（Reranker排序靠后+无重叠）：{doc.page_content[:50]}...")
 
-        return filtered_docs or retrieved_docs[:2]
+        # Reranker 已执行时，至少保留前2名（Reranker排序可信）
+        # 但如果前2名也完全不相关（极端情况），仍返回空列表
+        return filtered_docs
 
     # Reranker 未执行：用关键词重叠做启发式过滤
     filtered_docs = []
@@ -1094,7 +1118,13 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
         else:
             logger.info(f"文档启发式过滤：{doc.page_content[:50]}...")
 
-    return filtered_docs or retrieved_docs[:1]
+    # 不兜底！全部过滤掉 → 返回空列表 → 上层走 direct_answer
+    if not filtered_docs:
+        logger.warning(
+            f"启发式过滤后无相关文档（{len(retrieved_docs)} 篇全被过滤），"
+            f"将走直接回答而非 RAG 生成"
+        )
+    return filtered_docs
 
 
 def _build_followup_hints(symptoms: Optional[Dict[str, Any]]) -> str:

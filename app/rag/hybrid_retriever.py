@@ -183,21 +183,56 @@ class HybridRetriever(BaseRetriever):
         Returns:
             (documents, top1_score): 检索到的文档列表和 Top-1 距离得分
             ChromaDB cosine distance: 0.0=完全相同, <0.08 对应 cosine_similarity>0.92
+
+        注意：langchain_chroma.Chroma 的方法名：
+            - similarity_search_with_score → 文本查询 + ChromaDB distance
+            - similarity_search_by_vector_with_relevance_scores → 向量查询 + 归一化分数
+            不存在 similarity_search_by_vector_with_score（旧代码用了不存在的方法名，导致
+            hasattr 永远为 False，top1_score 永远为 0.0，触发 High-Confidence Bypass 误跳过）
         """
         top_k = self.k * 2
-        top1_score = 0.0
+        top1_score = 1.0  # 默认值改为 1.0（不可信），避免 0.0 触发 High-Confidence Bypass
         try:
-            # 优先使用带分数的检索，获取 Top-1 置信度
             if query_embedding is not None:
-                if hasattr(self.vector_store, "similarity_search_by_vector_with_score"):
-                    results = self.vector_store.similarity_search_by_vector_with_score(
+                # 策略1：使用底层 Chroma collection 直接查询（最可靠，直接返回 cosine distance）
+                if hasattr(self.vector_store, '_collection'):
+                    try:
+                        col = self.vector_store._collection
+                        qr = col.query(
+                            query_embeddings=[query_embedding],
+                            n_results=top_k,
+                            include=["documents", "metadatas", "distances"]
+                        )
+                        if qr and qr["ids"] and qr["ids"][0]:
+                            docs = []
+                            for i in range(len(qr["ids"][0])):
+                                doc = Document(
+                                    page_content=qr["documents"][0][i],
+                                    metadata=qr["metadatas"][0][i]
+                                )
+                                docs.append(doc)
+                            top1_score = float(qr["distances"][0][0])
+                            logger.info(f"Dense 检索（底层 collection）：{len(docs)} 篇, top1_distance={top1_score:.4f}")
+                            return docs, top1_score
+                    except Exception as col_err:
+                        logger.warning(f"底层 collection 查询失败，回退到 LangChain 接口：{col_err}")
+
+                # 策略2：LangChain 接口（带分数的方法名在不同版本中不一致）
+                # langchain_chroma 提供 similarity_search_by_vector_with_relevance_scores
+                if hasattr(self.vector_store, "similarity_search_by_vector_with_relevance_scores"):
+                    results = self.vector_store.similarity_search_by_vector_with_relevance_scores(
                         query_embedding, k=top_k
                     )
                     if results:
                         docs = [doc for doc, score in results]
-                        top1_score = float(results[0][1])
+                        # relevance_scores 是归一化分数 [0,1]，转换为 distance = 1 - score
+                        top1_relevance = float(results[0][1])
+                        top1_score = 1.0 - top1_relevance
                         return docs, top1_score
+
+                # 策略3：无分数接口兜底
                 docs = self.vector_store.similarity_search_by_vector(query_embedding, k=top_k)
+                top1_score = 1.0  # 无分数时标记为不可信，不触发 High-Confidence Bypass
             else:
                 if hasattr(self.vector_store, "similarity_search_with_score"):
                     results = self.vector_store.similarity_search_with_score(query, k=top_k)
@@ -206,10 +241,11 @@ class HybridRetriever(BaseRetriever):
                         top1_score = float(results[0][1])
                         return docs, top1_score
                 docs = self.vector_store.similarity_search(query, k=top_k)
+                top1_score = 1.0  # 无分数时标记为不可信
             return docs, top1_score
         except Exception as e:
             logger.error(f"Dense 检索失败：{e}")
-            return [], 0.0
+            return [], 1.0  # 异常时也返回不可信分数
 
     def _sparse_search(self, query: str) -> List[Document]:
         """执行 BM25 稀疏检索。"""
@@ -408,7 +444,7 @@ class HybridRetriever(BaseRetriever):
 
         retrieval_time = (time.time() - retrieval_start) * 1000
 
-        # 父子索引：child → parent 映射
+        # 父子索引：child → parent 映射 + 邻域扩展
         # 检索/重排的是 child chunk，送入 LLM 的是完整 parent 文档
         parent_lookup_ms = 0.0
         parent_manager = get_parent_child_manager()
@@ -417,6 +453,17 @@ class HybridRetriever(BaseRetriever):
             parent_docs = parent_manager.get_parents(final_docs)
             parent_lookup_ms = (time.time() - parent_lookup_start) * 1000
             if parent_docs:
+                # 邻域扩展：同一文档中的相邻章节自动补全
+                # 解决跨章节信息缺失（如"头痛怎么办"需要"危险信号"+"药物选择"两个章节）
+                expand_start = time.time()
+                parent_docs = parent_manager.expand_with_siblings(
+                    parent_docs,
+                    sibling_window=getattr(config, "SIBLING_WINDOW", 1),
+                    max_total_chars=getattr(config, "MAX_SIBLING_CHARS", 2000),
+                )
+                expand_ms = (time.time() - expand_start) * 1000
+                parent_lookup_ms += expand_ms
+
                 final_docs = parent_docs
                 logger.info(f"父子索引生效：返回 {len(final_docs)} 个完整父文档")
             else:

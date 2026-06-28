@@ -1,67 +1,117 @@
-2026-06-25 19:24:52 - app.api.routes - INFO - 收到流式聊天请求：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3, user_id=test_user
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
-2026-06-25 19:24:52 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
-2026-06-25 19:24:52 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
-2026-06-25 19:24:52 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：65.50ms
-2026-06-25 19:24:52 - app.graph.graph - INFO - 工作流图构建完成
-2026-06-25 19:24:52 - app.graph.graph - INFO - 长期记忆store已加载
-2026-06-25 19:24:52 - app.graph.graph - INFO - 工作流图编译完成
-2026-06-25 19:24:52 - app.api.routes - INFO - 请求完成：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, path=/api/chat/stream, status=200, elapsed_ms=103.43
-INFO:     127.0.0.1:51845 - "POST /api/chat/stream HTTP/1.1" 200 OK
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [路由] 开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 路由节点开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=knowledge
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 问题类型：knowledge
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：0.00ms
-2026-06-25 19:24:52 - app.graph.streaming - INFO - L0 答案缓存未命中：告诉我布洛芬的用法用量。...
-2026-06-25 19:24:52 - app.graph.streaming - INFO - 路由+缓存耗时：1.00ms（route=query_rewrite）
-2026-06-25 19:24:52 - app.graph.streaming - INFO - 流式请求路由完成：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3, next_node=query_rewrite
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 首轮对话，查询自包含，跳过重写：告诉我布洛芬的用法用量。
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 查询已包含具体信息，跳过 HyDE：告诉我布洛芬的用法用量。
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：0.00ms
-2026-06-25 19:24:52 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
-2026-06-25 19:24:52 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
-2026-06-25 19:24:52 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：告诉我布洛芬的用法用量。...
-2026-06-25 19:24:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
-2026-06-25 19:24:53 - app.cache.semantic_cache - INFO - L2 缓存键数量：1
-2026-06-25 19:24:53 - app.cache.semantic_cache - INFO - L2 未找到相似查询，最高相似度：0.00%（阈值：80.00%）
-2026-06-25 19:24:53 - app.rag.hybrid_retriever - INFO - L2语义缓存耗时：embedding_ms=600.09, lookup_ms=2.08
-2026-06-25 19:24:53 - app.rag.reranker - INFO - Reranker 输入：docs=5, valid_docs=5, top_k=3, max_doc_chars=300
-2026-06-25 19:24:54 - app.rag.reranker - INFO - 重排序完成：5 -> 3 （最高分：0.3719）
-2026-06-25 19:24:54 - app.rag.hybrid_retriever - INFO - Reranker 重排序：12 -> 3
-2026-06-25 19:24:54 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1015.89ms（query_embedding=600.09ms, semantic_lookup=2.08ms, dense=45.93ms, sparse=1.00ms, fusion=0.00ms, rerank=968.96ms, top1_dense_dist=0.0000）
-2026-06-25 19:24:54 - app.cache.semantic_cache - INFO - 语义缓存已写入：'告诉我布洛芬的用法用量。...' (3 个文档)
-2026-06-25 19:24:54 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：告诉我布洛芬的用法用量。...
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - 检索到3个相关文档，耗时：1620.07ms，第 1 次检索
-2026-06-25 19:24:54 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：1620.07ms
-2026-06-25 19:24:54 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 双氯芬酸钠
-- 适应症：类风湿关节炎、骨关节炎、急性疼痛
-- 用法用量：每次25-50mg，...
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：3 -> 2 相关
-2026-06-25 19:24:54 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：1.50ms
-2026-06-25 19:24:54 - app.graph.streaming - INFO - 文档评分完成：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3, next_node=answer_generation, docs=2
-2026-06-25 19:24:54 - app.graph.streaming - INFO - 开始流式生成 RAG 答案：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - 流式答案生成节点开始执行
-2026-06-25 19:24:54 - app.graph.nodes.nodes - INFO - RAG Prompt 大小：481字符，估算约240 tokens
-2026-06-25 19:24:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-06-25 19:24:54 - app.graph.streaming - INFO - 首个 token 已发送：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3, latency_ms=2454.15
-2026-06-25 19:24:59 - app.graph.nodes.nodes - INFO - 流式生成完成，总长度：83字符，耗时：5013.50ms
-2026-06-25 19:24:59 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
-2026-06-25 19:24:59 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
-2026-06-25 19:24:59 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=0.0ms
-2026-06-25 19:24:59 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：0.00ms
-2026-06-25 19:24:59 - app.graph.streaming - INFO - L0 答案缓存已写入：告诉我布洛芬的用法用量。...
-2026-06-25 19:24:59 - app.graph.streaming - INFO - 流式请求完成：request_id=3ac650e6-a1c3-4936-9ceb-4a1fe031b53a, thread_id=thread_a09c20b3, total_elapsed_ms=6745.13
-2026-06-25 19:24:59 - app.graph.streaming - INFO - 对话历史已保存
-2026-06-25 19:24:59 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
-2026-06-25 19:24:59 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
-2026-06-25 19:24:59 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
-2026-06-25 19:24:59 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
-2026-06-25 19:24:59 - app.graph.streaming - INFO - 快照已由前次任务处理，无需重复更新
+D:\Agent\software\envs\my_medical_env\python.exe D:\Agent\medical_assistant_agent\app\api\routes.py 
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+INFO:     Will watch for changes in these directories: ['D:\\Agent\\medical_assistant_agent\\app\\api']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [25456] using WatchFiles
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-06-29 00:37:38 - app.api.routes - INFO - 应用启动中...
+2026-06-29 00:37:38 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
+INFO:     Started server process [6480]
+INFO:     Waiting for application startup.
+2026-06-29 00:37:38 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
+2026-06-29 00:37:38 - app.api.routes - INFO - 检查点保存器初始化完成
+2026-06-29 00:37:38 - app.api.routes - INFO - 预加载 jieba 分词器...
+Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
+Loading model cost 0.645 seconds.
+Prefix dict has been built successfully.
+2026-06-29 00:37:39 - app.api.routes - INFO - jieba 分词器预加载完成
+2026-06-29 00:37:39 - app.api.routes - INFO - 预加载 Reranker 模型...
+2026-06-29 00:37:42 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-06-29 00:37:46 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+2026-06-29 00:37:46 - app.api.routes - INFO - Reranker 模型预加载完成
+2026-06-29 00:37:46 - app.api.routes - INFO - 预热混合检索器...
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
+从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
+2026-06-29 00:37:47 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-06-29 00:37:47 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：335
+2026-06-29 00:37:47 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-06-29 00:37:47 - app.api.routes - INFO - 混合检索器预热完成
+2026-06-29 00:37:47 - app.api.routes - INFO - 预热缓存连接...
+2026-06-29 00:37:47 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-06-29 00:37:47 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
+2026-06-29 00:37:47 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.8
+2026-06-29 00:37:47 - app.api.routes - INFO - 语义缓存预热成功
+2026-06-29 00:37:47 - app.api.routes - INFO - 缓存预热完成
+2026-06-29 00:37:47 - app.api.routes - INFO - 预热本地模型...
+2026-06-29 00:37:55 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-06-29 00:37:55 - app.api.routes - INFO - 本地模型预热完成
+2026-06-29 00:37:55 - app.graph.graph - INFO - 工作流图构建完成
+2026-06-29 00:37:55 - app.graph.graph - INFO - ✅ 流式接口与 Graph 节点定义同步验证通过
+2026-06-29 00:37:55 - app.memory.fallback_buffer - INFO - L1 本地缓冲后台 flush 已启动（间隔 300s）
+INFO:     Application startup complete.
+2026-06-29 00:38:07 - app.api.routes - INFO - 收到流式聊天请求：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75, user_id=test_user
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
+2026-06-29 00:38:07 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
+2026-06-29 00:38:07 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
+2026-06-29 00:38:07 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：126.63ms
+2026-06-29 00:38:07 - app.graph.graph - INFO - 工作流图构建完成
+2026-06-29 00:38:07 - app.graph.graph - INFO - 长期记忆store已加载
+2026-06-29 00:38:07 - app.graph.graph - INFO - 工作流图编译完成
+2026-06-29 00:38:07 - app.api.routes - INFO - 请求完成：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, path=/api/chat/stream, status=200, elapsed_ms=200.26
+INFO:     127.0.0.1:62328 - "POST /api/chat/stream HTTP/1.1" 200 OK
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [路由] 开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 路由节点开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 问题类型：symptom
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：7.11ms
+2026-06-29 00:38:07 - app.graph.streaming - INFO - L0 答案缓存未命中：头痛怎么办？...
+2026-06-29 00:38:07 - app.graph.streaming - INFO - 路由+缓存耗时：7.11ms（route=symptom_analysis）
+2026-06-29 00:38:07 - app.graph.streaming - INFO - 流式请求路由完成：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75, next_node=symptom_analysis
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [症状解析] 开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 症状解析节点开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 规则提取症状成功，跳过LLM：{'symptoms': ['头痛'], 'severity': None, 'body_parts': ['头部'], 'duration': '今天', 'onset_date': '2026-06-29T00:38:07', 'onset_ts': 1782664687, 'time_precision': 'default', 'additional_info': None}
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [症状解析] 执行完成，耗时：5.31ms
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 首轮对话，查询自包含，跳过重写：头痛怎么办？
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 查询已包含具体信息，跳过 HyDE：头痛怎么办？
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：1.36ms
+2026-06-29 00:38:07 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
+2026-06-29 00:38:07 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
+2026-06-29 00:38:07 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：头痛怎么办？...
+2026-06-29 00:38:07 - app.rag.hybrid_retriever - INFO - L2语义缓存为空，跳过Embedding计算
+2026-06-29 00:38:07 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-06-29 00:38:08 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：6 篇, top1_distance=0.4212
+2026-06-29 00:38:08 - app.rag.reranker - INFO - Reranker 输入：docs=5, valid_docs=5, top_k=3, max_doc_chars=300
+2026-06-29 00:38:09 - app.rag.reranker - INFO - 重排序完成：5 -> 1 （最高分：0.2600）
+2026-06-29 00:38:09 - app.rag.hybrid_retriever - INFO - Reranker 重排序：12 -> 1
+2026-06-29 00:38:10 - app.rag.parent_child_store - INFO - Parent store 从磁盘加载成功：D:\Agent\medical_assistant_agent\data\parent_store.pkl（244 条）
+2026-06-29 00:38:10 - app.rag.parent_child_store - INFO - 父子映射：1 个 child → 1 个 parent（去重 0 个）
+2026-06-29 00:38:10 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 1 个完整父文档
+2026-06-29 00:38:10 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2050.02ms（query_embedding=709.78ms, semantic_lookup=0.00ms, dense=139.02ms, sparse=1.51ms, fusion=0.00ms, rerank=1909.49ms, parent_lookup=0.00ms, top1_dense_dist=0.4212）
+2026-06-29 00:38:10 - app.cache.semantic_cache - INFO - 语义缓存已写入：'头痛怎么办？...' (1 个文档)
+2026-06-29 00:38:10 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：头痛怎么办？...
+2026-06-29 00:38:10 - app.graph.nodes.nodes - INFO - 检索到1个相关文档，耗时：2767.60ms，第 1 次检索
+2026-06-29 00:38:10 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：2767.60ms
+2026-06-29 00:38:10 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
+2026-06-29 00:38:10 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
+2026-06-29 00:38:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：1 -> 1 相关
+2026-06-29 00:38:10 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：4.08ms
+2026-06-29 00:38:10 - app.graph.streaming - INFO - 文档评分完成：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75, next_node=answer_generation, docs=1
+2026-06-29 00:38:10 - app.graph.streaming - INFO - 开始流式生成 RAG 答案：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75
+2026-06-29 00:38:10 - app.graph.nodes.nodes - INFO - 流式答案生成节点开始执行
+2026-06-29 00:38:10 - app.graph.nodes.nodes - INFO - RAG Prompt 大小：346字符，估算约173 tokens
+2026-06-29 00:38:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-06-29 00:38:10 - app.graph.streaming - INFO - 首个 token 已发送：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75, latency_ms=3953.44
+2026-06-29 00:38:20 - app.graph.nodes.nodes - INFO - 流式生成完成，总长度：508字符，耗时：10287.08ms
+2026-06-29 00:38:20 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
+2026-06-29 00:38:20 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
+2026-06-29 00:38:20 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=1.0ms
+2026-06-29 00:38:20 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：1.02ms
+2026-06-29 00:38:20 - app.graph.streaming - INFO - L0 答案缓存已写入：头痛怎么办？...
+2026-06-29 00:38:20 - app.graph.streaming - INFO - 疑似幻觉检测：答案提到 {'布洛芬', '对乙酰氨基酚'}，但检索文档中未出现这些药物名
+2026-06-29 00:38:20 - app.memory.long_term_memory - INFO - Bad case 已记录：type=hallucination_suspected, query=头痛怎么办？
+2026-06-29 00:38:20 - app.graph.streaming - INFO - 流式请求完成：request_id=bc390c6d-85ef-453c-9763-2015f423d6e3, thread_id=thread_eca32f75, total_elapsed_ms=13288.71
+2026-06-29 00:38:20 - app.graph.streaming - INFO - 对话历史已保存
+2026-06-29 00:38:20 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
+2026-06-29 00:38:20 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
+2026-06-29 00:38:20 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
+2026-06-29 00:38:20 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
+2026-06-29 00:38:20 - app.graph.streaming - INFO - 快照已由前次任务处理，无需重复更新

@@ -310,14 +310,22 @@ class StreamingOrchestrator:
 
         扫描答案中的药物/症状实体，与检索文档内容比对。
         如果答案提到文档中不存在的具体药物名，记录为疑似幻觉。
+
+        重要：使用 all_retrieved_docs（过滤前的完整检索结果），
+        而非 retrieved_docs（过滤后可能只剩 1 篇不相关文档）。
+        原因：grade_documents_node 会过滤掉关键词重叠不足的文档，
+        但 parent 文档内容可能很长，药物名可能出现在文档的后半段，
+        关键词重叠检测不一定能捕捉到。使用全量文档可避免误报。
         """
-        if not answer or not self._state.get("retrieved_docs"):
+        # 优先使用过滤前的完整检索文档，避免过滤后文档不完整导致误报
+        docs_to_check = self._state.get("all_retrieved_docs") or self._state.get("retrieved_docs")
+        if not answer or not docs_to_check:
             return
 
         from app.graph.nodes.helpers import _DRUG_KEYWORDS
 
         docs_text = " ".join(
-            doc.page_content for doc in self._state["retrieved_docs"]
+            doc.page_content for doc in docs_to_check
             if hasattr(doc, "page_content")
         )
 
