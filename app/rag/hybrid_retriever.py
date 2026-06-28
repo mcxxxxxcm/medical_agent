@@ -271,8 +271,9 @@ class HybridRetriever(BaseRetriever):
         # 策略1：High-Confidence Bypass
         # Dense Top-1 相似度极高 → 向量检索已找到近乎完美匹配，Rerank 不会改变结果
         # 阈值说明：ChromaDB cosine distance，0.0=完全相同，<0.08 对应 cosine_similarity>0.92
+        # 注意：top1_dense_score >= 0（distance=0.0 是完美匹配，必须触发跳过）
         HIGH_CONFIDENCE_THRESHOLD = 0.08
-        if top1_dense_score > 0 and top1_dense_score < HIGH_CONFIDENCE_THRESHOLD:
+        if 0 <= top1_dense_score < HIGH_CONFIDENCE_THRESHOLD:
             logger.info(
                 f"Dense Top-1 置信度极高（distance={top1_dense_score:.4f} < {HIGH_CONFIDENCE_THRESHOLD}），跳过重排"
             )

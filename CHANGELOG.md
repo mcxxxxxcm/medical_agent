@@ -1,5 +1,50 @@
 # 系统优化更新日志
 
+## v8.1 - 紧急修复：Embedding 超时失效 + High-Confidence Bypass 误排除完美匹配
+
+### 背景
+
+日志分析发现单次查询耗时 **62 秒**，其中 Embedding API 调用占 60 秒：
+```
+query_embedding=60177.97ms    ← 60秒！Embedding API 一个调用
+top1_dense_dist=0.0000        ← 完美匹配，但没触发 High-Confidence Bypass
+rerank=2007.90ms              ← 本可跳过，浪费2秒
+总耗时=62337.51ms
+```
+
+### 修复 1：Embedding API 超时失效（60s → 10s 强制超时）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 超时参数 | `request_timeout=10` | `httpx.Timeout(connect=5, read=10, write=10, pool=5)` |
+| 实际生效 | ❌ 新版 openai>=1.0 已弃用 `request_timeout`，回退到默认 600s | ✅ 显式 `httpx.Timeout` 强制各阶段超时 |
+| 60s 卡顿 | API 响应慢时阻塞 60 秒无超时 | 最长 10s 超时 + 1 次重试 = 最多 20s |
+| 兼容性 | 无 | 旧版 langchain-openai 不支持 `timeout` 参数时自动回退 `request_timeout=15` |
+
+**改动**：[embeddings.py](file:///d:/Agent/medical_assistant_agent/app/core/embeddings.py)
+
+### 修复 2：High-Confidence Bypass 误排除完美匹配（distance=0.0）
+
+| 维度 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 条件 | `top1_dense_score > 0 and top1_dense_score < 0.08` | `0 <= top1_dense_score < 0.08` |
+| distance=0.0 | ❌ `0.0 > 0` = False，不触发跳过 | ✅ `0 <= 0.0` = True，正确跳过 |
+| 后果 | 完美匹配仍跑 Reranker（浪费 2s） | 完美匹配直接跳过 Reranker |
+
+**根因**：ChromaDB cosine distance 中 `0.0` 是完美匹配（两向量完全一致），但旧代码 `> 0` 把它排除了。正确逻辑：`distance ∈ [0, 0.08)` 都是高置信度，应跳过 Reranker。
+
+**改动**：[hybrid_retriever.py](file:///d:/Agent/medical_assistant_agent/app/rag/hybrid_retriever.py#L276)
+
+### 修复后预期
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| Embedding API 超时 | 60s+ (无超时) | ≤10s (强制超时) |
+| 完美匹配时 Reranker | 仍执行 (2s) | 跳过 (0ms) |
+| 理想 TTFT | 62s | ≤3s (API正常时 ~500ms embedding + 跳过 reranker) |
+
+---
+
 ## v8.0 - Skills 体系扩展 + Bad Case 回归测试闭环 + RAGAS 评估重写
 
 ### 背景
