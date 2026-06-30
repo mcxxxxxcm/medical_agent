@@ -1,131 +1,73 @@
-D:\Agent\software\envs\my_medical_env\python.exe D:\Agent\medical_assistant_agent\app\api\routes.py 
-D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
-  import pkg_resources
-INFO:     Will watch for changes in these directories: ['D:\\Agent\\medical_assistant_agent\\app\\api']
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [12124] using WatchFiles
-D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
-  import pkg_resources
-INFO:     Started server process [21316]
-INFO:     Waiting for application startup.
-2026-06-30 23:25:34 - app.api.routes - INFO - 应用启动中...
-2026-06-30 23:25:34 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
-2026-06-30 23:25:35 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
-2026-06-30 23:25:35 - app.api.routes - INFO - 检查点保存器初始化完成
-2026-06-30 23:25:35 - app.api.routes - INFO - 预加载 jieba 分词器...
-Building prefix dict from the default dictionary ...
-Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
-2026-06-30 23:25:35 - app.api.routes - INFO - jieba 分词器预加载完成
-2026-06-30 23:25:35 - app.api.routes - INFO - 预加载 Reranker 模型...
-Loading model cost 0.640 seconds.
-Prefix dict has been built successfully.
-2026-06-30 23:25:38 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
-2026-06-30 23:25:42 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
-2026-06-30 23:25:42 - app.api.routes - INFO - Reranker 模型预加载完成
-2026-06-30 23:25:42 - app.api.routes - INFO - 预热混合检索器...
-The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
-向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
-从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
-2026-06-30 23:25:44 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
-2026-06-30 23:25:44 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：1005
-2026-06-30 23:25:45 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
-2026-06-30 23:25:45 - app.api.routes - INFO - 混合检索器预热完成
-2026-06-30 23:25:45 - app.api.routes - INFO - 预热缓存连接...
-2026-06-30 23:25:45 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
-2026-06-30 23:25:45 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
-2026-06-30 23:25:45 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.8
-2026-06-30 23:25:45 - app.api.routes - INFO - 语义缓存预热成功
-2026-06-30 23:25:45 - app.api.routes - INFO - 缓存预热完成
-2026-06-30 23:25:45 - app.api.routes - INFO - 预热本地模型...
-2026-06-30 23:25:53 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
-2026-06-30 23:25:53 - app.api.routes - INFO - 本地模型预热完成
-2026-06-30 23:25:53 - app.graph.graph - INFO - 工作流图构建完成
-2026-06-30 23:25:53 - app.graph.graph - INFO - ✅ 流式接口与 Graph 节点定义同步验证通过
-2026-06-30 23:25:53 - app.memory.fallback_buffer - INFO - L1 本地缓冲后台 flush 已启动（间隔 300s）
-INFO:     Application startup complete.
-2026-06-30 23:28:03 - app.api.routes - INFO - 请求完成：request_id=ef687aff-2410-463b-97dd-8fe628bd2834, path=/, status=200, elapsed_ms=64.30
-INFO:     127.0.0.1:52005 - "GET / HTTP/1.1" 200 OK
-2026-06-30 23:28:03 - app.api.routes - INFO - 请求完成：request_id=cbb6b66a-ab46-467e-bd5c-4dfbed1f1456, path=/favicon.ico, status=404, elapsed_ms=0.00
-INFO:     127.0.0.1:52005 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-2026-06-30 23:28:12 - app.api.routes - INFO - 收到流式聊天请求：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64, user_id=test_user
-2026-06-30 23:28:12 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
-2026-06-30 23:28:12 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
-2026-06-30 23:28:12 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
-2026-06-30 23:28:12 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
-2026-06-30 23:28:12 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：93.47ms
-2026-06-30 23:28:12 - app.graph.graph - INFO - 工作流图构建完成
-2026-06-30 23:28:12 - app.graph.graph - INFO - 长期记忆store已加载
-2026-06-30 23:28:12 - app.graph.graph - INFO - 工作流图编译完成
-2026-06-30 23:28:12 - app.api.routes - INFO - 请求完成：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, path=/api/chat/stream, status=200, elapsed_ms=132.14
-INFO:     127.0.0.1:61984 - "POST /api/chat/stream HTTP/1.1" 200 OK
-2026-06-30 23:28:12 - app.graph.nodes.helpers - INFO - [路由] 开始执行
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 路由节点开始执行
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 问题类型：symptom
-2026-06-30 23:28:12 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：29.45ms
-2026-06-30 23:28:12 - app.graph.streaming - INFO - L0 答案缓存未命中：流鼻血了怎么办？...
-2026-06-30 23:28:12 - app.graph.streaming - INFO - 路由+缓存耗时：29.45ms（route=symptom_analysis）
-2026-06-30 23:28:12 - app.graph.streaming - INFO - 流式请求路由完成：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64, next_node=symptom_analysis
-2026-06-30 23:28:12 - app.graph.nodes.helpers - INFO - [症状解析] 开始执行
-2026-06-30 23:28:12 - app.graph.nodes.nodes - INFO - 症状解析节点开始执行
-2026-06-30 23:28:15 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
-2026-06-30 23:28:15 - app.graph.nodes.helpers - WARNING - SymptomAnalysisOutput JSON 校验失败，尝试本地规则解析：1 validation error for SymptomAnalysisOutput
-severity
-  Input should be '轻微', '中等' or '严重' [type=literal_error, input_value='轻至中度', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.12/v/literal_error
-2026-06-30 23:28:15 - app.graph.nodes.nodes - INFO - LLM提取症状：None
-2026-06-30 23:28:15 - app.graph.nodes.helpers - INFO - [症状解析] 执行完成，耗时：2808.69ms
-2026-06-30 23:28:15 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
-2026-06-30 23:28:15 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
-2026-06-30 23:28:15 - app.graph.nodes.nodes - INFO - 首轮对话，查询自包含，跳过重写：流鼻血了怎么办？
-2026-06-30 23:28:16 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
-2026-06-30 23:28:16 - app.graph.nodes.nodes - INFO - HyDE 假想答案生成完成（100字）：如果出现流鼻血的情况，应立即坐下并保持头部稍微前倾，避免血液流入喉咙引起不适。可以轻轻捏住鼻子两侧的...
-2026-06-30 23:28:16 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：734.05ms
-2026-06-30 23:28:16 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
-2026-06-30 23:28:16 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
-2026-06-30 23:28:16 - app.rag.hybrid_retriever - INFO - HyDE 模式：Dense 用假想答案（100字），Sparse 用查询
-2026-06-30 23:28:16 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：流鼻血了怎么办？...
-2026-06-30 23:28:16 - app.rag.hybrid_retriever - INFO - L2语义缓存为空，跳过Embedding计算
-2026-06-30 23:28:17 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
-2026-06-30 23:28:17 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：6 篇, top1_distance=0.2861
-2026-06-30 23:28:17 - app.rag.reranker - INFO - Reranker 输入：docs=5, valid_docs=5, top_k=3, max_doc_chars=300
-2026-06-30 23:28:18 - app.rag.reranker - INFO - 重排序完成：5 -> 2 （最高分：0.9125）
-2026-06-30 23:28:18 - app.rag.hybrid_retriever - INFO - Reranker 重排序：8 -> 2
-2026-06-30 23:28:18 - app.rag.parent_child_store - INFO - Parent store 从磁盘加载成功：D:\Agent\medical_assistant_agent\data\parent_store.pkl（244 条）
-2026-06-30 23:28:18 - app.rag.parent_child_store - INFO - 邻域扩展索引已加载：12 个文档，244 个章节
-2026-06-30 23:28:18 - app.rag.parent_child_store - INFO - 父子映射：2 个 child → 1 个 parent（去重 1 个）
-2026-06-30 23:28:18 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 3 个（+2 个兄弟章节），总字符数=1031
-2026-06-30 23:28:18 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 3 个完整父文档
-2026-06-30 23:28:18 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：822.48ms（query_embedding=730.31ms, semantic_lookup=0.00ms, dense=42.89ms, sparse=1.01ms, fusion=1.51ms, rerank=777.08ms, parent_lookup=0.00ms, top1_dense_dist=0.2861）
-2026-06-30 23:28:18 - app.cache.semantic_cache - INFO - 语义缓存已写入：'流鼻血了怎么办？...' (3 个文档)
-2026-06-30 23:28:18 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：流鼻血了怎么办？...
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - 检索到3个相关文档，耗时：1558.85ms，第 1 次检索
-2026-06-30 23:28:18 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：1558.85ms
-2026-06-30 23:28:18 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 07 常见外伤用药  
-**外用消毒：**
-- 碘伏：适用于皮肤和黏膜消毒，刺激性小，为首选...
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：3 -> 2 相关
-2026-06-30 23:28:18 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：1.51ms
-2026-06-30 23:28:18 - app.graph.streaming - INFO - 文档评分完成：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64, next_node=answer_generation, docs=2
-2026-06-30 23:28:18 - app.graph.streaming - INFO - 开始流式生成 RAG 答案：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - 流式答案生成节点开始执行
-2026-06-30 23:28:18 - app.graph.nodes.nodes - INFO - RAG Prompt 大小：816字符，估算约408 tokens
-2026-06-30 23:28:19 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-06-30 23:28:19 - app.graph.streaming - INFO - 首个 token 已发送：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64, latency_ms=6268.83
-2026-06-30 23:28:24 - app.graph.nodes.nodes - INFO - 流式生成完成，总长度：253字符，耗时：6405.42ms
-2026-06-30 23:28:24 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
-2026-06-30 23:28:24 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
-2026-06-30 23:28:24 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=0.0ms
-2026-06-30 23:28:24 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：0.00ms
-2026-06-30 23:28:24 - app.graph.streaming - INFO - L0 答案缓存已写入：流鼻血了怎么办？...
-2026-06-30 23:28:24 - app.graph.streaming - INFO - 流式请求完成：request_id=1fb2d623-b0cc-4b52-9107-e5ab13055e23, thread_id=thread_ea69fa64, total_elapsed_ms=11688.58
-2026-06-30 23:28:24 - app.graph.streaming - INFO - 对话历史已保存
-2026-06-30 23:28:24 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
-2026-06-30 23:28:24 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
-2026-06-30 23:28:24 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
-2026-06-30 23:28:24 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：1.75ms
-2026-06-30 23:28:24 - app.graph.streaming - INFO - 快照已由前次任务处理，无需重复更新
+2026-07-01 00:37:45 - app.api.routes - INFO - 收到流式聊天请求：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, user_id=test_user
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：2.02ms
+2026-07-01 00:37:45 - app.api.routes - INFO - 请求完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, path=/api/chat/stream, status=200, elapsed_ms=3.53
+INFO:     127.0.0.1:49649 - "POST /api/chat/stream HTTP/1.1" 200 OK
+2026-07-01 00:37:45 - app.graph.streaming - INFO - 从 checkpointer 加载对话历史：6 条消息
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [路由] 开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 路由节点开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 问题类型：symptom
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：0.00ms
+2026-07-01 00:37:45 - app.graph.streaming - INFO - L0 答案缓存未命中：便秘怎么办？...
+2026-07-01 00:37:45 - app.graph.streaming - INFO - 路由+缓存耗时：0.50ms（route=symptom_analysis）
+2026-07-01 00:37:45 - app.graph.streaming - INFO - 流式请求路由完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, next_node=symptom_analysis
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [症状解析] 开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 症状解析节点开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 规则提取症状成功，跳过LLM：{'symptoms': ['便秘'], 'severity': None, 'body_parts': None, 'duration': '今天', 'onset_date': '2026-07-01T00:37:45', 'onset_ts': 1782837465, 'time_precision': 'default', 'additional_info': None}
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [症状解析] 执行完成，耗时：1.02ms
+2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
+2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 查询自包含（无指代词/省略结构），跳过重写：便秘怎么办？
+2026-07-01 00:37:51 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-01 00:37:51 - app.graph.nodes.nodes - INFO - HyDE 假想答案生成完成（61字）：对于便秘，建议增加膳食纤维摄入量，多喝水，并适当进行体育锻炼。如果症状持续或加重，请咨询医生以获得进...
+2026-07-01 00:37:51 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：5180.44ms
+2026-07-01 00:37:51 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
+2026-07-01 00:37:51 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
+2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - HyDE 模式：Dense 用假想答案（61字），Sparse 用查询
+2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：便秘怎么办？...
+2026-07-01 00:37:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-07-01 00:37:51 - app.cache.semantic_cache - INFO - L2 缓存键数量：1
+2026-07-01 00:37:51 - app.cache.semantic_cache - INFO - L2 未找到相似查询，最高相似度：0.00%（阈值：80.00%）
+2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - L2语义缓存耗时：embedding_ms=397.91, lookup_ms=1.01
+2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：6 篇, top1_distance=0.4491
+2026-07-01 00:37:51 - app.rag.reranker - INFO - Reranker 输入：docs=5, valid_docs=5, top_k=3, max_doc_chars=300
+2026-07-01 00:37:52 - app.rag.reranker - INFO - 重排序完成：5 -> 3 （最高分：0.9450）
+2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - Reranker 重排序：8 -> 3
+2026-07-01 00:37:52 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 1 个 parent（去重 2 个）
+2026-07-01 00:37:52 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 3 个（+2 个兄弟章节），总字符数=196
+2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 3 个完整父文档
+2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：741.39ms（query_embedding=397.91ms, semantic_lookup=1.01ms, dense=2.51ms, sparse=1.00ms, fusion=0.00ms, rerank=737.87ms, parent_lookup=0.00ms, top1_dense_dist=0.4491）
+2026-07-01 00:37:52 - app.cache.semantic_cache - INFO - 语义缓存已写入：'便秘怎么办？...' (3 个文档)
+2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：便秘怎么办？...
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 检索到3个相关文档，耗时：1143.11ms，第 1 次检索
+2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：1143.62ms
+2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 病因
+1. 饮食因素：膳食纤维摄入不足、饮水量不足
+2. 生活习惯：缺乏运动、忽视排便信号
+...
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：3 -> 2 相关
+2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：1.07ms
+2026-07-01 00:37:52 - app.graph.streaming - INFO - 文档评分完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, next_node=answer_generation, docs=2
+2026-07-01 00:37:52 - app.graph.streaming - INFO - 开始流式生成 RAG 答案：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 流式答案生成节点开始执行
+2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - RAG Prompt 大小：1243字符，估算约621 tokens
+2026-07-01 00:37:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-07-01 00:37:54 - app.graph.streaming - INFO - 首个 token 已发送：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, latency_ms=8262.99
+2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 流式生成完成，总长度：381字符，耗时：11776.99ms
+2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
+2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
+2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=0.0ms
+2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：0.00ms
+2026-07-01 00:38:03 - app.graph.streaming - INFO - L0 答案缓存已写入：便秘怎么办？...
+2026-07-01 00:38:03 - app.graph.streaming - INFO - 流式请求完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, total_elapsed_ms=18109.18
+2026-07-01 00:38:03 - app.graph.streaming - INFO - 对话历史已保存
+2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
+2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
+2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
+2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
+2026-07-01 00:38:03 - app.graph.streaming - INFO - 快照已由前次任务处理，无需重复更新

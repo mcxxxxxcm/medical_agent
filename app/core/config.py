@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节
     MAX_SIBLING_CHARS: int = 2000  # 邻域扩展后最大总字符数，防止撑爆 LLM 上下文
 
+    # ===== HyDE 配置 =====
+    ENABLE_HYDE: bool = False  # HyDE 默认关闭（A/B 测试 Recall -13.3%，耗时 +1574ms）
+
     # ===== 路径配置 =====
     DOCS_DIR: Path = PROJECT_ROOT / "docs" / "medical"
     DATA_DIR: Path = PROJECT_ROOT / "data"

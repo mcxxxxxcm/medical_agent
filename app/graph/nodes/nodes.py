@@ -605,20 +605,26 @@ def _llm_route(question: str) -> str:
 
 @timing_decorator("症状解析")
 def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """症状解析节点
+    """症状解析节点（v8.4 重构：规则优先 + 时间锚定独立 + LLM 兜底移除）
+
+    设计决策（v8.4）：
+        移除 Layer 3 LLM 兜底。原因：
+        1. 症状解析和查询改写做的是同一件事（理解查询医学语义），两次 LLM 调用是重复劳动
+        2. LLM 兜底 2.8s 但结果常校验失败（如 severity="轻至中度"），白跑
+        3. symptoms=None 时下游完全能处理：追问引导为空，RAG prompt 不追加，LLM 照常生成
+        4. 时间锚定已独立于症状关键词，规则未命中时 onset_ts 仍能计算
 
     策略（按优先级）：
-        1. 规则提取命中 → 直接返回（0ms）
-        2. 追问短路：有对话历史 + 规则未命中 → 跳过 LLM（省 2-3s），症状从快照继承
-        3. 首轮规则未命中 → 调用本地模型提取
-        4. 统一末尾：空症状时尝试从 clinical_checkpoint 补充
+        1. 规则提取命中 → 直接返回（<5ms）
+        2. 追问短路：有对话历史 → 跳过，症状从快照继承
+        3. 首轮规则未命中 → 时间锚定仍执行 + symptoms=None → 降级为原始查询检索
     """
     logger.info("症状解析节点开始执行")
 
     question = state.get("question", "")
     messages = state.get("messages", [])
     _symptom_words = ["疼", "痛", "发烧", "咳嗽", "恶心", "呕吐", "腹泻", "头晕",
-                      "胸闷", "过敏", "出血", "骨折", "肿", "痒", "麻", "炎"]
+                      "胸闷", "过敏", "出血", "流血", "血", "骨折", "肿", "痒", "麻", "炎"]
 
     # 用药咨询快速跳过
     has_drug = any(kw in question for kw in _DRUG_KEYWORDS)
@@ -640,7 +646,7 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 logger.info(f"从快照计算持续时间：{calculated_duration}")
         return {"symptoms": rule_result}
 
-    # 2. 追问短路：有历史 → 省 2-3s LLM 调用，症状由下方快照继承
+    # 2. 追问短路：有历史 → 症状由下方快照继承
     if messages:
         logger.info(f"追问规则未命中，短路跳过LLM（{len(messages)}条历史）：{question[:30]}")
         return _symptoms_with_checkpoint_fallback(
@@ -649,28 +655,112 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
             state,
         )
 
-    # 3. 首轮 LLM 提取
-    symptoms_payload = None
+    # 3. 首轮规则未命中 → 不调 LLM，降级为原始查询检索
+    # 时间锚定仍然执行（独立于症状关键词），确保 clinical_checkpoint 有 onset_ts
+    logger.info(f"规则未命中，降级为原始查询检索（不调LLM）：{question[:50]}")
+    time_grounding = _extract_time_grounding(question)
+    return {"symptoms": {
+        "symptoms": [], "severity": None, "body_parts": [],
+        "duration": time_grounding.get("duration"),
+        "onset_date": time_grounding.get("onset_iso"),
+        "onset_ts": time_grounding.get("onset_ts"),
+        "time_precision": time_grounding.get("time_precision"),
+        "additional_info": None,
+    }}
+
+
+def _extract_time_grounding(question: str) -> Dict[str, Any]:
+    """独立的时间锚定函数，不依赖症状关键词
+
+    核心原则：绝不让 LLM 做时间运算，代码层完成所有时间转换和计算
+    三层策略：L1 dateparser → L2 中文数字正则 → L3 默认当前时刻
+
+    v8.4：从 _extract_symptoms_by_rules 中提取，独立于症状解析。
+    即使症状规则未命中，时间锚定仍能执行，确保 clinical_checkpoint 有 onset_ts。
+    """
+    text = (question or "").strip()
+    system_now = datetime.now()
+    onset_iso = None
+    onset_ts = None
+    time_precision = None
+    duration = None
+
+    # L1: dateparser 解析
     try:
-        llm = get_local_llm_json()
-        prompt = f"""从用户描述中提取症状信息，返回JSON。
-
-描述：{question}
-
-格式：{{"symptoms": ["症状"], "severity": "轻微/中等/严重", "body_parts": ["部位"], "duration": null, "additional_info": null}}
-symptoms和body_parts必须是数组。只输出JSON："""
-        result: SymptomAnalysisOutput = invoke_json_once_with_fallback(
-            llm, prompt, SymptomAnalysisOutput,
-            fallback_parser=parse_symptom_text,
+        import dateparser
+        parsed_time = dateparser.parse(
+            text,
+            settings={
+                'RELATIVE_BASE': system_now,
+                'PREFER_DATES_FROM': 'past',
+                'RETURN_AS_TIMEZONE_AWARE': False,
+                'TIMEZONE': 'Asia/Shanghai',
+                'PARSERS': ['relative-time', 'absolute-time', 'custom-formats'],
+            }
         )
-        symptoms_payload = result.model_dump()
-        logger.info(f"LLM提取症状：{symptoms_payload.get('symptoms')}")
-    except Exception as e:
-        logger.error(f"症状解析失败：{str(e)}")
-        symptoms_payload = {"symptoms": [], "severity": None, "body_parts": [], "duration": None, "onset_date": None, "additional_info": None}
+        if parsed_time:
+            onset_iso = parsed_time.strftime("%Y-%m-%dT%H:%M:%S")
+            onset_ts = int(parsed_time.timestamp())
+            delta = system_now - parsed_time
+            days = delta.days
+            hours = delta.seconds // 3600
+            if days > 0:
+                duration = f"{days}天"
+            elif hours > 0:
+                duration = f"{hours}小时"
+            else:
+                duration = "今天"
+            time_precision = "exact"
+    except ImportError:
+        pass
+    except Exception:
+        pass
 
-    # 4. 快照继承
-    return _symptoms_with_checkpoint_fallback(symptoms_payload, state)
+    # L2: 中文数字正则兜底
+    if not onset_ts:
+        duration_patterns = [
+            r"持续\s*([一二三四五六七八九十\d]+)\s*(天|周|个月|年)",
+            r"([一二三四五六七八九十\d]+)\s*(天|周|个月|年)\s*[了以]",
+            r"有\s*([一二三四五六七八九十\d]+)\s*(天|周|个月|年)",
+        ]
+        cn_num_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+                      "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        unit_days_map = {"天": 1, "周": 7, "个月": 30, "年": 365}
+
+        for pattern in duration_patterns:
+            m = re.search(pattern, text)
+            if m:
+                num_raw, unit = m.group(1), m.group(2)
+                num = cn_num_map.get(num_raw)
+                if num is not None:
+                    days_per_unit = unit_days_map.get(unit, 1)
+                    total_days = num * days_per_unit
+                    onset_dt = system_now - timedelta(days=total_days)
+                    onset_iso = onset_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                    onset_ts = int(onset_dt.timestamp())
+                    duration = f"{num}{unit}"
+                    time_precision = "exact"
+                break
+
+        if not onset_ts:
+            vague_match = re.search(r"(几)\s*(天|周|个月)\s*[了以]", text)
+            if vague_match:
+                duration = f"?{vague_match.group(2)}"
+                time_precision = "vague"
+
+    # L3: 未提及任何时间 → 默认当前时刻
+    if not onset_ts and not duration:
+        onset_iso = system_now.strftime("%Y-%m-%dT%H:%M:%S")
+        onset_ts = int(system_now.timestamp())
+        duration = "今天"
+        time_precision = "default"
+
+    return {
+        "onset_iso": onset_iso,
+        "onset_ts": onset_ts,
+        "duration": duration,
+        "time_precision": time_precision,
+    }
 
 
 def _symptoms_with_checkpoint_fallback(symptoms_payload: dict, state: MedicalAssistantState) -> dict:
@@ -1942,20 +2032,14 @@ SEARCH: 头痛 缓解 药物"""
             final_question = question
             rewritten_query = question
 
-    # ===== 步骤2：HyDE 假想答案生成（用于 Dense 向量检索） =====
-    # 用 final_question（完整上下文）生成假想答案，语义更接近知识库文档
-    _hyde_body_parts = ["头", "肚子", "胸", "背", "腰", "腿", "手", "脚", "腕", "膝",
-                        "肩", "颈", "眼", "耳", "鼻", "喉", "皮肤", "牙", "踝", "肘"]
-    _hyde_symptom_words = ["疼", "痛", "肿", "痒", "麻", "烧", "咳", "泻", "吐", "晕",
-                           "炎", "出血", "流血", "血", "骨折", "扭伤", "过敏", "发炎"]
-    _has_body_part = any(kw in final_question for kw in _hyde_body_parts)
-    _has_symptom_word = any(kw in final_question for kw in _hyde_symptom_words)
-    _has_drug_word = any(kw in final_question for kw in _DRUG_KEYWORDS)
-    skip_hyde = (_has_body_part and _has_symptom_word and len(final_question) > 4) or _has_drug_word
-
-    if skip_hyde:
-        logger.info(f"查询已包含具体信息，跳过 HyDE：{final_question[:50]}")
-    else:
+    # ===== 步骤2：HyDE 假想答案生成 =====
+    # v8.5 决策：基于 A/B 测试数据，HyDE 在当前架构下为负收益组件，默认关闭
+    # 测试结果：10 条查询，Recall -13.3%，耗时 +1574ms，4 条负向仅 2 条正向
+    # 原因：规则引擎+症状解析已做查询标准化，Embedding 召回率已足够高，
+    #       HyDE 生成的假想答案反而把 Dense 检索引向错误方向
+    # 保留 ENABLE_HYDE 开关，供未来长尾模糊查询按需启用
+    enable_hyde = getattr(config, "ENABLE_HYDE", False)
+    if enable_hyde and not _is_self_contained:
         try:
             llm = get_local_llm()
             hyde_prompt = f"""请针对以下医学问题，写一段简短的假想性医学回答（2-3句话）。
@@ -1978,6 +2062,10 @@ SEARCH: 头痛 缓解 药物"""
         except Exception as e:
             logger.warning(f"HyDE 假想答案生成失败，使用查询做 dense 检索：{e}")
             hyde_answer = None
+    else:
+        if enable_hyde:
+            logger.info(f"查询自包含，跳过 HyDE：{final_question[:50]}")
+        # else: HyDE 默认关闭，不生成假想答案
 
     return {
         "rewritten_query": rewritten_query,
@@ -2017,8 +2105,11 @@ _ANAPHORA_PATTERNS = [
     "其他", "还有", "别的", "另外",
     "这个", "那个", "它", "其",
     "上述", "前面说的", "刚才", "之前说的",
-    "继续", "再", "也",
-    "呢",  # "那儿童呢？" "布洛芬呢？"
+    "继续",
+    # 注意："呢"、"再"、"也" 是多义字，单独出现不等于指代
+    # "流鼻血了怎么办呢？"中的"呢"是语气词，不是指代
+    # "再吃一粒布洛芬"中的"再"是频率副词，不是省略
+    # 这些由 Layer 2（短查询+无实体）和 Layer 3（疑问词开头）兜底
 ]
 
 # 以这些疑问词开头但缺少名词实体的查询，大概率依赖上下文
@@ -2028,9 +2119,11 @@ _QUESTION_STARTS = ["怎么", "如何", "什么", "哪些", "还有"]
 _DOMAIN_ENTITY_KEYWORDS = [
     # 症状
     "头痛", "头疼", "发烧", "发热", "咳嗽", "流鼻涕", "鼻塞",
+    "流鼻血", "鼻出血",  # v8.4 新增
     "腹痛", "肚子疼", "胃疼", "胃痛", "恶心", "呕吐", "腹泻",
     "胸闷", "胸痛", "呼吸困难", "过敏", "头晕", "失眠", "乏力",
-    "瘙痒", "肿胀", "麻木", "出血", "便秘", "皮疹",
+    "瘙痒", "肿胀", "麻木", "出血", "流血", "便秘", "皮疹",
+    "便血", "咯血", "尿血", "血尿",  # v8.4 新增
     # 常见药物
     "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林",
     "奥司他韦", "连花清瘟", "感冒灵", "板蓝根", "蒙脱石散",
