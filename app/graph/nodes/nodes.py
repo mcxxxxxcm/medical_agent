@@ -1947,7 +1947,7 @@ SEARCH: 头痛 缓解 药物"""
     _hyde_body_parts = ["头", "肚子", "胸", "背", "腰", "腿", "手", "脚", "腕", "膝",
                         "肩", "颈", "眼", "耳", "鼻", "喉", "皮肤", "牙", "踝", "肘"]
     _hyde_symptom_words = ["疼", "痛", "肿", "痒", "麻", "烧", "咳", "泻", "吐", "晕",
-                           "炎", "出血", "骨折", "扭伤", "过敏", "发炎"]
+                           "炎", "出血", "流血", "血", "骨折", "扭伤", "过敏", "发炎"]
     _has_body_part = any(kw in final_question for kw in _hyde_body_parts)
     _has_symptom_word = any(kw in final_question for kw in _hyde_symptom_words)
     _has_drug_word = any(kw in final_question for kw in _DRUG_KEYWORDS)
