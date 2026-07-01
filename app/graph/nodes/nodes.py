@@ -1329,13 +1329,18 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     # L2 快照独立注入，确保即使对话历史为空也可见
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
 
-    return f"""你是医疗助手，基于文档和对话历史回答问题。{frozen_profile_section}
+    return f"""你是医疗助手，严格基于检索到的文档回答问题。{frozen_profile_section}
 【文档】
 {context}
 
 {time_facts_section}{checkpoint_section}{history_section}【问题】{question}
 
-要求：基于文档和对话历史回答，结合用户之前提到的信息（如用药、症状等）；无相关信息则说明；结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}。"""
+要求：
+1. 严格基于【文档】内容回答，不得编造文档中未提及的药物名称、剂量、治疗方案
+2. 如文档中无相关信息，明确告知"根据现有资料无法回答"，不要用自身知识补充
+3. 引用药物/剂量时，必须与文档原文一致
+4. 结合用户之前提到的信息（如用药、症状等）做个性化建议
+5. 回复结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}"""
 
 
 def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:

@@ -50,11 +50,42 @@ except ImportError:
 # 规则引擎简易评估（ragas 未安装时的降级方案）
 # ===========================================================================
 
+# ---------------------------------------------------------------------------
+# 中文分词（jieba 优先，降级为字符级）
+# ---------------------------------------------------------------------------
+_jieba_available = False
+try:
+    import jieba
+    _jieba_available = True
+except ImportError:
+    pass
+
+# 停用词（评估时不计入的常见虚词）
+_STOP_WORDS = set(
+    "的 了 在 是 我 有 和 就 不 人 都 一 一个 上 也 很 到 说 要 去 你 会 着 没 看 好 自己 这"
+    .split()
+)
+
+
 def _tokenize_chinese(text: str) -> List[str]:
-    """简易中文分词：按字符 + 常见标点切分，过滤短词"""
-    # 移除标点
-    cleaned = re.sub(r"[，。！？、；：""''（）\[\]{}【】《》\s\d]", " ", text)
-    tokens = [t for t in cleaned.split() if len(t) >= 2]
+    """中文分词：jieba 优先（精确模式），降级为双字滑窗"""
+    if not text or not text.strip():
+        return []
+
+    # 移除标点、数字、英文标记符号
+    cleaned = re.sub(r"[，。！？、；：""''（）\[\]{}【】《》\s\d\-_=+|\\<>]", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    if not cleaned:
+        return []
+
+    if _jieba_available:
+        # jieba 精确模式分词
+        tokens = [t for t in jieba.cut(cleaned) if len(t) >= 2 and t not in _STOP_WORDS]
+    else:
+        # 降级：双字滑窗（bigram），覆盖中文词汇中最常见的 2 字词
+        tokens = [cleaned[i:i+2] for i in range(len(cleaned) - 1) if not cleaned[i].isspace() and not cleaned[i+1].isspace()]
+
     return tokens
 
 
@@ -147,9 +178,14 @@ class RAGEvaluator:
         标准格式：
             {"question": "...", "ground_truth": "..."}
 
-        Bad Case 格式：
+        Bad Case 格式（由 export_bad_cases_for_ragas.py 生成）：
+            {"question": "...", "ground_truth": "...", "source": "bad_case", ...}
+            question = 重写后的查询（expected_rewrite），ground_truth = 期望答案
+
+        自包含性测试集格式（tests/data/self_containment_test_set.jsonl）：
             {"original_query": "...", "expected_rewrite": "...", ...}
-            -> question = original_query, ground_truth = expected_rewrite
+            → question = original_query, ground_truth = ""
+            （此类测试集用于 query_rewrite 回归测试，不用于 RAG 评估）
         """
         p = Path(path)
         if not p.exists():
@@ -168,19 +204,33 @@ class RAGEvaluator:
                     logger.warning(f"跳过无效 JSON 行 {line_no}: {line[:80]}")
                     continue
 
-                # 标准格式
+                # 标准格式（含 question 字段）
                 if "question" in item:
                     data.append({
                         "question": item["question"],
                         "ground_truth": item.get("ground_truth", ""),
                         "category": item.get("category", ""),
+                        "source": item.get("source", "standard"),
+                        "key_facts": item.get("key_facts", []),
+                        "difficulty": item.get("difficulty", ""),
                     })
-                # Bad Case 格式
+                # 黄金测试集格式（含 query 字段）
+                elif "query" in item:
+                    data.append({
+                        "question": item["query"],
+                        "ground_truth": item.get("ground_truth", ""),
+                        "category": item.get("category", ""),
+                        "source": item.get("source", "golden"),
+                        "key_facts": item.get("key_facts", []),
+                        "difficulty": item.get("difficulty", ""),
+                    })
+                # 自包含性测试集格式（仅用于 query_rewrite 回归测试）
                 elif "original_query" in item:
                     data.append({
                         "question": item["original_query"],
-                        "ground_truth": item.get("expected_rewrite", ""),
-                        "category": item.get("case_type", "bad_case"),
+                        "ground_truth": "",  # expected_rewrite 不是期望答案
+                        "category": item.get("case_type", "rewrite_test"),
+                        "source": "rewrite_test",
                     })
                 else:
                     logger.warning(f"跳过无法识别的行 {line_no}")
