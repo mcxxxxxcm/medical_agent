@@ -52,8 +52,9 @@ class Settings(BaseSettings):
     # ===== RAG 配置 =====
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
-    DEFAULT_K: int = 5
+    DEFAULT_K: int = 3  # v9.0: 5→3，减少送入 LLM 的文档数，缩短 Prompt token，降低 TTFT
     DEFAULT_SEARCH_TYPE: str = "similarity"
+    RERANKER_TOP_K: int = 8  # RRF 融合后送入 Reranker 的候选数（三阶段：先截 top8 再精排）
     RERANKER_THRESHOLD: float = 0.02  # sigmoid归一化后的阈值，仅过滤极低分文档（<0.02≈完全不相关）
     # v8.2：0.1 → 0.02。旧值 0.1 过于严格，导致"头痛怎么办"只有1篇通过（0.26），
     # 其余神经系统文档（0.031）被过滤，parent 不含布洛芬 → 幻觉检测误报

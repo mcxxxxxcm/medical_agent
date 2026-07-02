@@ -1,73 +1,274 @@
-2026-07-01 00:37:45 - app.api.routes - INFO - 收到流式聊天请求：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, user_id=test_user
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：2.02ms
-2026-07-01 00:37:45 - app.api.routes - INFO - 请求完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, path=/api/chat/stream, status=200, elapsed_ms=3.53
-INFO:     127.0.0.1:49649 - "POST /api/chat/stream HTTP/1.1" 200 OK
-2026-07-01 00:37:45 - app.graph.streaming - INFO - 从 checkpointer 加载对话历史：6 条消息
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [路由] 开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 路由节点开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 问题类型：symptom
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：0.00ms
-2026-07-01 00:37:45 - app.graph.streaming - INFO - L0 答案缓存未命中：便秘怎么办？...
-2026-07-01 00:37:45 - app.graph.streaming - INFO - 路由+缓存耗时：0.50ms（route=symptom_analysis）
-2026-07-01 00:37:45 - app.graph.streaming - INFO - 流式请求路由完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, next_node=symptom_analysis
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [症状解析] 开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 症状解析节点开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 规则提取症状成功，跳过LLM：{'symptoms': ['便秘'], 'severity': None, 'body_parts': None, 'duration': '今天', 'onset_date': '2026-07-01T00:37:45', 'onset_ts': 1782837465, 'time_precision': 'default', 'additional_info': None}
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [症状解析] 执行完成，耗时：1.02ms
-2026-07-01 00:37:45 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
-2026-07-01 00:37:45 - app.graph.nodes.nodes - INFO - 查询自包含（无指代词/省略结构），跳过重写：便秘怎么办？
-2026-07-01 00:37:51 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
-2026-07-01 00:37:51 - app.graph.nodes.nodes - INFO - HyDE 假想答案生成完成（61字）：对于便秘，建议增加膳食纤维摄入量，多喝水，并适当进行体育锻炼。如果症状持续或加重，请咨询医生以获得进...
-2026-07-01 00:37:51 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：5180.44ms
-2026-07-01 00:37:51 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
-2026-07-01 00:37:51 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
-2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - HyDE 模式：Dense 用假想答案（61字），Sparse 用查询
-2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：便秘怎么办？...
-2026-07-01 00:37:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
-2026-07-01 00:37:51 - app.cache.semantic_cache - INFO - L2 缓存键数量：1
-2026-07-01 00:37:51 - app.cache.semantic_cache - INFO - L2 未找到相似查询，最高相似度：0.00%（阈值：80.00%）
-2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - L2语义缓存耗时：embedding_ms=397.91, lookup_ms=1.01
-2026-07-01 00:37:51 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：6 篇, top1_distance=0.4491
-2026-07-01 00:37:51 - app.rag.reranker - INFO - Reranker 输入：docs=5, valid_docs=5, top_k=3, max_doc_chars=300
-2026-07-01 00:37:52 - app.rag.reranker - INFO - 重排序完成：5 -> 3 （最高分：0.9450）
-2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - Reranker 重排序：8 -> 3
-2026-07-01 00:37:52 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 1 个 parent（去重 2 个）
-2026-07-01 00:37:52 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 3 个（+2 个兄弟章节），总字符数=196
-2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 3 个完整父文档
-2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：741.39ms（query_embedding=397.91ms, semantic_lookup=1.01ms, dense=2.51ms, sparse=1.00ms, fusion=0.00ms, rerank=737.87ms, parent_lookup=0.00ms, top1_dense_dist=0.4491）
-2026-07-01 00:37:52 - app.cache.semantic_cache - INFO - 语义缓存已写入：'便秘怎么办？...' (3 个文档)
-2026-07-01 00:37:52 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：便秘怎么办？...
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 检索到3个相关文档，耗时：1143.11ms，第 1 次检索
-2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：1143.62ms
-2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 病因
-1. 饮食因素：膳食纤维摄入不足、饮水量不足
-2. 生活习惯：缺乏运动、忽视排便信号
-...
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：3 -> 2 相关
-2026-07-01 00:37:52 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：1.07ms
-2026-07-01 00:37:52 - app.graph.streaming - INFO - 文档评分完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, next_node=answer_generation, docs=2
-2026-07-01 00:37:52 - app.graph.streaming - INFO - 开始流式生成 RAG 答案：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - 流式答案生成节点开始执行
-2026-07-01 00:37:52 - app.graph.nodes.nodes - INFO - RAG Prompt 大小：1243字符，估算约621 tokens
-2026-07-01 00:37:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-07-01 00:37:54 - app.graph.streaming - INFO - 首个 token 已发送：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, latency_ms=8262.99
-2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 流式生成完成，总长度：381字符，耗时：11776.99ms
-2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
-2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
-2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=0.0ms
-2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：0.00ms
-2026-07-01 00:38:03 - app.graph.streaming - INFO - L0 答案缓存已写入：便秘怎么办？...
-2026-07-01 00:38:03 - app.graph.streaming - INFO - 流式请求完成：request_id=e20e3b7f-a2d3-4775-9f46-0a8f95b20d6c, thread_id=thread_ea69fa64, total_elapsed_ms=18109.18
-2026-07-01 00:38:03 - app.graph.streaming - INFO - 对话历史已保存
-2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
-2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
-2026-07-01 00:38:03 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
-2026-07-01 00:38:03 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
-2026-07-01 00:38:03 - app.graph.streaming - INFO - 快照已由前次任务处理，无需重复更新
+基于你提供的完整系统流程和已有的优化分析，我从架构、工程质量、检索质量、用户体验四个维度补充以下优化建议：
+
+一、架构级优化（高收益）
+
+🔴 并行化独立节点（节省 200~500ms）
+
+当前流程是严格串行的，但部分节点之间没有数据依赖：
+
+当前（串行）：
+memory_load(2ms) → profile_extraction → router(0ms) → symptom_analysis(<5ms) → ...
+
+可并行化：
+memory_load ─┐
+              ├──→ router → symptom_analysis → ...
+profile_extraction（异步，不阻塞主链路）
+
+具体可并行的组合：
+并行组   说明   节省
+memory_load ‖ checkpointer加载   两者无依赖，可同时发起   ~10-30ms
+
+Embedding API ‖ BM25 Sparse检索   BM25 不需要 embedding 向量，可以先跑   ~1ms（BM25本身快，但减少等待）
+
+答案生成 ‖ 安全规则引擎   规则引擎检查的是生成前的内容，可以和流式生成并行   ~0ms（但LLM深度审查可并行）
+
+档案提取 完全异步化   当前已是异步，确认是否真正 fire-and-forget   确认不阻塞
+
+最有价值的并行化：Embedding 和 BM25 并行执行。当前 hybrid_retriever.py 中是先算 embedding 再跑 BM25，但 BM25 只需要原始文本，完全可以 asyncio.gather 并行：
+
+当前（串行）
+query_embedding = await embed_query(query)  # 200-400ms
+dense_docs = dense_retrieve(query_embedding)  # 2-100ms
+sparse_docs = sparse_retrieve(query_text)     # ~1ms
+
+优化（并行）
+query_embedding_task = asyncio.create_task(embed_query(query))
+sparse_docs = sparse_retrieve(query_text)     # ~1ms，先跑完
+query_embedding = await query_embedding_task  # 等待 embedding
+dense_docs = dense_retrieve(query_embedding)
+
+虽然 BM25 只省 1ms，但Embedding 和 Dense 检索可以 pipeline 化——embedding 返回后立即开始 dense 检索，而不是等所有准备工作就绪。
+
+🔴 检索三阶段化（节省 Reranker 300~500ms）
+
+当前是两阶段：Dense+BM25 融合 → Reranker 重排全部候选（10~20 篇）
+
+建议改为三阶段：
+
+阶段1: Dense(top20) + BM25(top20) → RRF 融合 → 取 top8（轻量截断）
+阶段2: Reranker(top8) → 取 top3（精准重排）
+阶段3: 父子映射 + 邻域扩展
+
+收益：Reranker 入参从 10~20 篇降到 8 篇，CPU 推理时间直接减半。RRF 融合后的 top8 已经包含了最相关的候选，Reranker 的工作是在这 8 篇中精排，质量损失极小。
+
+🟡 Checkpointer 加载优化
+
+当前每次请求都加载完整对话历史（checkpointer.aget()），耗时 10~50ms。
+
+优化方案：
+延迟加载：仅在需要对话历史的节点（query_rewrite、answer_generation）才加载
+分页加载：只加载最近 N 条消息，而不是全部历史
+内存缓存：同一 session_id 在短期内（如 5 分钟）缓存 checkpointer 状态
+
+🟡 缓存架构增强
+
+当前 L0（精确匹配）+ L2（语义缓存）已经不错，但可以加一层：
+层级   当前   建议新增
+L0   Redis 精确匹配，TTL=30min   ✅ 已有
+
+L1   —   查询归一化缓存：将"便秘咋办""便秘怎么治""便秘怎么办"归一化到同一 key
+
+L2   Redis + Embedding 92%   ✅ 已有
+
+L3   —   文档级缓存：同一查询的检索结果缓存，即使答案不缓存，检索结果可复用
+
+L1 查询归一化的实现：
+def normalize_query(q):
+    # 去除语气词、统一同义词
+    q = re.sub(r'[？?！!。，,、]', '', q)
+    synonyms = {'咋办': '怎么办', '怎么治': '怎么办', '如何': '怎么办'}
+    for k, v in synonyms.items():
+        q = q.replace(k, v)
+    return q
+
+二、工程质量优化
+
+🔴 缺乏可观测性基础设施
+
+当前只有 timing_decorator 写日志，没有结构化指标采集。建议：
+
+当前：logger.info(f"[知识检索] 耗时：{elapsed:.2f}ms")
+建议：结构化 metrics → Prometheus/Grafana 或轻量级 SQLite
+
+最小可行方案：用 SQLite 记录每次请求的节点级耗时：
+
+每次请求结束后写入
+INSERT INTO request_metrics 
+(request_id, node_name, duration_ms, timestamp, route_type, cache_hit)
+VALUES (?, ?, ?, ?, ?, ?)
+
+这样可以做：
+P50/P95/P99 延迟分析
+各节点耗时占比趋势
+缓存命中率监控
+异常请求告警
+
+🟡 外部 API 的容错与降级
+
+当前对外部 API（智谱 Embedding、glm-4-flash、Ollama）的错误处理不够完善：
+风险   当前状态   建议
+Embedding API 超时   有 10s 超时   加 指数退避重试（最多 2 次）
+
+glm-4-flash 不可用   无降级   加 备用模型（如 glm-4-air）
+
+Ollama 本地模型挂掉   降级到远端 API   ✅ 已有，但需确认超时时间合理
+
+Redis 不可用   跳过缓存   ✅ 已有
+
+ChromaDB 异常   无降级   加 BM25-only 降级模式
+
+建议加一个 Circuit Breaker：
+
+class CircuitBreaker:
+    """连续 N 次失败后熔断，M 秒后半开探测"""
+    def init(self, failure_threshold=3, recovery_timeout=30):
+        ...
+
+🟡 Prompt 模板预编译
+
+当前每次请求都动态拼接 Prompt 字符串（build_rag_prompt、build_direct_answer_prompt），涉及大量字符串操作。
+
+优化：
+使用 string.Template 或 Jinja2 预编译模板
+将不变的 system prompt 部分缓存，只替换变量部分
+减少 f-string 拼接开销（微优化，但高频场景有积累效果）
+
+三、检索质量优化
+
+🔴 自纠正循环的防抖与限流
+
+当前 grade_documents 不相关时会回到 query_rewrite 重试一次。但：
+
+问题：
+重试时如果 Reranker 分数没有显著提升（振荡检测已有），但仍然走完整 RAG 流程
+没有早退机制：如果第一次检索 top1 Reranker 分数就极低（<0.01），说明知识库确实没有相关内容，不应该重试
+
+建议：
+在 grade_documents 中增加"知识库无覆盖"早退
+if max_reranker_score < 0.01:
+    # 知识库确实没有，直接走兜底答案，不重试
+    return Command(goto="answer_generation", 
+                   update={"fallback_answer": "该问题超出当前知识库范围..."})
+
+🟡 Query 预处理增强
+
+当前查询重写只处理追问场景，但首轮查询也可以做轻量预处理：
+预处理   示例   收益
+纠错   "糖料病" → "糖尿病"   提高 BM25 命中率
+
+同义词扩展   "头疼" → "头痛"   提高 Dense 召回
+
+停用词移除   "我想问一下便秘怎么办啊" → "便秘怎么办"   减少 Embedding 噪声
+
+实现成本低（正则 + 词典），但对检索质量提升明显。
+
+🟡 检索结果去重与多样性
+
+当前 RRF 融合后可能有高度重复的文档（同一文档的不同 child chunk），导致 Reranker 的 top3 都是同一段内容的不同切片。
+
+建议：在 RRF 融合后、Reranker 前加一步 MMR（Maximal Marginal Relevance） 去重：
+
+伪代码
+def diversify_candidates(candidates, lambda_=0.7):
+    """lambda_=1 纯相关性，lambda_=0 纯多样性"""
+    selected = [candidates[0]]
+    for doc in candidates[1:]:
+        sim_to_query = cosine_sim(doc.embedding, query_embedding)
+        sim_to_selected = max(cosine_sim(doc.embedding, s.embedding) for s in selected)
+        score = lambda_ * sim_to_query - (1 - lambda_) * sim_to_selected
+        ...
+
+四、用户体验优化
+
+🔴 渐进式反馈（Progressive Disclosure）
+
+当前用户发出问题后，要等 2~3s 才看到第一个 token。可以在等待期间发送进度提示：
+
+SSE 事件流：
+event: progress
+data: {"stage": "analyzing", "message": "正在分析您的症状..."}
+
+event: progress  
+data: {"stage": "searching", "message": "正在检索医学知识库..."}
+
+event: progress
+data: {"stage": "generating", "message": "正在为您生成建议..."}
+
+event: token
+data: {"content": "根据"}
+
+前端效果：用户看到的是动态进度条，而不是空白等待。心理上感觉更快。
+
+🟡 答案结构化输出
+
+当前答案是纯文本流式输出。建议：
+
+分段发送：先发"初步判断"，再发"建议措施"，最后发"注意事项"
+引用标注：每个建议标注来源文档（[来源: 消化系统指南 §3.2]）
+紧急标识：如果检测到 red_flags，在答案开头加 ⚠️ 醒目提示
+
+🟡 用户反馈闭环
+
+当前没有用户反馈机制。建议加一个轻量反馈接口：
+
+POST /api/feedback
+{
+    "session_id": "xxx",
+    "message_index": 3,
+    "rating": "helpful" | "not_helpful" | "harmful",
+    "comment": "optional"
+}
+
+用途：
+自动标记低质量回答，用于评估集扩充
+统计满意度趋势
+"harmful" 反馈触发告警
+
+五、成本优化
+
+🟡 Token 用量监控与控制
+
+当前没有 Token 用量追踪。glm-4-flash 和 embedding-3 都是按 token 计费的：
+组件   估算 Token/请求   月成本估算（1000 请求/天）
+Embedding API   ~50 tokens   ¥~15/月
+
+glm-4-flash（答案生成）   ~2000 input + ~500 output   ¥~150/月
+
+glm-4-flash（查询重写）   ~500 input + ~100 output   ¥~30/月
+
+glm-4v-plus（图片）   ~1000 input + ~300 output   视用量
+
+建议：
+在 timing_decorator 旁加 token_counter，记录每次 LLM 调用的 input/output tokens
+设置单请求 token 上限（防止异常长文档导致成本飙升）
+Prompt 中检索文档做 token 预算控制（如最多 1500 tokens 的文档内容）
+
+优化优先级总结
+优先级   优化项   预期收益   工作量
+P0   Reranker 三阶段化（减少入参）   TTFT -300~500ms   半天
+
+P0   渐进式进度反馈   用户感知延迟 -50%   1 天
+
+P0   可观测性（结构化 metrics）   质量/性能可观测   1 天
+
+P1   Embedding + BM25 并行化   检索 -100~200ms   半天
+
+P1   自纠正早退机制   避免无效重试 1~2s   半天
+
+P1   Query 预处理（纠错+同义词）   检索召回 +10~15%   1 天
+
+P1   外部 API 容错/降级   系统稳定性   1~2 天
+
+P2   查询归一化缓存（L1）   缓存命中率 +15%   1 天
+
+P2   Token 用量监控   成本可控   半天
+
+P2   检索结果 MMR 去重   答案多样性   半天
+
+P2   用户反馈闭环   质量持续改进   1 天
+
+P3   Prompt 模板预编译   微优化   2 小时
+
+P3   Checkpointer 延迟加载   初始化 -10~30ms   半天
+
+如果只做三件事：Reranker 三阶段化 + 渐进式进度反馈 + 可观测性基础设施。前两个直接改善用户体验，第三个让你能用数据驱动后续优化。
