@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # ===== 邻域扩展配置 =====
     SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节
-    MAX_SIBLING_CHARS: int = 2000  # 邻域扩展后最大总字符数，防止撑爆 LLM 上下文
+    MAX_SIBLING_CHARS: int = 1500  # v9.0: 2000→1500，缩短 Prompt token 数，降低 TTFT（~200-300ms）
 
     # ===== HyDE 配置 =====
     ENABLE_HYDE: bool = False  # HyDE 默认关闭（A/B 测试 Recall -13.3%，耗时 +1574ms）

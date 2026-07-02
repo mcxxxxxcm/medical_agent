@@ -814,6 +814,33 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """
     logger.info("知识检索节点开始执行")
 
+    # v9.0 查询预处理：纠错 + 同义词标准化 + 停用词清理
+    # 提高 BM25 命中率和 Embedding 质量
+    def _preprocess_query(q: str) -> str:
+        if not q:
+            return q
+        # 同义词标准化（常见口语→书面语）
+        _SYNONYMS = {
+            "咋办": "怎么办", "怎么治": "怎么办", "如何治疗": "怎么办",
+            "头疼": "头痛", "拉肚子": "腹泻", "拉稀": "腹泻",
+            "糖料病": "糖尿病", "糖料": "糖尿病",
+            "血压高": "高血压", "血糖高": "高血糖",
+            "哮喘病": "哮喘", "气管炎": "支气管炎",
+            "退烧": "退热", "发烧": "发热",
+            "止疼": "止痛", "镇痛": "止痛",
+            "咳嗽有痰": "咳嗽咳痰", "干咳": "咳嗽无痰",
+            "感冒灵颗粒": "感冒灵", "芬必得": "布洛芬缓释胶囊",
+            "美林": "布洛芬混悬液", "泰诺": "对乙酰氨基酚",
+            "扑热息痛": "对乙酰氨基酚", "芬必得": "布洛芬",
+        }
+        for colloquial, standard in _SYNONYMS.items():
+            q = q.replace(colloquial, standard)
+        # 去除语气词前缀
+        q = re.sub(r'^(我想问一下|请问|问一下|请教一下|咨询一下|麻烦问一下)\s*', '', q)
+        # 去除语气词后缀
+        q = re.sub(r'\s*(啊|呀|呢|吧|嘛|哦|嗯|哈)+[？?！!。]*$', '', q)
+        return q.strip()
+
     # 获取原始查询和重写查询
     original_query = state.get("question", "")
     rewritten_query = state.get("rewritten_query", "")
@@ -823,8 +850,16 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     # 检索时优先使用重写查询（提高检索质量）
     search_query = rewritten_query or original_query
 
+    # v9.0 查询预处理：对原始查询做同义词/纠错/语气词清理
+    # 重写查询已经是高质量的自包含查询，不需要再预处理
+    if not rewritten_query:
+        preprocessed = _preprocess_query(original_query)
+        if preprocessed != original_query:
+            logger.info(f"查询预处理：'{original_query}' → '{preprocessed}'")
+            search_query = preprocessed
+
     try:
-        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=5)
+        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
 
         start_time = time.time()
         docs = retriever.invoke(
@@ -906,6 +941,21 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
         (doc.metadata.get("rerank_score", 0) for doc in retrieved_docs),
         default=0,
     )
+    # v9.0 知识库无覆盖早退：Reranker 最高分 < 0.01 说明完全不在知识库范围
+    # 不应重试查询重写（浪费时间 1~2s），直接走 direct_answer
+    RERANK_NO_COVERAGE_THRESHOLD = 0.01
+    if max_rerank_score < RERANK_NO_COVERAGE_THRESHOLD and max_rerank_score > 0:
+        logger.warning(
+            f"Reranker 最高分仅 {max_rerank_score:.4f}（< {RERANK_NO_COVERAGE_THRESHOLD}），"
+            f"知识库完全无覆盖，跳过自纠正直接回答"
+        )
+        return Command(
+            goto="direct_answer",
+            update={
+                "retrieved_docs": [],
+                "warnings": ["知识库无覆盖范围，以下回答基于通用医学知识"],
+            },
+        )
     RERANK_IRRELEVANT_THRESHOLD = 0.02
     if max_rerank_score < RERANK_IRRELEVANT_THRESHOLD and max_rerank_score > 0:
         logger.warning(
@@ -1431,6 +1481,18 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
         answer = response.content.strip()
         generation_time = (time.time() - start_time) * 1000
 
+        # v9.0: Token 用量自动采集
+        try:
+            from app.core.token_tracker import track_tokens
+            track_tokens(
+                node_name="答案生成",
+                response=response,
+                request_id=state.get("request_id", ""),
+                thread_id=state.get("thread_id", ""),
+            )
+        except Exception:
+            pass  # 静默，不影响主流程
+
         logger.info(f"生成答案完成，长度：{len(answer)}字符，耗时：{generation_time:.2f}ms")
 
         result = {
@@ -1905,6 +1967,18 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
         response = llm.invoke(prompt)
         answer = response.content.strip()
 
+        # v9.0: Token 用量自动采集
+        try:
+            from app.core.token_tracker import track_tokens
+            track_tokens(
+                node_name="直接回答",
+                response=response,
+                request_id=state.get("request_id", ""),
+                thread_id=state.get("thread_id", ""),
+            )
+        except Exception:
+            pass
+
         logger.info(f"直接回答完成：{answer}")
 
         return {
@@ -1988,6 +2062,18 @@ SEARCH: 头痛 缓解 药物"""
 
             raw_response = llm.invoke(rewrite_prompt)
             raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+
+            # v9.0: Token 用量自动采集
+            try:
+                from app.core.token_tracker import track_tokens
+                track_tokens(
+                    node_name="查询重写",
+                    response=raw_response,
+                    request_id=state.get("request_id", ""),
+                    thread_id=state.get("thread_id", ""),
+                )
+            except Exception:
+                pass
 
             # 解析 FINAL 和 SEARCH
             final_match = re.search(r"FINAL:\s*(.+)", raw_text, re.IGNORECASE)

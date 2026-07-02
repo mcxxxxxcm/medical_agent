@@ -244,7 +244,7 @@ class RAGEvaluator:
 
     def run_retrieval(self, question: str) -> Dict:
         """执行检索，返回 {contexts: [...], scores: [...], docs: [...]}"""
-        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=5)
+        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
         try:
             docs = retriever.invoke(question, original_query=question)
         except Exception as e:

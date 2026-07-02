@@ -89,11 +89,14 @@ class HealthResponse(BaseModel):
 
 class FeedbackRequest(BaseModel):
     """用户反馈请求模型"""
-    user_id: str = Field("default", description="用户ID")
-    thread_id: Optional[str] = Field(None, description="会话线程ID")
-    reason: str = Field(..., description="反馈原因：answer_inaccurate/not_answering/missing_info/unsafe_content/other")
+    request_id: str = Field("", description="关联的请求ID（从 SSE 事件获取）")
+    rating: str = Field("up", description="反馈类型：up(👍)/down(👎)")
+    reason: str = Field("", description="差评原因：answer_inaccurate/not_answering/missing_info/unsafe_content/other")
     note: Optional[str] = Field(None, description="补充说明", max_length=500)
     answer_preview: Optional[str] = Field(None, description="AI回答预览（前500字）")
+    question: Optional[str] = Field(None, description="用户原始问题（用于差评关联）")
+    user_id: Optional[str] = Field("default", description="用户ID")
+    thread_id: Optional[str] = Field(None, description="会话线程ID")
 
 
 # 生命周期管理
@@ -117,7 +120,7 @@ async def lifespan(app: FastAPI):
 
     # 3. 预热向量库和 BM25
     logger.info("预热混合检索器...")
-    get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=5)
+    get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
     logger.info("混合检索器预热完成")
 
     # 4. 预热Redis缓存和语义缓存（避免首次请求2s连接延迟）
@@ -538,14 +541,24 @@ async def reload_config(request: Request):
 async def submit_feedback(request: Request):
     """用户反馈接口
 
-    接收用户对 AI 回答的反馈（👍/👎），将负面反馈写入 bad_cases 存储。
+    接收用户对 AI 回答的反馈（👍/👎）：
+    - 👍：记录满意度数据
+    - 👎：记录差评 + 自动创建 Bad Case + 可转化为黄金测试集
 
-    反馈原因：
-        - answer_inaccurate: 答案不准确
-        - not_answering: 没回答我的问题
-        - missing_info: 缺少关键信息
-        - unsafe_content: 内容不安全
-        - other: 其他
+    请求体：
+        request_id: 关联的请求ID（从 SSE done 事件获取）
+        rating: "up" (👍) 或 "down" (👎)
+        reason: 差评原因（answer_inaccurate/not_answering/missing_info/unsafe_content/other）
+        note: 用户补充说明
+        answer_preview: AI 回答预览
+        question: 原始问题
+        user_id: 用户ID
+        thread_id: 会话线程ID
+
+    反馈闭环流程：
+        用户 👎 → record_feedback() → 自动 append_bad_case()
+        → 人工审核 → 补填 ground_truth → 加入黄金测试集
+        → 每次系统迭代后重跑评估 → 验证修复
     """
     try:
         body = await request.json()
@@ -553,31 +566,71 @@ async def submit_feedback(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"detail": "请求格式错误"})
 
+    # 校验 rating
+    if feedback.rating not in ("up", "down"):
+        return JSONResponse(status_code=400, content={"detail": "rating 必须为 up 或 down"})
+
     try:
-        from app.memory import get_long_term_memory
-        memory = get_long_term_memory()
-        memory.append_bad_case(
-            case_type="user_negative_feedback",
-            original_query="",  # 前端未传原始问题，可通过 thread_id 查询
-            rewritten_query="",
-            final_question="",
+        from app.core.metrics import get_metrics_collector
+        collector = get_metrics_collector()
+        feedback_id = collector.record_feedback(
+            request_id=feedback.request_id,
+            rating=feedback.rating,
+            reason=feedback.reason,
+            note=feedback.note or "",
             answer_preview=feedback.answer_preview or "",
-            user_id=feedback.user_id,
+            question=feedback.question or "",
+            user_id=feedback.user_id or "default",
             thread_id=feedback.thread_id or "",
-            metadata={
-                "reason": feedback.reason,
-                "note": feedback.note or "",
-            },
         )
         logger.info(
-            f"用户反馈已记录：user_id={feedback.user_id}, "
-            f"thread_id={feedback.thread_id}, reason={feedback.reason}"
+            f"用户反馈已记录：feedback_id={feedback_id}, rating={feedback.rating}, "
+            f"request_id={feedback.request_id}, reason={feedback.reason}"
         )
     except Exception as e:
         logger.warning(f"用户反馈记录失败：{e}")
-        # 不影响用户体验，静默处理
 
-    return {"status": "ok", "message": "反馈已收到"}
+    return {"status": "ok", "feedback_id": feedback_id if 'feedback_id' in dir() else "", "message": "反馈已收到"}
+
+
+@app.get("/api/metrics/nodes")
+async def node_metrics_stats(hours: int = 24):
+    """查询节点耗时统计（P50/P95/P99）"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return {"hours": hours, "stats": collector.get_node_stats(hours)}
+
+
+@app.get("/api/metrics/requests")
+async def request_metrics_stats(hours: int = 24):
+    """查询请求级耗时统计"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return {"hours": hours, "stats": collector.get_request_stats(hours)}
+
+
+@app.get("/api/metrics/tokens")
+async def token_usage_stats(hours: int = 24):
+    """查询 Token 用量统计（按模型/节点/每日趋势 + 成本估算）"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return collector.get_token_stats(hours)
+
+
+@app.get("/api/metrics/feedback")
+async def feedback_stats(hours: int = 24):
+    """查询反馈统计（满意度率/差评原因分布/每日趋势）"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return collector.get_feedback_stats(hours)
+
+
+@app.get("/api/metrics/feedback/candidates")
+async def feedback_golden_candidates(limit: int = 50):
+    """获取差评中适合转化为黄金测试集的候选"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
 
 
 # 启动入口

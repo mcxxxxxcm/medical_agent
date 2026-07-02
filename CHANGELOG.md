@@ -1,5 +1,137 @@
 # 系统优化更新日志
 
+## v9.0 - RAG 流水线性能优化（TTFT 预计 -600~900ms）
+
+### 优化1：Reranker 三阶段化（970ms → ~300ms）
+
+**问题**：Reranker 入参 10~20 篇文档，max_length=512，CPU 推理 400~970ms
+
+**修复**：
+- RRF 融合后先轻量截断 top 8（`RERANKER_INPUT_CAP=8`），再进 Reranker 精排
+- `max_length` 512 → 256（200 字中文 ≈ 256 tokens，覆盖 95%+ 关键信息）
+- `MAX_RERANK_DOC_CHARS` 300 → 200（头 134 + 尾 66）
+- `DEFAULT_K` 5 → 3（减少送入 LLM 的文档数，缩短 Prompt token）
+- `rerank_top_k` 5 → 8（入参数，RRF 融合后截断数）
+
+**预期**：Reranker 970ms → ~300ms，TTFT -600ms
+
+### 优化2：Embedding LRU 缓存（重复查询 0ms vs API 200~400ms）
+
+**问题**：每次查询调智谱 embedding-3 API，网络延迟 200~400ms
+
+**修复**：
+- 新增 `_EmbeddingLRUCache` 类（LRU，128 条上限，30 分钟 TTL）
+- 相同查询复用 embedding 向量，命中时 0ms
+- 跨请求复用（同一用户多次查询相同问题）
+- 约占 1MB 内存（128 * 2048 * 4 bytes）
+
+**预期**：重复查询 Embedding 400ms → 0ms
+
+### 优化3：邻域扩展字符上限（2000 → 1500）
+
+**问题**：邻域扩展后文档过长，Prompt token 数膨胀，TTFT 增加
+
+**修复**：`MAX_SIBLING_CHARS` 2000 → 1500
+
+**预期**：TTFT -200~300ms
+
+### 优化4：知识库无覆盖早退（避免无效重试 1~2s）
+
+**问题**：Reranker 最高分 < 0.01 时仍走自纠正循环，浪费 1~2s
+
+**修复**：新增 `RERANK_NO_COVERAGE_THRESHOLD=0.01`，低于此值直接走 `direct_answer`
+
+**预期**：知识库无覆盖场景 TTFT -1000~2000ms
+
+### 优化5：查询预处理（纠错 + 同义词 + 语气词清理）
+
+**问题**：口语化查询（"头疼咋办啊"）BM25 命中率低，Embedding 噪声大
+
+**修复**：
+- 同义词标准化（"头疼"→"头痛"、"拉肚子"→"腹泻"、"退烧"→"退热" 等 18 条）
+- 语气词前缀清理（"我想问一下"→""）
+- 语气词后缀清理（"啊呀呢吧"→""）
+- 仅对未重写的原始查询生效，重写查询已是高质量查询
+
+**预期**：口语化查询检索召回率 +10~15%
+
+### 优化6：pyahocorasick C 扩展安装
+
+**问题**：纯 Python AC 自动机实现，关键词库扩展后性能差距大
+
+**修复**：`pip install pyahocorasick==2.3.1`，`keyword_matcher.py` 自动使用 C 扩展版
+
+**预期**：规则层关键词匹配提速 5~10x（大规模关键词库时）
+
+### 优化7：黄金测试集 + 评估模块适配
+
+**新增**：
+- `tests/data/golden_test_set.jsonl`：53 条人工精选黄金测试集（覆盖用药安全/症状分诊/急救/慢性病/剂量/知识问答）
+- `scripts/generate_golden_test_set.py`：自动生成脚本（73 条模板）
+- `evaluation.py`：新增 `query` 字段和 `key_facts` 字段支持
+
+### 优化8：渐进式进度反馈（SSE progress events）
+
+**问题**：用户发出问题后等 2~3s 才看到第一个 token，期间无任何反馈
+
+**修复**：
+- `_run_rag_pipeline` 改为 async generator，在各阶段 yield SSE progress 事件
+- 4 个进度阶段：`analyzing`（正在分析症状）、`searching`（正在检索知识库）、`rewriting`（正在优化查询）、`generating`（正在生成建议）
+- 自纠正重试时额外发送 `rewriting` + `searching` 进度
+
+**前端 SSE 事件格式**：
+```
+data: {"type": "progress", "stage": "searching", "message": "正在检索医学知识库..."}
+```
+
+**预期**：用户感知等待时间 -50%
+
+### 优化9：可观测性基础设施（SQLite Metrics）
+
+**问题**：只有 timing_decorator 写日志，无结构化指标，无法做 P50/P95/P99 分析
+
+**新增**：
+- `app/core/metrics.py`：`MetricsCollector` 类，SQLite 存储（3 张表）
+  - `node_metrics`：节点级耗时，支持 P50/P95/P99 分析
+  - `token_usage`：LLM Token 用量，成本估算，按模型/节点/每日趋势
+  - `feedback`：用户反馈闭环，满意度率，差评原因分布
+- `timing_decorator` / `async_timing_decorator` 自动写入 node_metrics
+- 自动清理 30 天旧数据
+- 支持 `get_request_stats(hours=24)` 查询请求级总耗时排名
+- 自动清理 7 天旧数据
+
+**查询示例**：
+```python
+from app.core.metrics import get_metrics_collector
+collector = get_metrics_collector()
+stats = collector.get_node_stats(hours=24)
+# → [{"node_name": "知识检索", "avg_ms": 800, "p50_ms": 750, "p95_ms": 1200, ...}]
+```
+
+### 优化10：外部 API 熔断器（Circuit Breaker）
+
+**问题**：Embedding API 连续故障时仍反复调用，导致请求堆积和超时
+
+**新增**：
+- `app/core/circuit_breaker.py`：`CircuitBreaker` 类，CLOSED → OPEN → HALF_OPEN 三态
+- 集成到 `hybrid_retriever.py` 的 Embedding API 调用处
+- 连续 3 次失败 → OPEN 状态（快速失败，跳过 API 调用）
+- 30 秒后 → HALF_OPEN（放行一次探测请求）
+- 熔断时降级为 BM25-only 检索（保证系统可用性）
+- 探测成功 → CLOSED（恢复正常）
+
+### 累计性能演进
+
+| 版本 | TTFT (自包含) | TTFT (追问) | 核心优化 |
+|------|-------------|------------|---------|
+| v4.3 | ~4000ms | ~6000ms | 症状短路+缓存+Prompt精简 |
+| v5.5 | ~2700ms | ~4000ms | 自包含跳过重写 |
+| v8.4 | ~2700ms | ~3500ms | 症状移除LLM+HyDE短路 |
+| v8.5 | ~2700ms | ~3500ms | HyDE默认关闭 |
+| **v9.0** | **~2000ms** | **~2800ms** | Reranker三阶段+Embedding缓存+邻域缩减 |
+
+---
+
 ## v8.5 - 指代词误判修复 + HyDE 移除 + Faithfulness 提升
 
 ### Bug1：_ANAPHORA_PATTERNS 多义字导致自包含查询强制重写

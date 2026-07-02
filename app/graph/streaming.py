@@ -100,6 +100,15 @@ class StreamingOrchestrator:
             "retrieval_attempts": 0,
         }
 
+    async def _emit_progress(self, stage: str, message: str) -> str:
+        """生成 SSE progress 事件，用于渐进式反馈"""
+        payload = {
+            "type": "progress",
+            "stage": stage,
+            "message": message,
+        }
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
     async def _emit(self, payload) -> str:
         """生成 SSE data 行，记录首 token 延迟"""
         if not self._first_token_sent:
@@ -422,20 +431,31 @@ class StreamingOrchestrator:
             logger.warning(f"路由异常 bad case 记录失败：{e}")
 
     async def _run_rag_pipeline(self, route_node: str):
-        """执行 RAG 流水线：症状解析 → 重写 → 检索 → 评分（含自纠正）"""
+        """执行 RAG 流水线：症状解析 → 重写 → 检索 → 评分（含自纠正）
+
+        使用 async generator 逐步 yield SSE progress 事件，
+        让前端在 2~3s 等待期间看到"正在分析...""正在检索..."等提示。
+        结果通过 self._rag_grade_next 属性传递。
+        """
+        # 阶段1：症状解析
         if route_node == "symptom_analysis":
+            yield await self._emit_progress("analyzing", "正在分析您的症状...")
             symptom_state = symptom_analysis_node(self._state)
             if symptom_state:
                 self._state.update(symptom_state)
 
+        # 阶段2：查询重写
         rewrite_state = query_rewrite_node(self._state)
         if rewrite_state:
             self._state.update(rewrite_state)
 
+        # 阶段3：知识检索
+        yield await self._emit_progress("searching", "正在检索医学知识库...")
         retrieval_state = knowledge_retrieval_node(self._state)
         if retrieval_state:
             self._state.update(retrieval_state)
 
+        # 阶段4：文档评分
         grade_command = grade_documents_node(self._state)
         grade_update = getattr(grade_command, "update", None) or {}
         if grade_update:
@@ -451,10 +471,12 @@ class StreamingOrchestrator:
         if grade_next == "query_rewrite":
             self._state["retrieval_attempts"] = self._state.get("retrieval_attempts", 0) + 1
 
+            yield await self._emit_progress("rewriting", "正在优化查询，重新检索...")
             rewrite_state = query_rewrite_node(self._state)
             if rewrite_state:
                 self._state.update(rewrite_state)
 
+            yield await self._emit_progress("searching", "正在重新检索医学知识库...")
             retrieval_state = knowledge_retrieval_node(self._state)
             if retrieval_state:
                 self._state.update(retrieval_state)
@@ -465,7 +487,11 @@ class StreamingOrchestrator:
                 self._state.update(grade_update)
             grade_next = getattr(grade_command, "goto", "answer_generation")
 
-        return grade_next
+        # 阶段5：即将生成答案
+        yield await self._emit_progress("generating", "正在为您生成建议...")
+
+        # 传递结果
+        self._rag_grade_next = grade_next
 
     async def _save_history(self):
         """保存对话历史到 checkpointer，触发后台快照更新"""
@@ -632,7 +658,11 @@ class StreamingOrchestrator:
                             yield revision_sse
 
                 else:
-                    grade_next = await self._run_rag_pipeline(next_node)
+                    # RAG 流水线（含渐进式进度反馈）
+                    self._rag_grade_next = None
+                    async for sse_event in self._run_rag_pipeline(next_node):
+                        yield sse_event
+                    grade_next = self._rag_grade_next
 
                     if grade_next == "answer_generation" and self._state.get("final_answer"):
                         self._full_answer = self._state["final_answer"]
@@ -683,7 +713,13 @@ class StreamingOrchestrator:
                 f"流式请求完成：request_id={self.request_id}, "
                 f"thread_id={self.thread_id}, total_elapsed_ms={total_elapsed_ms:.2f}"
             )
-            yield "data: [DONE]\n\n"
+            # 发送完成事件（含 request_id，前端可用于反馈关联）
+            done_payload = {
+                "type": "done",
+                "request_id": self.request_id,
+                "total_elapsed_ms": round(total_elapsed_ms, 2),
+            }
+            yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
             await self._save_history()
 

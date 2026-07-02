@@ -36,7 +36,7 @@ _DRUG_INTENT_KEYWORDS = ["吃几颗", "吃几粒", "怎么吃", "怎么服用", 
                           "能吃不能吃", "可以吃吗", "能和", "能一起"]
 
 def timing_decorator(node_name: str):
-    """节点耗时记录装饰器"""
+    """节点耗时记录装饰器（含 SQLite Metrics 采集）"""
 
     def decorator(func):
         @wraps(func)
@@ -48,6 +48,10 @@ def timing_decorator(node_name: str):
                 result = func(*args, **kwargs)
                 elapsed_time = (time.time() - start_time) * 1000
                 logger.info(f"[{node_name}] 执行完成，耗时：{elapsed_time:.2f}ms")
+
+                # v9.0: 写入 SQLite Metrics
+                _record_to_metrics(node_name, elapsed_time, args, kwargs)
+
                 return result
             except Exception as e:
                 elapsed_time = (time.time() - start_time) * 1000
@@ -59,7 +63,7 @@ def timing_decorator(node_name: str):
     return decorator
 
 def async_timing_decorator(node_name: str):
-    """异步节点耗时记录装饰器"""
+    """异步节点耗时记录装饰器（含 SQLite Metrics 采集）"""
 
     def decorator(func):
         @wraps(func)
@@ -71,6 +75,10 @@ def async_timing_decorator(node_name: str):
                 result = await func(*args, **kwargs)
                 elapsed_time = (time.time() - start_time) * 1000
                 logger.info(f"[{node_name}] 执行完成，耗时：{elapsed_time:.2f}ms")
+
+                # v9.0: 写入 SQLite Metrics
+                _record_to_metrics(node_name, elapsed_time, args, kwargs)
+
                 return result
             except Exception as e:
                 elapsed_time = (time.time() - start_time) * 1000
@@ -78,6 +86,30 @@ def async_timing_decorator(node_name: str):
                 raise
         return wrapper
     return decorator
+
+
+def _record_to_metrics(node_name: str, duration_ms: float, args, kwargs):
+    """将节点耗时写入 SQLite Metrics（失败静默，不影响主流程）"""
+    try:
+        from app.core.metrics import get_metrics_collector
+        # 从 state 参数中提取 request_id 和 route_type
+        state = args[0] if args and isinstance(args[0], dict) else {}
+        request_id = state.get("request_id", "")
+        thread_id = state.get("thread_id", "")
+        route_type = state.get("route_type", "")
+        cache_hit = "缓存命中" in node_name or "cache" in node_name.lower()
+
+        collector = get_metrics_collector()
+        collector.record_node(
+            request_id=request_id,
+            node_name=node_name,
+            duration_ms=duration_ms,
+            route_type=route_type,
+            cache_hit=cache_hit,
+            thread_id=thread_id,
+        )
+    except Exception:
+        pass  # 静默失败，不影响主流程
 
 def extract_json_block(raw_text: str) -> Optional[Dict[str, Any]]:
     """从模型文本输出中尽量提取 JSON 对象（鲁棒解析）
