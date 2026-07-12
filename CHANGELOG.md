@@ -1,5 +1,54 @@
 # 系统优化更新日志
 
+## v9.2 - 时间退化风险修复（5 项安全加固）
+
+### 🔴 漏洞1：语义缓存毒化（最高优先级）
+
+**问题**：语义缓存 key 仅含 `md5(query)`，无知识库版本绑定。知识库更新后旧缓存仍返回过期答案 → 医疗安全风险
+- 衰减速度：1~2 周
+- 安全影响：⚠️ 用药剂量/禁忌症过期
+
+**修复计划**：缓存 key 加入 `kb_version`，知识库更新自动失效旧缓存
+
+### 🔴 漏洞2：临床快照状态腐烂
+
+**问题**：`clinical_checkpoint` 由 LLM 增量更新，无字段级合并策略，`medication_history`/`red_flags` 被全量覆盖
+- LLM 可能遗忘已有用药记录、篡改 chief_complaint、凭空编造药物
+- 无快照历史版本、无回滚机制、无上限约束
+- 衰减速度：2~4 周
+- 安全影响：⚠️ 过敏史丢失 → 用药安全风险
+
+**修复计划**：字段级合并策略 + 快照字段上限 + 关键字段不变性约束
+
+### 🟡 漏洞3：PostgresStore Append-Only 无界膨胀
+
+**问题**：`symptom_events`/`medication_events`/`bad_cases`/`query_history` 四个命名空间只有 append，无 prune/compact
+- `get_symptom_events()` 全量加载后截断，数据量增大后性能退化
+- 衰减速度：1~2 个月
+- 安全影响：性能退化 + 早期记录被遗忘
+
+**修复计划**：定期清理任务 + 查询优化（limit 下推）
+
+### 🟡 漏洞4：硬编码阈值随数据分布漂移失效
+
+**问题**：6 个关键阈值（0.08/0.02/0.01/0.05/0.92）在特定数据分布下调优，知识库扩张后静默失效
+- `HIGH_CONFIDENCE_THRESHOLD=0.08`：稀疏空间"极度相似" → 密集空间"有点相关"
+- 衰减速度：1~3 个月
+- 安全影响：⚠️ 跳过 Reranker 导致幻觉
+
+**修复计划**：阈值改为自适应（基于百分位统计），加入运行时校准接口
+
+### 🟡 漏洞5：AC 自动机规则与知识库脱耦
+
+**问题**：药物关键词表/同义词字典/症状关键词均为人工维护，与知识库文档无同步机制
+- 新增文档后规则不更新 → 覆盖率从 80% 降至 60%+ → 新药物查询绕过 RAG
+- 衰减速度：渐进式
+- 安全影响：降级风险
+
+**修复计划**：知识库变更时自动扫描新实体，提醒更新规则
+
+---
+
 ## v9.0 - RAG 流水线性能优化（TTFT 预计 -600~900ms）
 
 ### 优化1：Reranker 三阶段化（970ms → ~300ms）
@@ -119,6 +168,141 @@ stats = collector.get_node_stats(hours=24)
 - 30 秒后 → HALF_OPEN（放行一次探测请求）
 - 熔断时降级为 BM25-only 检索（保证系统可用性）
 - 探测成功 → CLOSED（恢复正常）
+
+### 优化11：用户反馈闭环
+
+**问题**：旧 `/api/feedback` 只写 Bad Case，无 👍/👎 区分、无统计、无闭环
+
+**修复**：
+- 重写 `FeedbackRequest`：支持 `rating`（👍/👎）+ `request_id` 关联 + `question` + `reason`
+- 差评自动创建 Bad Case（写入 PostgresStore `long_term_memory`）
+- 反馈统计：满意度率、差评原因分布、每日趋势
+- 黄金测试集候选：`get_feedback_candidates_for_golden_set()` 从差评中提取待转化条目
+- SSE 完成事件附带 `request_id`，前端可关联反馈
+
+**反馈闭环流程**：
+```
+用户 👎 → record_feedback() → 自动 append_bad_case()
+→ 人工审核 → 补填 ground_truth → 加入黄金测试集
+→ 每次系统迭代后重跑评估 → 验证修复
+```
+
+### 优化12：Token 用量监控
+
+**问题**：无法追踪 LLM API 的 token 消耗和成本
+
+**新增**：
+- `app/core/token_tracker.py`：从 `AIMessage.response_metadata` 自动提取 token 用量
+- 集成到 3 个 LLM 调用节点：答案生成、直接回答、查询重写
+- SQLite 存储：`token_usage` 表（request_id, model, prompt_tokens, completion_tokens, estimated_cost）
+- 成本估算：基于智谱官方定价（glm-4-flash ¥0.0001/千tokens, glm-4v-plus ¥0.01/千tokens 等）
+- 按模型/节点/每日趋势聚合统计
+
+**查询示例**：
+```bash
+# Token 用量统计
+curl http://localhost:8000/api/metrics/tokens?hours=24
+# → {"total_tokens": 150000, "total_cost": 0.15, "by_model": [...], "daily_trend": [...]}
+
+# 反馈统计
+curl http://localhost:8000/api/metrics/feedback?hours=24
+# → {"satisfaction_rate": 0.85, "by_reason": [{"reason": "answer_inaccurate", "count": 5}], ...}
+```
+
+### 优化13：Prompt 模板化（ChatPromptTemplate）
+
+**问题**：10 个 Prompt 全部用 f-string 拼接，无角色区分，无法 A/B 测试
+
+**修复**：
+- 新增 `app/graph/nodes/prompts.py`：10 个 ChatPromptTemplate 集中管理
+- 所有 Prompt 改为 `ChatPromptTemplate.from_messages()`，区分 System/Human 角色
+- `build_rag_prompt()` 和 `build_direct_answer_prompt()` 返回 `List[BaseMessage]` 而非 str
+- `llm.invoke()` 同时支持 str 和 List[BaseMessage]，无缝兼容
+
+**Prompt 清单**：
+
+| Prompt | 角色 | 变量 |
+|--------|------|------|
+| RAG_ANSWER_PROMPT | system + human | context, question, frozen_profile, time_facts, checkpoint, history, followup |
+| RAG_ANSWER_NO_CONTEXT_PROMPT | system + human | question, frozen_profile, history |
+| DIRECT_ANSWER_PROMPT | system + human | question, frozen_profile, checkpoint, history |
+| ROUTER_PROMPT | system + human | question |
+| QUERY_REWRITE_PROMPT | system + human | history_summary, question |
+| SAFETY_CHECK_PROMPT | system + human | answer, clinical_snapshot |
+| PROFILE_EXTRACTION_PROMPT | system + human | question |
+| CHECKPOINT_UPDATE_PROMPT | system + human | existing_snapshot, new_messages |
+| CHECKPOINT_NEW_PROMPT | system + human | new_messages |
+| HYDE_PROMPT | system + human | question |
+| VISION_ANALYSIS_PROMPT | system + human(多模态) | question, image_url |
+
+### 优化14：Pydantic 结构化输出校验补全
+
+**问题**：7 个 Pydantic 模型中只有 3 个被实际使用，路由和查询重写无校验
+
+**修复**：
+
+1. **路由节点**：f-string + `parse_router_output()` 正则 → `ROUTER_PROMPT` + `invoke_json_once_with_fallback` + `RouterOutput`
+   - `RouterOutput.question_type`：Literal["symptom", "knowledge", "general"]
+   - `field_validator`：兼容中文/复数/变体输入（"症状"→"symptom"，"symptoms"→"symptom"）
+   - 校验失败 → 兜底 "general"
+
+2. **查询重写节点**：正则提取 `FINAL:` / `SEARCH:` → `QUERY_REWRITE_PROMPT` + `invoke_json_once_with_fallback` + `QueryRewriteOutput`
+   - `QueryRewriteOutput` 扩展：`rewritten_query` → `final_question` + `search_keywords`
+   - `field_validator`：自动去除 `FINAL:` / `SEARCH:` 残留前缀
+   - 支持 `max_attempts=2` 重试
+
+3. **models.py 增强**：
+   - `RouterOutput`：新增 `normalize_question_type` field_validator
+   - `QueryRewriteOutput`：扩展为双字段 + 两个 field_validator
+   - `ProfileExtractionOutput`：新增 `coerce_age`（"30岁"→30）、`coerce_allergies`（"青霉素,头孢"→["青霉素","头孢"]）
+   - 所有模型添加对应 Prompt 的文档说明
+
+4. **helpers.py 增强**：
+   - `invoke_json_once_with_fallback`：prompt 参数支持 `List[BaseMessage]`
+   - 新增 `max_attempts` 参数（路由/重写用 2 次重试）
+   - 重试逻辑：校验失败自动重试，日志记录每次尝试
+
+**校验覆盖演进**：3/7 → 5/7（路由+重写+安全+档案+快照），剩余 2 个（症状解析=规则引擎、文档评分=启发式）暂不需要
+
+### 优化15：结构化输出三层降级策略（Tool Calling → JSON Mode → 纯文本）
+
+**问题**：`with_structured_output` 完全未被使用（死代码），`invoke_json_once_with_fallback` 只做后处理容错，缺少采样层约束
+
+**根因**：
+- `with_structured_output` 要求模型原生支持 function calling，旧版 Ollama 不支持就报错
+- 当前方案完全依赖后处理（extract_json_block + json_repair + Pydantic），是"打补丁"思维
+- Tool Calling 可从采样层约束 LLM 输出格式，比后处理更可靠
+
+**新增**：
+- `app/graph/nodes/structured_output.py`：`invoke_structured()` 统一入口
+- 三层降级策略：
+  - **Layer 1: Tool Calling**（最可靠）
+    - `convert_to_openai_tool(schema)` 将 Pydantic 模型转为 OpenAI tool 定义
+    - `llm.bind_tools([tool], tool_choice={"type":"function","function":{"name":schema_name}})`
+    - LLM 返回 `tool_calls[0].args` → Pydantic `model_validate`
+    - 支持：glm-4-flash、glm-4-plus、glm-4、Ollama qwen2.5 (v0.3+)
+  - **Layer 2: JSON Mode**（中等可靠）
+    - `response_format={"type":"json_object"}` 保证合法 JSON
+    - `extract_json_block` + Pydantic 校验
+    - 需要 prompt 含 "JSON" 字样
+  - **Layer 3: 纯文本 + 本地解析**（兜底）
+    - 无格式约束，完全依赖后处理
+    - `extract_json_block` → `json.loads` → `json_repair` → `ast.literal_eval`
+    - `_coerce_list_fields` + `field_validator` 容错
+
+**替换**：
+- 5 个节点从 `invoke_json_once_with_fallback` 切换到 `invoke_structured`
+- `invoke_structured_with_fallback` 保留为旧接口（向后兼容）
+- `invoke_json_once_with_fallback` 保留为 Layer 3 的底层实现
+
+**各模型实际降级路径**：
+
+| 模型 | Layer 1 | Layer 2 | Layer 3 |
+|------|---------|---------|---------|
+| glm-4-flash | ✅ Tool Calling | ✅ JSON Mode | 兜底 |
+| glm-4-plus | ✅ Tool Calling | ✅ JSON Mode | 兜底 |
+| Ollama qwen2.5 (v0.3+) | ✅ Tool Calling | ✅ JSON Mode | 兜底 |
+| Ollama qwen2.5 (旧版) | ❌ 不支持 | ✅ JSON Mode | 兜底 |
 
 ### 累计性能演进
 

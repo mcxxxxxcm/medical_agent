@@ -29,6 +29,15 @@ from app.core.app_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _get_kb_version() -> str:
+    """获取知识库版本指纹（懒加载，避免循环导入）"""
+    try:
+        from app.rag.vector_store import get_kb_version
+        return get_kb_version()
+    except Exception:
+        return "unknown"
+
+
 class SemanticCache:
     """语义相似缓存管理器"""
 
@@ -235,6 +244,25 @@ class SemanticCache:
         if similar_result:
             key, similarity, data = similar_result
 
+            # v9.2 漏洞1修复：校验缓存数据的 kb_version 是否与当前知识库一致
+            # 不一致说明知识库已更新，旧缓存应失效
+            cached_kb_version = data.get("kb_version")
+            current_kb_version = _get_kb_version()
+            if cached_kb_version and cached_kb_version != current_kb_version:
+                logger.info(
+                    f"语义缓存 kb_version 不匹配（缓存={cached_kb_version}, "
+                    f"当前={current_kb_version}），跳过过期缓存"
+                )
+                # 删除过期缓存条目
+                try:
+                    self._cache._redis.delete(key)
+                    self._cache._redis.zrem(self._keys_zset, key)
+                    self._cache._redis.srem(self._keys_set, key)
+                except Exception:
+                    pass
+                self._stats["misses"] += 1
+                return None
+
             # 3、反序列化文档
             try:
                 documents = self._cache._deserialize_documents(data["documents"])
@@ -290,7 +318,9 @@ class SemanticCache:
         if query_embedding is None:
             return False
 
-        query_hash = hashlib.md5(query.encode("utf-8")).hexdigest()
+        # v9.2 漏洞1修复：缓存 key 绑定 kb_version，知识库更新自动失效旧缓存
+        kb_version = _get_kb_version()
+        query_hash = hashlib.md5(f"{query}:{kb_version}".encode("utf-8")).hexdigest()
         key = f"{self.prefix}{query_hash}"
 
         data = {
@@ -300,6 +330,7 @@ class SemanticCache:
             "metadata": metadata or {},
             "created_at": datetime.now().isoformat(),
             "doc_count": len(documents),
+            "kb_version": kb_version,  # 记录写入时的知识库版本
         }
 
         try:

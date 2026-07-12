@@ -5,9 +5,10 @@
     3. 优化 search 结果的排序逻辑
     4. 增加异常处理
     5. 新增 symptom_events / medication_events 命名空间（Append-Only 事件流）
+    6. v9.2 漏洞3修复：新增 prune 机制，防止无界膨胀
 """
-from typing import Optional, Dict, Any, List
-from datetime import datetime
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime, timedelta
 import uuid
 import logging
 
@@ -20,6 +21,20 @@ logger = logging.getLogger(__name__)
 
 _long_term_memory: Optional["LongTermMemoryManager"] = None
 _store_context = None
+
+# v9.2 漏洞3修复：各命名空间的默认保留天数和上限
+_NAMESPACE_RETENTION = {
+    "symptom_events": 90,      # 症状事件保留 90 天
+    "medication_events": 90,   # 用药事件保留 90 天
+    "bad_cases": 180,          # Bad Case 保留 180 天（回归测试需要）
+    "query_history": 30,       # 查询历史保留 30 天
+}
+_NAMESPACE_MAX_ITEMS = {
+    "symptom_events": 500,     # 每用户最多 500 条症状事件
+    "medication_events": 300,  # 每用户最多 300 条用药事件
+    "bad_cases": 500,          # 每用户最多 500 条 Bad Case
+    "query_history": 200,      # 每用户最多 200 条查询历史
+}
 
 
 class LongTermMemoryManager:
@@ -79,6 +94,9 @@ class LongTermMemoryManager:
         for item in items:
             if item.value and "timestamp" in item.value:
                 records.append(item.value)
+            # v9.2 漏洞3修复：提前截断
+            if len(records) >= limit * 2:
+                break
 
         records.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return records[:limit]
@@ -104,6 +122,138 @@ class LongTermMemoryManager:
             key=doc_id
         )
         return item.value if item else None
+
+    # ===== v9.2 漏洞3修复：Prune 机制 =====
+
+    def prune_namespace(
+            self,
+            namespace_name: str,
+            user_id: str,
+            max_age_days: Optional[int] = None,
+            max_items: Optional[int] = None,
+    ) -> int:
+        """清理指定命名空间的过期/超量记录
+
+        Args:
+            namespace_name: 命名空间名（如 "symptom_events"）
+            user_id: 用户ID
+            max_age_days: 最大保留天数（默认从 _NAMESPACE_RETENTION 读取）
+            max_items: 最大条目数（默认从 _NAMESPACE_MAX_ITEMS 读取）
+
+        Returns:
+            删除的条目数
+        """
+        max_age_days = max_age_days or _NAMESPACE_RETENTION.get(namespace_name, 90)
+        max_items = max_items or _NAMESPACE_MAX_ITEMS.get(namespace_name, 500)
+
+        cutoff_date = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+        namespace = (namespace_name, user_id)
+
+        try:
+            items = self.store.search(namespace)
+            if not items:
+                return 0
+
+            # 收集需要删除的 key
+            keys_to_delete = []
+            timestamp_field = "onset_iso" if namespace_name == "symptom_events" else "created_at"
+
+            # 1. 删除超过保留天数的过期记录
+            for item in items:
+                if not item.value:
+                    keys_to_delete.append(item.key)
+                    continue
+                ts = item.value.get(timestamp_field) or item.value.get("cached_at") or ""
+                if ts and ts < cutoff_date:
+                    keys_to_delete.append(item.key)
+
+            # 2. 如果仍超量，按时间排序删除最早的
+            remaining = [item for item in items if item.key not in keys_to_delete]
+            if len(remaining) > max_items:
+                # 按时间排序（升序 = 最早的在前）
+                remaining.sort(
+                    key=lambda x: x.value.get(timestamp_field, "") if x.value else "",
+                )
+                excess = len(remaining) - max_items
+                for item in remaining[:excess]:
+                    keys_to_delete.append(item.key)
+
+            # 执行删除
+            deleted = 0
+            for key in keys_to_delete:
+                try:
+                    self.store.delete(namespace, key=key)
+                    deleted += 1
+                except Exception as e:
+                    logger.warning(f"删除 {namespace_name}/{key} 失败：{e}")
+
+            if deleted > 0:
+                logger.info(f"命名空间 {namespace_name}/{user_id} 清理完成：删除 {deleted} 条（保留天数={max_age_days}，上限={max_items}）")
+            return deleted
+
+        except Exception as e:
+            logger.error(f"命名空间 {namespace_name}/{user_id} 清理失败：{e}")
+            return 0
+
+    def prune_all_namespaces(
+            self,
+            user_id: str,
+            namespaces: Optional[List[str]] = None,
+    ) -> Dict[str, int]:
+        """批量清理所有可清理命名空间
+
+        Args:
+            user_id: 用户ID
+            namespaces: 要清理的命名空间列表（默认清理全部四个）
+
+        Returns:
+            各命名空间的删除条目数
+        """
+        if namespaces is None:
+            namespaces = ["symptom_events", "medication_events", "bad_cases", "query_history"]
+
+        results = {}
+        for ns in namespaces:
+            results[ns] = self.prune_namespace(ns, user_id)
+
+        total = sum(results.values())
+        if total > 0:
+            logger.info(f"用户 {user_id} 全量清理完成：{results}（共 {total} 条）")
+        return results
+
+    def prune_all_users(
+            self,
+            user_ids: Optional[List[str]] = None,
+            namespaces: Optional[List[str]] = None,
+    ) -> Dict[str, Dict[str, int]]:
+        """清理多个用户的过期数据（管理员接口）
+
+        Args:
+            user_ids: 用户ID列表（None=遍历所有用户）
+            namespaces: 要清理的命名空间列表
+
+        Returns:
+            {user_id: {namespace: deleted_count}}
+        """
+        if user_ids is None:
+            # 尝试从各命名空间中收集所有 user_id
+            user_ids = set()
+            for ns in (namespaces or ["symptom_events", "medication_events", "bad_cases", "query_history"]):
+                try:
+                    # PostgresStore.list_namespaces 可能不支持，这里用 search 近似
+                    # 遍历已知用户（从 query_history 中提取）
+                    items = self.store.search(("query_history",))
+                    for item in items:
+                        if item.value and item.value.get("user_id"):
+                            user_ids.add(item.value["user_id"])
+                except Exception:
+                    pass
+            user_ids = list(user_ids)
+
+        results = {}
+        for uid in user_ids:
+            results[uid] = self.prune_all_namespaces(uid, namespaces)
+        return results
 
     def close(self):
         """关闭连接池 (可选，通常在服务停止时调用)"""
@@ -210,6 +360,10 @@ class LongTermMemoryManager:
             if symptom_name and item.value.get("symptom") != symptom_name:
                 continue
             records.append(item.value)
+            # v9.2 漏洞3修复：提前截断，避免全量加载后排序
+            # 最多读取 limit * 3 条（留余量给排序过滤），减少内存占用
+            if len(records) >= limit * 3:
+                break
 
         records.sort(key=lambda x: x.get("onset_ts", 0), reverse=True)
         return records[:limit]
@@ -368,6 +522,9 @@ class LongTermMemoryManager:
             if reviewed is not None and item.value.get("reviewed") != reviewed:
                 continue
             records.append(item.value)
+            # v9.2 漏洞3修复：提前截断
+            if len(records) >= limit * 2:
+                break
 
         records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return records[:limit]
@@ -454,6 +611,9 @@ class LongTermMemoryManager:
             if drug and item.value.get("drug") != drug:
                 continue
             records.append(item.value)
+            # v9.2 漏洞3修复：提前截断
+            if len(records) >= limit * 2:
+                break
 
         records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return records[:limit]

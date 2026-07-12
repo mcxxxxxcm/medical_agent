@@ -567,37 +567,23 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
 def _llm_route(question: str) -> str:
     """本地模型路由：使用 qwen2.5:3b 做意图分类
 
-    设计权衡：
-        路由是管道关键决策点，3B 模型准确率不如主模型。
-        但三层路由策略（规则→上下文→LLM）已覆盖大部分场景，
-        LLM 只处理规则和上下文都无法判断的模糊首次提问，
-        因此 3B 模型的误分类影响有限。
-        暂时使用本地模型以减少 API 调用，后续可切换为主模型。
+    v9.2: 使用 invoke_structured 三层降级策略（Tool Calling → JSON Mode → 纯文本）
+    + RouterOutput Pydantic 校验。
     """
     try:
-        llm = get_local_llm()  # 本地模型（qwen2.5:3b）
-        prompt = f"""请判断以下用户问题的类型，只返回类型名称。
+        from app.graph.nodes.prompts import ROUTER_PROMPT
+        from app.graph.nodes.models import RouterOutput
+        from app.graph.nodes.structured_output import invoke_structured
 
-用户问题：{question}
+        llm = get_local_llm_json()
+        messages = ROUTER_PROMPT.format_messages(question=question)
 
-类型定义：
-- symptom：症状咨询、用药建议、身体不适相关（如"头痛怎么办"、"布洛芬没用换什么药"、"我发烧了"）
-- knowledge：医学知识查询（如"什么是高血压"、"糖尿病的症状有哪些"）
-- general：问候、闲聊、非医疗问题（如"你好"、"谢谢"、"你是谁"）
-
-注意：即使用户没有直接提到症状，但如果问题与用药、治疗、身体不适相关，应归为symptom。
-
-只返回类型名称（symptom/knowledge/general）："""
-
-        raw_response = llm.invoke(prompt)
-        raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
-        parsed_route = parse_router_output(raw_text)
-        if parsed_route:
-            logger.info(f"本地模型路由结果：{parsed_route}（模型输出：{raw_text.strip()}）")
-            return parsed_route
-        else:
-            logger.warning(f"本地模型路由解析失败，兜底 general，模型输出：{raw_text}")
-            return "general"
+        result: RouterOutput = invoke_structured(
+            llm, messages, RouterOutput, max_attempts=2,
+        )
+        route = result.question_type
+        logger.info(f"本地模型路由结果（Pydantic校验通过）：{route}")
+        return route
 
     except Exception as e:
         logger.warning(f"本地模型路由失败，兜底 general：{e}")
@@ -1303,15 +1289,16 @@ def _build_followup_hints(symptoms: Optional[Dict[str, Any]]) -> str:
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
     """构建 RAG 问答提示词（三层上下文架构）
 
-    L1 永久层：用户档案（冻结层，永不压缩）
-    L2 会话层：临床状态快照（JSON结构化，增量更新）
-    L3 短期窗口：对话历史（滑动窗口，最近3轮）
+    v9.1: 使用 ChatPromptTemplate 构建，通过 format_messages 得到消息列表，
+    再传给 llm.invoke(messages)，而非手动拼接 f-string。
     """
+    from app.graph.nodes.prompts import RAG_ANSWER_PROMPT, RAG_ANSWER_NO_CONTEXT_PROMPT
+
     # L2 会话层：临床状态快照
     checkpoint = state.get("clinical_checkpoint")
     checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
 
-    # L1 永久层：用户档案独立注入，确保摘要时不会丢失
+    # L1 永久层：用户档案独立注入
     frozen_profile_section = ""
     profile_text = get_user_context_prompt(user_profile)
     if profile_text:
@@ -1322,31 +1309,33 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
 
     if not retrieved_docs:
-        return f"{frozen_profile_section}{history_section}请回答以下问题：\n{question}"
+        # 无检索文档时的降级 Prompt
+        messages = RAG_ANSWER_NO_CONTEXT_PROMPT.format_messages(
+            frozen_profile_section=frozen_profile_section,
+            history_section=history_section,
+            question=question,
+        )
+        return messages
 
     formatted_docs = []
     for i, doc in enumerate(retrieved_docs, 1):
         source = doc.metadata.get("source", "未知来源")
         content = doc.page_content
-        # 父子索引：parent 文档完整注入，不再截断
-        # child chunk ~150 字符，parent ~400 字符，均远小于 LLM 上下文窗口
-        # 仅对异常长文档做安全兜底（>2000 字符时截断）
         if len(content) > 2000:
             content = content[:2000] + "..."
-        # 当前轮文档存入 Redis，供后续轮次 MicroCompact 引用
         doc_id = f"{uuid.uuid4().hex[:8]}"
         try:
             from app.cache.redis_cache import get_cache
-            get_cache().store_doc(doc_id, doc.page_content, source)  # 存完整原文
+            get_cache().store_doc(doc_id, doc.page_content, source)
         except Exception:
-            pass  # 存储失败不影响当前轮回答
+            pass
         formatted_docs.append(f"[{source}]\n{content}")
     context = "\n\n".join(formatted_docs)
 
     # 生成追问引导
     followup = _build_followup_hints(symptoms)
 
-    # 时间差事实注入（代码层计算，绝不让LLM算时间差）
+    # 时间差事实注入（代码层计算）
     time_facts_section = ""
     if checkpoint and checkpoint.get("symptom_onset_dates"):
         system_now = datetime.now()
@@ -1376,25 +1365,30 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         if time_facts:
             time_facts_section = f"【时间事实（系统计算，无需推算）】\n" + "\n".join(time_facts) + "\n"
 
-    # L2 快照独立注入，确保即使对话历史为空也可见
+    # L2 快照独立注入
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
+    followup_section = f"；追问：{followup}" if followup else ""
 
-    return f"""你是医疗助手，严格基于检索到的文档回答问题。{frozen_profile_section}
-【文档】
-{context}
+    # 使用 ChatPromptTemplate 构建
+    messages = RAG_ANSWER_PROMPT.format_messages(
+        frozen_profile_section=frozen_profile_section,
+        context=context,
+        time_facts_section=time_facts_section,
+        checkpoint_section=checkpoint_section,
+        history_section=history_section,
+        question=question,
+        followup_section=followup_section,
+    )
+    return messages
 
-{time_facts_section}{checkpoint_section}{history_section}【问题】{question}
 
-要求：
-1. 严格基于【文档】内容回答，不得编造文档中未提及的药物名称、剂量、治疗方案
-2. 如文档中无相关信息，明确告知"根据现有资料无法回答"，不要用自身知识补充
-3. 引用药物/剂量时，必须与文档原文一致
-4. 结合用户之前提到的信息（如用药、症状等）做个性化建议
-5. 回复结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{f"；追问：{followup}" if followup else ""}"""
+def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState):
+    """构建直接回答提示词（三层上下文架构）
 
+    v9.1: 使用 ChatPromptTemplate 构建。
+    """
+    from app.graph.nodes.prompts import DIRECT_ANSWER_PROMPT
 
-def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState) -> str:
-    """构建直接回答提示词（三层上下文架构）"""
     checkpoint = state.get("clinical_checkpoint")
     checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
 
@@ -1411,15 +1405,14 @@ def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, A
     history_text = get_conversation_history_text(state, max_rounds=2)
     history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
 
-    return f"""你是一个友好的医疗助手。
-
-{frozen_profile_section}{checkpoint_section}{history_section}【用户问题】
-{question}
-
-请简洁友好地回复用户。如果是问候语，请热情回复。如果是感谢，请礼貌回应。
-如果是追问，必须结合对话历史中提到的症状和药物来回答，不要脱离上文。
-回复要简短，不要超过50个字。
-"""
+    # 使用 ChatPromptTemplate 构建
+    messages = DIRECT_ANSWER_PROMPT.format_messages(
+        frozen_profile_section=frozen_profile_section,
+        checkpoint_section=checkpoint_section,
+        history_section=history_section,
+        question=question,
+    )
+    return messages
 
 
 @timing_decorator("答案生成")
@@ -1477,6 +1470,8 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
         llm = get_llm()
         start_time = time.time()
+        # v9.1: prompt 现在是 List[BaseMessage]（ChatPromptTemplate 产出）
+        # ChatOpenAI.invoke() 同时支持 str 和 List[BaseMessage]
         response = llm.invoke(prompt)
         answer = response.content.strip()
         generation_time = (time.time() - start_time) * 1000
@@ -1557,32 +1552,18 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     if risk_tags or status == "revise":
         try:
+            from app.graph.nodes.prompts import SAFETY_CHECK_PROMPT
+            from app.graph.nodes.structured_output import invoke_structured
             llm = get_local_llm_json()
-            llm_prompt = f"""你是一位医疗安全审核专家，负责审核医疗建议的安全性。
-【待审核内容】
-{revised_answer}
 
-【用户临床快照】
-{clinical_checkpoint or '无'}
+            # v9.2: ChatPromptTemplate + invoke_structured 三层降级
+            messages = SAFETY_CHECK_PROMPT.format_messages(
+                answer=revised_answer,
+                clinical_snapshot=clinical_checkpoint or "无",
+            )
 
-请判断：
-1. 用药安全：是否存在超说明书用药、禁忌人群用药或剂量错误
-2. 风险等级：high/medium/low
-3. 是否需要紧急就医
-
-【输出格式】
-必须输出合法的 JSON 对象：
-- is_safe: 布尔值
-- risk_level: "low"/"medium"/"high"
-- detected_issues: 字符串数组
-- requires_medical_attention: 布尔值
-
-只输出 JSON："""
-
-            result: SafetyCheckOutput = invoke_json_once_with_fallback(
-                llm,
-                llm_prompt,
-                SafetyCheckOutput,
+            result: SafetyCheckOutput = invoke_structured(
+                llm, messages, SafetyCheckOutput,
             )
 
             warnings = result.detected_issues.copy()
@@ -1710,31 +1691,15 @@ def profile_extraction_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {}
 
     try:
-        llm = get_local_llm_json()  # JSON Mode：Ollama response_format=json_object
+        from app.graph.nodes.prompts import PROFILE_EXTRACTION_PROMPT
+        from app.graph.nodes.structured_output import invoke_structured
+        llm = get_local_llm_json()
 
-        prompt = f"""从以下用户问题中提取用户的个人信息。
+        # v9.2: ChatPromptTemplate + invoke_structured 三层降级
+        messages = PROFILE_EXTRACTION_PROMPT.format_messages(question=question)
 
-用户问题：{question}
-
-请提取姓名、年龄、性别、过敏史等信息。
-如果问题中没有提到某项信息，该字段设为 null。
-
-【输出格式】
-必须输出合法的 JSON 对象，字段如下：
-- name: 姓名（字符串或null）
-- age: 年龄（整数或null）
-- gender: 性别（字符串或null）
-- allergies: 过敏史（数组，如["青霉素"]，或null）
-
-示例输出：
-{{"name": "张三", "age": 30, "gender": "男", "allergies": ["青霉素"]}}
-
-只输出 JSON，不要输出任何其他内容："""
-
-        result: ProfileExtractionOutput = invoke_json_once_with_fallback(
-            llm,
-            prompt,
-            ProfileExtractionOutput,
+        result: ProfileExtractionOutput = invoke_structured(
+            llm, messages, ProfileExtractionOutput,
         )
 
         # 过滤掉null值
@@ -2043,63 +2008,53 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     else:
         # ===== 步骤1：追问 → 强制重写 + 问题拆解 =====
         try:
-            llm = get_local_llm()
+            from app.graph.nodes.prompts import QUERY_REWRITE_PROMPT
+            from app.graph.nodes.models import QueryRewriteOutput
+            from app.graph.nodes.structured_output import invoke_structured
+
+            llm = get_local_llm_json()
             history_summary = _build_rewrite_context(messages)
 
-            rewrite_prompt = f"""将追问补全为自包含问题，从历史中提取症状/药物补入。输出严格两行：
+            # v9.2: ChatPromptTemplate + invoke_structured 三层降级
+            messages_prompt = QUERY_REWRITE_PROMPT.format_messages(
+                history_summary=history_summary,
+                question=question,
+            )
 
-历史：
-{history_summary}
+            result: QueryRewriteOutput = invoke_structured(
+                llm, messages_prompt, QueryRewriteOutput, max_attempts=2,
+            )
 
-追问：{question}
-
-FINAL: <含上下文补全的完整问题>
-SEARCH: <检索关键词 空格分隔>
-
-示例：追问"还有其他什么可以吃吗？"（历史提到头痛用布洛芬）
-→ FINAL: 缓解头痛除了布洛芬还有什么药？
-SEARCH: 头痛 缓解 药物"""
-
-            raw_response = llm.invoke(rewrite_prompt)
-            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+            # Pydantic 校验通过，直接使用结构化字段
+            parsed_final = result.final_question
+            parsed_search = result.search_keywords
 
             # v9.0: Token 用量自动采集
             try:
                 from app.core.token_tracker import track_tokens
                 track_tokens(
                     node_name="查询重写",
-                    response=raw_response,
+                    response=result,  # Pydantic 对象无 response_metadata，跳过
                     request_id=state.get("request_id", ""),
                     thread_id=state.get("thread_id", ""),
                 )
             except Exception:
                 pass
 
-            # 解析 FINAL 和 SEARCH
-            final_match = re.search(r"FINAL:\s*(.+)", raw_text, re.IGNORECASE)
-            search_match = re.search(r"SEARCH:\s*(.+)", raw_text, re.IGNORECASE)
-
-            if final_match:
-                parsed_final = final_match.group(1).strip()
-                if parsed_final and not is_same_query(parsed_final, question):
-                    final_question = parsed_final
-                    logger.info(f"重写完成：{question[:30]} -> {final_question[:50]}")
-                else:
-                    logger.info(f"重写结果与原问题一致，保留原问题：{question[:30]}")
-                    final_question = question
+            if parsed_final and not is_same_query(parsed_final, question):
+                final_question = parsed_final
+                logger.info(f"重写完成（Pydantic校验通过）：{question[:30]} -> {final_question[:50]}")
             else:
-                logger.warning(f"FINAL 解析失败，保留原问题")
+                logger.info(f"重写结果与原问题一致，保留原问题：{question[:30]}")
                 final_question = question
 
-            if search_match:
-                search_query = search_match.group(1).strip()
-                if search_query:
-                    rewritten_query = search_query
-                    logger.info(f"检索子查询：{rewritten_query}")
+            if parsed_search:
+                rewritten_query = parsed_search
+                logger.info(f"检索子查询：{rewritten_query}")
             else:
                 # 兜底：用 FINAL 或原问题做检索
                 rewritten_query = final_question
-                logger.info(f"SEARCH 解析失败，用 FINAL/原问题做检索")
+                logger.info(f"SEARCH 为空，用 FINAL/原问题做检索")
 
             # 重写守卫：丢失核心信息时回退
             if final_question != question:
@@ -2256,6 +2211,165 @@ def _merge_onset_dates(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[s
             merged[name] = info
             logger.debug(f"首发时间更新：{name} ts {existing_ts} → {new_ts}（取更早记录）")
     return merged
+
+
+# ===== v9.2 漏洞2修复：临床快照字段级合并策略 =====
+
+# 快照字段上限（防止 LLM 编造过多条目）
+_CHECKPOINT_FIELD_LIMITS = {
+    "medication_history": 15,    # 最多 15 条用药记录
+    "red_flags": 10,             # 最多 10 个高危症状
+    "symptom_timeline": 20,      # 最多 20 条时间线
+    "confirmed_facts": 20,       # 最多 20 条已确认事实
+    "ruled_out": 15,             # 最多 15 条排除项
+}
+
+
+def _merge_medication_history(
+    existing: Optional[List[Dict]], new: Optional[List[Dict]]
+) -> List[Dict]:
+    """合并用药记录：追加去重，不丢失旧记录
+
+    策略：
+        - 旧记录中已有的药物（按 drug 名称匹配），保留旧的，仅补充新的 dosage/effect
+        - 新记录中出现的旧药物的新信息（如更换剂量），更新旧记录的对应字段
+        - 全新药物追加到末尾
+    """
+    if not existing:
+        return (new or [])[:_CHECKPOINT_FIELD_LIMITS["medication_history"]]
+    if not new:
+        return existing[:_CHECKPOINT_FIELD_LIMITS["medication_history"]]
+
+    # 以 drug 名称为 key 的索引
+    existing_map = {}
+    for med in existing:
+        drug_name = (med or {}).get("drug", "")
+        if drug_name:
+            existing_map[drug_name.lower()] = med
+
+    merged = list(existing)  # 以旧记录为基础
+    for med in (new or []):
+        if not isinstance(med, dict) or not med.get("drug"):
+            continue
+        drug_name = med["drug"].lower()
+        if drug_name in existing_map:
+            # 已有药物：仅补充空字段（不覆盖非空值）
+            old_med = existing_map[drug_name]
+            for key in ("dosage", "effect", "frequency"):
+                if not old_med.get(key) and med.get(key):
+                    old_med[key] = med[key]
+        else:
+            # 新药物：追加
+            merged.append(med)
+
+    # 上限裁剪
+    return merged[:_CHECKPOINT_FIELD_LIMITS["medication_history"]]
+
+
+def _merge_list_field(
+    existing: Optional[List], new: Optional[List], field_name: str = ""
+) -> List:
+    """通用列表合并：追加去重（基于字符串规范化比较）
+
+    策略：旧列表为基础，新列表中不在旧列表的条目追加
+    适用于：red_flags, ruled_out, confirmed_facts
+    """
+    limit = _CHECKPOINT_FIELD_LIMITS.get(field_name, 20)
+    if not existing:
+        return (new or [])[:limit]
+    if not new:
+        return existing[:limit]
+
+    # 规范化去重（忽略首尾空格和标点差异）
+    existing_set = set()
+    for item in existing:
+        normalized = str(item).strip().rstrip("。，,.")
+        existing_set.add(normalized)
+
+    merged = list(existing)
+    for item in new:
+        normalized = str(item).strip().rstrip("。，,.")
+        if normalized and normalized not in existing_set:
+            merged.append(item)
+            existing_set.add(normalized)
+
+    return merged[:limit]
+
+
+def _merge_chief_complaint(existing: Optional[str], new: Optional[str]) -> Optional[str]:
+    """合并主诉：优先保留旧主诉（不变性），仅当旧为空时用新值
+
+    设计理由：主诉是会话的锚点，一旦确定不应被后续 LLM 输出覆盖。
+    LLM 可能在后续轮次中"遗忘"或"篡改"主诉。
+    """
+    if existing and existing.strip():
+        return existing
+    return new
+
+
+def _apply_checkpoint_merge(
+    existing_checkpoint: Optional[Dict], new_checkpoint: Dict
+) -> Dict:
+    """应用字段级合并策略，防止 LLM 全量覆盖导致数据丢失
+
+    核心原则：
+        - confirmed_facts：只增不减（过敏史/既往史不可删除）
+        - medication_history：追加去重，补充空字段但不覆盖
+        - red_flags：追加去重
+        - chief_complaint：不变性（旧值优先）
+        - ruled_out：追加去重
+        - symptom_timeline：由 LLM 更新（允许修正）
+        - symptom_onset_dates：由 _merge_onset_dates 单独处理
+    """
+    if not existing_checkpoint:
+        # 首次快照，直接应用上限裁剪
+        for field, limit in _CHECKPOINT_FIELD_LIMITS.items():
+            val = new_checkpoint.get(field)
+            if isinstance(val, list) and len(val) > limit:
+                new_checkpoint[field] = val[:limit]
+                logger.info(f"快照字段 {field} 超过上限 {limit}，已裁剪")
+        return new_checkpoint
+
+    # 字段级合并
+    # 1. chief_complaint：不变性
+    new_checkpoint["chief_complaint"] = _merge_chief_complaint(
+        existing_checkpoint.get("chief_complaint"),
+        new_checkpoint.get("chief_complaint"),
+    )
+
+    # 2. medication_history：追加去重
+    new_checkpoint["medication_history"] = _merge_medication_history(
+        existing_checkpoint.get("medication_history"),
+        new_checkpoint.get("medication_history"),
+    )
+
+    # 3. red_flags：追加去重
+    new_checkpoint["red_flags"] = _merge_list_field(
+        existing_checkpoint.get("red_flags"),
+        new_checkpoint.get("red_flags"),
+        field_name="red_flags",
+    )
+
+    # 4. confirmed_facts：只增不减（关键安全性约束）
+    new_checkpoint["confirmed_facts"] = _merge_list_field(
+        existing_checkpoint.get("confirmed_facts"),
+        new_checkpoint.get("confirmed_facts"),
+        field_name="confirmed_facts",
+    )
+
+    # 5. ruled_out：追加去重
+    new_checkpoint["ruled_out"] = _merge_list_field(
+        existing_checkpoint.get("ruled_out"),
+        new_checkpoint.get("ruled_out"),
+        field_name="ruled_out",
+    )
+
+    # 6. symptom_timeline：LLM 可更新（允许修正），但需裁剪
+    timeline = new_checkpoint.get("symptom_timeline") or []
+    if len(timeline) > _CHECKPOINT_FIELD_LIMITS["symptom_timeline"]:
+        new_checkpoint["symptom_timeline"] = timeline[:_CHECKPOINT_FIELD_LIMITS["symptom_timeline"]]
+
+    return new_checkpoint
 
 
 def _has_anaphora_pattern(query: str) -> bool:
@@ -2468,70 +2582,38 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
         frozen_layer_note = "注意：用户档案信息（过敏史、既往病史等）已单独存储在冻结层（L1），不需要在快照中重复记录，但快照中应引用这些信息（如'结合用户青霉素过敏史'）。"
 
         if existing_checkpoint:
+            from app.graph.nodes.prompts import CHECKPOINT_UPDATE_PROMPT
             existing_json = json.dumps(existing_checkpoint, ensure_ascii=False, indent=2)
-            checkpoint_prompt = f"""你是一位专业的医疗信息提取助手。以下是当前的临床状态快照（JSON格式）：
-
-{existing_json}
-
-请结合以下新的对话内容，更新并扩展临床状态快照。
-
-【重要规则】
-1. 必须保留所有已有的临床细节（持续时间、药物效果等），不得遗漏
-2. 新信息与已有信息冲突时，以最新信息为准
-3. 不得编造任何未在对话中提及的信息
-4. 所有字段必须使用中文填写
-5. 如果某项信息在对话中未提及，对应字段设为null
-6. {frozen_layer_note}
-
-【输出格式】
-必须输出合法的 JSON 对象，字段如下：
-- chief_complaint: 核心主诉（字符串或null）
-- symptom_timeline: 症状时间线数组，每项含 symptom/onset/severity/evolution
-- medication_history: 用药记录数组，每项含 drug/dosage/effect
-- red_flags: 高危症状数组
-- confirmed_facts: 已确认信息数组
-- ruled_out: 已排除数组
-
-只输出 JSON，不要输出任何其他内容。
-
-对话内容：
-{messages_text}
-
-更新后的完整临床状态快照JSON："""
+            messages = CHECKPOINT_UPDATE_PROMPT.format_messages(
+                existing_snapshot=existing_json,
+                new_messages=messages_text,
+            )
         else:
-            checkpoint_prompt = f"""你是一位专业的医疗信息提取助手。请从以下医疗助手对话中提取结构化临床状态快照。
+            from app.graph.nodes.prompts import CHECKPOINT_NEW_PROMPT
+            messages = CHECKPOINT_NEW_PROMPT.format_messages(
+                new_messages=messages_text,
+            )
 
-【提取规则】
-1. 仔细提取所有临床相关信息，包括症状、用药等
-2. 不得编造任何未在对话中提及的信息
-3. 所有字段必须使用中文填写
-4. 如果某项信息在对话中未提及，对应字段设为null
-5. 症状时间线中每项必须包含：symptom（症状）、onset（发作时间）、severity（严重程度）、evolution（演变）
-6. 用药记录中每项必须包含：drug（药物）、dosage（剂量）、effect（效果）
-7. {frozen_layer_note}
-
-【输出格式】
-必须输出合法的 JSON 对象，字段如下：
-- chief_complaint: 核心主诉（字符串或null）
-- symptom_timeline: 症状时间线数组，每项含 symptom/onset/severity/evolution
-- medication_history: 用药记录数组，每项含 drug/dosage/effect
-- red_flags: 高危症状数组
-- confirmed_facts: 已确认信息数组
-- ruled_out: 已排除数组
-
-只输出 JSON，不要输出任何其他内容。
-
-对话内容：
-{messages_text}
-
-临床状态快照JSON："""
-
-        result: ClinicalCheckpointOutput = invoke_json_once_with_fallback(
-            llm,
-            checkpoint_prompt,
-            ClinicalCheckpointOutput,
+        # v9.2: invoke_structured 三层降级
+        from app.graph.nodes.structured_output import invoke_structured
+        result: ClinicalCheckpointOutput = invoke_structured(
+            llm, messages, ClinicalCheckpointOutput,
         )
         new_checkpoint = result.model_dump()
+
+        # v9.2 漏洞2修复：字段级合并策略，防止 LLM 全量覆盖导致数据丢失
+        # 核心安全约束：confirmed_facts 只增不减，chief_complaint 不变性，
+        # medication_history 追加去重，red_flags 追加去重
+        new_checkpoint = _apply_checkpoint_merge(existing_checkpoint, new_checkpoint)
+        merge_log_parts = []
+        if existing_checkpoint:
+            for field in ("chief_complaint", "medication_history", "red_flags", "confirmed_facts", "ruled_out"):
+                old_len = len(existing_checkpoint.get(field) or []) if isinstance(existing_checkpoint.get(field), list) else (1 if existing_checkpoint.get(field) else 0)
+                new_len = len(new_checkpoint.get(field) or []) if isinstance(new_checkpoint.get(field), list) else (1 if new_checkpoint.get(field) else 0)
+                if old_len != new_len:
+                    merge_log_parts.append(f"{field}:{old_len}→{new_len}")
+            if merge_log_parts:
+                logger.info(f"快照字段合并变更：{', '.join(merge_log_parts)}")
 
         # 合并症状首发日期（代码层维护，LLM 不参与计算）
         # 关键：同一症状取最早的首发时间（ts 最小值），而非简单覆盖

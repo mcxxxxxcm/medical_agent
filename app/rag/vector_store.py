@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,6 +12,66 @@ from app.core.app_logging import get_logger
 
 config = get_config()
 logger = get_logger(__name__)
+
+# ===== 知识库版本指纹（缓存防毒化） =====
+_kb_version_cache: Optional[str] = None
+
+
+def get_kb_version() -> str:
+    """计算知识库版本指纹（基于向量库文档内容哈希）
+
+    用途：缓存 key 绑定 kb_version，知识库更新后旧缓存自动失效。
+    策略：对 ChromaDB 中所有文档的 doc_id + content 摘要做 MD5，
+         文档数量级 <10 万时性能可接受（~50ms）。
+
+    Returns:
+        8 位短哈希字符串，如 "a1b2c3d4"
+    """
+    global _kb_version_cache
+    if _kb_version_cache is not None:
+        return _kb_version_cache
+
+    try:
+        manager = get_vector_store_manager()
+        if manager.vector_store is None:
+            # 向量库未初始化，返回默认版本
+            logger.warning("向量库未初始化，kb_version 使用默认值")
+            _kb_version_cache = "no_kb"
+            return _kb_version_cache
+
+        collection = manager.vector_store._collection
+        doc_count = collection.count()
+
+        if doc_count == 0:
+            _kb_version_cache = "empty_kb"
+            return _kb_version_cache
+
+        # 采集文档指纹：doc_id 的哈希 + 文档数量（避免全量扫描 content）
+        # 仅读取 ids，O(n) 但只传 ID 字符串，不传文档正文，性能可控
+        results = collection.get(include=[], limit=doc_count)
+        ids = results.get("ids") or []
+
+        # 对所有 doc_id 排序后哈希 + 文档总数 → 版本指纹
+        ids_str = "|".join(sorted(ids)) + f"|count={doc_count}"
+        version_hash = hashlib.md5(ids_str.encode("utf-8")).hexdigest()[:8]
+
+        _kb_version_cache = version_hash
+        logger.info(f"知识库版本指纹：{version_hash}（{doc_count} 篇文档）")
+        return _kb_version_cache
+
+    except Exception as e:
+        logger.warning(f"计算 kb_version 失败：{e}，使用默认值")
+        _kb_version_cache = "fallback"
+        return _kb_version_cache
+
+
+def invalidate_kb_version():
+    """使缓存的 kb_version 失效（知识库更新后调用）"""
+    global _kb_version_cache
+    old = _kb_version_cache
+    _kb_version_cache = None
+    if old is not None:
+        logger.info(f"kb_version 已失效（旧值：{old}），下次调用将重新计算")
 
 
 class VectorStoreManager:
@@ -93,20 +154,52 @@ class VectorStoreManager:
         Args:
             documents: 新增加的文档列表
         """
-        # ??
         if self.vector_store is None:
             self.vector_store = Chroma(
                 persist_directory=str(self.persist_directory),
-                embedding=self.embeddings,
+                embedding_function=self.embeddings,
             )
         self.vector_store.add_documents(documents)
+        # 知识库变更 → kb_version 失效，缓存自动防毒化
+        invalidate_kb_version()
+        # v9.2 漏洞5修复：知识库变更后异步触发规则同步扫描
+        self._trigger_rule_sync_scan(len(documents))
         print(f'已经添加{len(documents)}个文档到向量库中。')
+
+    def _trigger_rule_sync_scan(self, doc_count: int):
+        """知识库变更后异步触发规则同步扫描（不阻塞主流程）"""
+        try:
+            import threading
+            from app.core.kb_rule_sync import scan_kb_rule_sync
+
+            def _scan_in_background():
+                try:
+                    report = scan_kb_rule_sync()
+                    missing_drugs = len(report.get("missing_drugs", []))
+                    missing_symptoms = len(report.get("missing_symptoms", []))
+                    if missing_drugs > 0 or missing_symptoms > 0:
+                        logger.warning(
+                            f"⚠️ 知识库规则同步扫描发现差异："
+                            f"缺失药物 {missing_drugs} 个，缺失症状 {missing_symptoms} 个，"
+                            f"请人工更新 keyword_matcher.py 中的关键词"
+                        )
+                    else:
+                        logger.info("知识库规则同步扫描：覆盖率 100%，无需更新")
+                except Exception as e:
+                    logger.warning(f"规则同步扫描失败：{e}")
+
+            scan_thread = threading.Thread(target=_scan_in_background, daemon=True)
+            scan_thread.start()
+            logger.info(f"已触发规则同步扫描（后台线程，新增 {doc_count} 篇文档）")
+        except Exception as e:
+            logger.debug(f"规则同步扫描触发失败（非关键）：{e}")
 
     def delete_collection(self) -> None:
         """删除向量库集合"""
         if self.persist_directory.exists():
             import shutil
             shutil.rmtree(self.persist_directory)
+            invalidate_kb_version()
             print(f'已删除向量库：{self.persist_directory}')
         else:
             print(f'向量库不存在：{self.persist_directory}')

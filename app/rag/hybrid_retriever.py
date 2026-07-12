@@ -355,10 +355,14 @@ class HybridRetriever(BaseRetriever):
         # Dense Top-1 相似度极高 → 向量检索已找到近乎完美匹配，Rerank 不会改变结果
         # 阈值说明：ChromaDB cosine distance，0.0=完全相同，<0.08 对应 cosine_similarity>0.92
         # 注意：top1_dense_score >= 0（distance=0.0 是完美匹配，必须触发跳过）
-        HIGH_CONFIDENCE_THRESHOLD = 0.08
+        # v9.2 漏洞4修复：固定阈值 → 自适应阈值（基于百分位统计）
+        from app.core.adaptive_threshold import get_adaptive_threshold
+        at = get_adaptive_threshold()
+        at.observe("HIGH_CONFIDENCE_THRESHOLD", top1_dense_score)  # 记录观察值
+        HIGH_CONFIDENCE_THRESHOLD = at.get("HIGH_CONFIDENCE_THRESHOLD")
         if 0 <= top1_dense_score < HIGH_CONFIDENCE_THRESHOLD:
             logger.info(
-                f"Dense Top-1 置信度极高（distance={top1_dense_score:.4f} < {HIGH_CONFIDENCE_THRESHOLD}），跳过重排"
+                f"Dense Top-1 置信度极高（distance={top1_dense_score:.4f} < {HIGH_CONFIDENCE_THRESHOLD:.4f}），跳过重排"
             )
             return True
 
@@ -498,12 +502,21 @@ class HybridRetriever(BaseRetriever):
             try:
                 reranker = get_reranker()
                 rerank_start = time.time()
+                # v9.2 漏洞4修复：Reranker 阈值自适应
+                from app.core.adaptive_threshold import get_adaptive_threshold
+                at = get_adaptive_threshold()
+                # 观察 reranker 最高分（后续校准用）
+                adaptive_reranker_threshold = at.get("RERANKER_THRESHOLD")
                 final_docs = reranker.rerank(
                     query=query,
                     documents=reranker_input,
                     top_k=self.k,
-                    score_threshold=config.RERANKER_THRESHOLD
+                    score_threshold=adaptive_reranker_threshold
                 )
+                # 记录 reranker 评分观察值（取最高分）
+                if final_docs:
+                    top_rerank_score = max(d.metadata.get("relevance_score", 0) for d in final_docs) if final_docs else 0
+                    at.observe("RERANKER_THRESHOLD", top_rerank_score)
                 rerank_ms = (time.time() - rerank_start) * 1000
                 logger.info(f"Reranker 重排序：{len(reranker_input)} -> {len(final_docs)}")
             except Exception as e:

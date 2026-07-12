@@ -129,6 +129,8 @@ class RedisCache:
     def _generate_key(self, query: str, **kwargs) -> str:
         """生成缓存键
 
+        v9.2 漏洞1修复：自动注入 kb_version，知识库更新后旧缓存 key 不再匹配
+
         Args:
             query: 查询文本
             **kwargs: 其他参数
@@ -136,6 +138,14 @@ class RedisCache:
         Returns:
             带前缀的缓存键
         """
+        # 自动注入 kb_version（如未显式传入）
+        if "kb_version" not in kwargs:
+            try:
+                from app.rag.vector_store import get_kb_version
+                kwargs["kb_version"] = get_kb_version()
+            except Exception:
+                kwargs["kb_version"] = "unknown"
+
         key_parts = [query]
         for k, v in sorted(kwargs.items()):
             if v is not None:

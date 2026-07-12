@@ -1,9 +1,11 @@
 """LangGraph 节点模块包
 
 子模块划分：
-    helpers.py   — 工具函数和常量（装饰器、JSON 解析、LLM 回退）
-    models.py    — Pydantic 结构化输出模型
-    nodes.py     — 主模块（所有节点函数，保持向后兼容）
+    helpers.py           — 工具函数和常量（装饰器、JSON 解析、LLM 回退）
+    models.py            — Pydantic 结构化输出模型
+    nodes.py             — 主模块（所有节点函数，保持向后兼容）
+    prompts.py           — ChatPromptTemplate 集中管理
+    structured_output.py — 结构化输出三层降级策略（Tool Calling → JSON Mode → 纯文本）
 
 所有公开接口通过本包重导出，外部代码可继续使用：
     from app.graph.nodes import router_node, ...
@@ -20,6 +22,9 @@ from .helpers import (
     timing_decorator,
     _coerce_list_fields,
 )
+
+# 从 structured_output 子模块导出
+from .structured_output import invoke_structured
 
 # 从 models 子模块导出
 from .models import (

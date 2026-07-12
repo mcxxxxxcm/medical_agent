@@ -213,8 +213,14 @@ def _coerce_list_fields(data: Dict[str, Any]) -> None:
             data[field] = flattened
 
 
-def invoke_structured_with_fallback(llm, prompt: str, schema: type[BaseModel]) -> BaseModel:
-    """优先结构化输出，失败时回退到纯文本+JSON提取，避免重复多次调用模型"""
+def invoke_structured_with_fallback(llm, prompt, schema: type[BaseModel]) -> BaseModel:
+    """优先结构化输出，失败时回退到纯文本+JSON提取，避免重复多次调用模型
+
+    Args:
+        llm: LangChain LLM 实例
+        prompt: 字符串或 List[BaseMessage]（ChatPromptTemplate 产出）
+        schema: Pydantic 模型类
+    """
     try:
         structured_llm = llm.with_structured_output(schema)
         return structured_llm.invoke(prompt)
@@ -230,24 +236,55 @@ def invoke_structured_with_fallback(llm, prompt: str, schema: type[BaseModel]) -
 
 def invoke_json_once_with_fallback(
         llm,
-        prompt: str,
+        prompt,
         schema: type[BaseModel],
         fallback_parser=None,
+        max_attempts: int = 1,
 ) -> BaseModel:
-    """单次模型调用后在本地完成 JSON / 文本回退解析。"""
-    raw_response = llm.invoke(prompt)
-    raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+    """单次模型调用后在本地完成 JSON / 文本回退解析
 
-    parsed = extract_json_block(raw_text)
-    if parsed is not None:
+    v9.1: prompt 参数支持 str 和 List[BaseMessage]（ChatPromptTemplate 产出）。
+    新增 max_attempts 参数，支持重试。
+
+    Args:
+        llm: LangChain LLM 实例
+        prompt: 字符串或 List[BaseMessage]（ChatPromptTemplate 产出）
+        schema: Pydantic 模型类
+        fallback_parser: 可选的本地回退解析器
+        max_attempts: 最大重试次数（默认1次）
+    """
+    last_error = None
+    for attempt in range(max_attempts):
         try:
-            return schema.model_validate(parsed)
-        except Exception as schema_error:
-            logger.warning(f"{schema.__name__} JSON 校验失败，尝试本地规则解析：{schema_error}")
+            raw_response = llm.invoke(prompt)
+            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
 
-    if fallback_parser is not None:
-        payload = fallback_parser(raw_text)
-        return schema.model_validate(payload)
+            parsed = extract_json_block(raw_text)
+            if parsed is not None:
+                try:
+                    return schema.model_validate(parsed)
+                except Exception as schema_error:
+                    if attempt < max_attempts - 1:
+                        logger.warning(f"{schema.__name__} JSON 校验失败（第{attempt+1}次），重试：{schema_error}")
+                        last_error = schema_error
+                        continue
+                    logger.warning(f"{schema.__name__} JSON 校验失败，尝试本地规则解析：{schema_error}")
+                    last_error = schema_error
 
-    raise ValueError(f"{schema.__name__} 单次调用本地解析失败，模型原始输出：{raw_text}")
+            if fallback_parser is not None:
+                payload = fallback_parser(raw_text)
+                return schema.model_validate(payload)
+
+            if attempt < max_attempts - 1:
+                logger.warning(f"{schema.__name__} 第{attempt+1}次解析失败，重试")
+                continue
+
+        except Exception as e:
+            if attempt < max_attempts - 1:
+                logger.warning(f"{schema.__name__} 第{attempt+1}次调用失败，重试：{e}")
+                last_error = e
+                continue
+            last_error = e
+
+    raise ValueError(f"{schema.__name__} 解析失败（{max_attempts}次尝试），最后错误：{last_error}")
 
