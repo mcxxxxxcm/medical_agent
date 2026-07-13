@@ -2,15 +2,29 @@
 
 ## v9.2 - 时间退化风险修复（5 项安全加固）
 
-### 🔴 漏洞1：语义缓存毒化（最高优先级）
+### 🔴 漏洞1：语义缓存毒化（最高优先级）✅ 已修复
 
 **问题**：语义缓存 key 仅含 `md5(query)`，无知识库版本绑定。知识库更新后旧缓存仍返回过期答案 → 医疗安全风险
 - 衰减速度：1~2 周
 - 安全影响：⚠️ 用药剂量/禁忌症过期
 
-**修复计划**：缓存 key 加入 `kb_version`，知识库更新自动失效旧缓存
+**修复**：
 
-### 🔴 漏洞2：临床快照状态腐烂
+1. **`vector_store.py` 新增 `get_kb_version()`**：基于 ChromaDB 所有 doc_id 排序哈希 + 文档数量生成 8 位版本指纹
+   - 首次调用计算并缓存，后续 O(1) 读取
+   - `add_documents()` / `delete_collection()` 后自动调用 `invalidate_kb_version()` 使指纹失效
+   - 知识库更新 → kb_version 变化 → 旧缓存 key 不再匹配 → 自动失效
+
+2. **`semantic_cache.py` 修复**：
+   - `set()`：缓存 key 从 `md5(query)` 改为 `md5(query:kb_version)`，写入时记录 `kb_version`
+   - `get()`：命中相似查询后校验 `cached_kb_version == current_kb_version`，不匹配则删除过期条目并 miss
+
+3. **`redis_cache.py` 修复**：
+   - `_generate_key()`：自动注入 `kb_version` 到 key 哈希输入，L0 检索缓存同样防毒化
+
+**效果**：知识库每次更新后，L0（Redis 缓存）和 L2（语义缓存）自动失效，不再返回过期医疗答案
+
+### 🔴 漏洞2：临床快照状态腐烂 ✅ 已修复
 
 **问题**：`clinical_checkpoint` 由 LLM 增量更新，无字段级合并策略，`medication_history`/`red_flags` 被全量覆盖
 - LLM 可能遗忘已有用药记录、篡改 chief_complaint、凭空编造药物
@@ -18,25 +32,77 @@
 - 衰减速度：2~4 周
 - 安全影响：⚠️ 过敏史丢失 → 用药安全风险
 
-**修复计划**：字段级合并策略 + 快照字段上限 + 关键字段不变性约束
+**修复**：
 
-### 🟡 漏洞3：PostgresStore Append-Only 无界膨胀
+1. **字段级合并策略**（`_apply_checkpoint_merge()`）：
+   - `chief_complaint`：不变性约束（旧值优先，LLM 不可覆盖）
+   - `medication_history`：追加去重（按 drug 名称匹配，旧记录为基础，仅补充空字段）
+   - `red_flags`：追加去重（规范化字符串比较，忽略标点差异）
+   - `confirmed_facts`：**只增不减**（过敏史/既往史不可被 LLM 删除，关键安全约束）
+   - `ruled_out`：追加去重
+   - `symptom_timeline`：LLM 可更新（允许修正），但需裁剪
+
+2. **字段上限**（`_CHECKPOINT_FIELD_LIMITS`）：
+   - medication_history ≤ 15, red_flags ≤ 10, symptom_timeline ≤ 20, confirmed_facts ≤ 20, ruled_out ≤ 15
+   - 防止 LLM 编造过多条目导致 Prompt token 膨胀
+
+3. **合并变更日志**：每次合并后记录字段条目数变化，便于审计
+
+**效果**：过敏史/既往史不会因 LLM "遗忘" 而丢失，用药记录不会因全量覆盖而消失，主诉不会在追问中被篡改
+
+### 🟡 漏洞3：PostgresStore Append-Only 无界膨胀 ✅ 已修复
 
 **问题**：`symptom_events`/`medication_events`/`bad_cases`/`query_history` 四个命名空间只有 append，无 prune/compact
 - `get_symptom_events()` 全量加载后截断，数据量增大后性能退化
 - 衰减速度：1~2 个月
 - 安全影响：性能退化 + 早期记录被遗忘
 
-**修复计划**：定期清理任务 + 查询优化（limit 下推）
+**修复**：
 
-### 🟡 漏洞4：硬编码阈值随数据分布漂移失效
+1. **Prune 机制**（`long_term_memory.py` 新增）：
+   - `prune_namespace()`：按保留天数 + 条目上限双重清理，自动删除过期和超量记录
+   - `prune_all_namespaces()`：批量清理用户全部命名空间
+   - `prune_all_users()`：管理员接口，清理多用户数据
+   - 各命名空间默认保留天数：symptom_events=90, medication_events=90, bad_cases=180, query_history=30
+   - 各命名空间条目上限：symptom_events=500, medication_events=300, bad_cases=500, query_history=200
+
+2. **查询优化**（提前截断）：
+   - `get_symptom_events()`：最多读取 `limit * 3` 条后排序截断，避免全量加载
+   - `get_query_history()` / `get_bad_cases()` / `get_medication_events()`：最多读取 `limit * 2` 条
+   - 降低内存峰值，减少排序耗时
+
+**效果**：数据量 3 个月后稳定在配额内，查询性能不再随时间退化
+
+### 🟡 漏洞4：硬编码阈值随数据分布漂移失效 ✅ 已修复
 
 **问题**：6 个关键阈值（0.08/0.02/0.01/0.05/0.92）在特定数据分布下调优，知识库扩张后静默失效
 - `HIGH_CONFIDENCE_THRESHOLD=0.08`：稀疏空间"极度相似" → 密集空间"有点相关"
 - 衰减速度：1~3 个月
 - 安全影响：⚠️ 跳过 Reranker 导致幻觉
 
-**修复计划**：阈值改为自适应（基于百分位统计），加入运行时校准接口
+**修复**：
+
+1. **新增 `app/core/adaptive_threshold.py`**：`AdaptiveThreshold` 自适应阈值管理器
+   - 基于运行时百分位统计动态调整阈值
+   - 冷启动：前 100 个样本使用默认值
+   - 自动校准：每 1000 个样本重新计算百分位数
+   - 持久化：校准值写入 SQLite（`data/adaptive_thresholds.db`），重启后恢复
+   - 管理员接口：`force_recalibrate()` 手动触发校准，`get_stats()` 查看统计
+
+2. **注册的三个自适应阈值**：
+
+   | 阈值 | 默认值 | 策略 | 百分位 | 范围 |
+   |------|--------|------|--------|------|
+   | HIGH_CONFIDENCE_THRESHOLD | 0.08 | percentile | P5 | [0.01, 0.20] |
+   | RERANKER_THRESHOLD | 0.02 | percentile | P5 | [0.005, 0.10] |
+   | SEMANTIC_CACHE_THRESHOLD | 0.92 | percentile | P95 | [0.85, 0.99] |
+
+3. **`hybrid_retriever.py` 修改**：
+   - `HIGH_CONFIDENCE_THRESHOLD`：从硬编码 `0.08` → `at.get("HIGH_CONFIDENCE_THRESHOLD")`
+   - `RERANKER_THRESHOLD`：从 `config.RERANKER_THRESHOLD` → `at.get("RERANKER_THRESHOLD")`
+   - 每次检索后 `at.observe()` 记录观察值，用于后续校准
+
+**效果**：知识库扩张后阈值自动跟随数据分布漂移，不再静默失效
 
 ### 🟡 漏洞5：AC 自动机规则与知识库脱耦
 
