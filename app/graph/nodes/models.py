@@ -160,3 +160,23 @@ class ClinicalCheckpointOutput(BaseModel):
     confirmed_facts: Optional[List[str]] = Field(default=None, description="已确认的既往史/过敏史")
     ruled_out: Optional[List[str]] = Field(default=None, description="已排除的疾病或原因")
     symptom_onset_dates: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, description="症状首发日期映射，如{'头痛':{'iso':'2026-06-21T10:00:00','ts':1784567890,'precision':'exact'}}")
+
+
+class ContextSummaryOutput(BaseModel):
+    """上下文摘要输出（L4 压缩层）
+
+    对应 context_manager.py 中 _SUMMARY_PROMPT 的 JSON 输出格式。
+    保留 5 类关键信息，确保 LLM 不会丢失对话中的关键上下文。
+    """
+    current_goal: str = Field(description="当前目标（用户在咨询什么健康问题）")
+    key_findings: List[str] = Field(default_factory=list, description="关键发现和决策（已确认的症状、诊断、方案选择）")
+    files_referenced: List[str] = Field(default_factory=list, description="参考过的文档来源列表")
+    remaining_work: List[str] = Field(default_factory=list, description="尚未解决的问题（待确认的过敏史、未回答的追问）")
+    user_constraints: List[str] = Field(default_factory=list, description="用户约束（过敏药物、年龄、孕哺状态、拒绝的治疗方案）")
+
+    @field_validator('current_goal')
+    @classmethod
+    def ensure_non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            return "未知"
+        return v.strip()

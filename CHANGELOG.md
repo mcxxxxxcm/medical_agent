@@ -1,5 +1,41 @@
 # 系统优化更新日志
 
+## v9.5 - 四层上下文压缩策略（L1→L3→L2→L4）
+
+### 新增：context_manager.py 四层上下文压缩模块
+
+**背景**：对话历史随轮次增长，messages 列表无限膨胀导致 Prompt 超出 4K token 限制，LLM 遗忘早期对话信息
+
+**架构**：四层压缩 Pipeline，执行顺序 L1 → L3 → L2 → L4
+
+| 层级 | 策略 | 触发条件 | 是否用 LLM | 效果 |
+|------|------|----------|-----------|------|
+| L1 | 中间输出清除 | 消息数 > 3 | 否 | 中间 AI 回答只保留首句摘要 |
+| L3 | 大输出持久化 | 单条 > 30KB | 否 | 写入磁盘，占位符 `<persisted-output>` |
+| L2 | 工具调用裁剪 | RAG 文档块/工具痕迹 | 否 | `[参考了 N 篇文档]` 占位符 |
+| L4 | LLM 摘要压缩 | 总量 > 50000 字符 | 是 | 保留 5 类关键信息，原始存 transcript |
+
+**L4 五类关键信息**（借鉴 MemGPT）：
+1. `current_goal` — 当前目标（"用户在咨询感冒"）
+2. `key_findings` — 关键发现和决策（"确诊为普通感冒"）
+3. `files_referenced` — 参考过的文档来源列表
+4. `remaining_work` — 尚未解决的问题（"待确认过敏史"）
+5. `user_constraints` — 用户约束（"对青霉素过敏"）
+
+**集成**：
+- `get_conversation_history_text()` 新增 `enable_context_compression=True` 参数
+- RAG 场景自动启用四层压缩
+- L4 降级：LLM 摘要失败时自动切换规则提取（不依赖 LLM）
+
+**新增文件**：
+- `app/graph/nodes/context_manager.py` — 四层压缩核心模块
+- `data/persisted_outputs/` — L3 持久化输出目录
+
+**新增 Pydantic 模型**：
+- `ContextSummaryOutput` — L4 摘要结构化输出（5 个字段 + field_validator）
+
+---
+
 ## v9.4 - RAG 召回修复：查询预处理条件逻辑错误 + 同义词补全
 
 ### Bug1：`_preprocess_query` 从未执行（条件判断逻辑错误）

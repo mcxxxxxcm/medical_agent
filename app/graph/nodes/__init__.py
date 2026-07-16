@@ -6,6 +6,7 @@
     nodes.py             — 主模块（所有节点函数，保持向后兼容）
     prompts.py           — ChatPromptTemplate 集中管理
     structured_output.py — 结构化输出三层降级策略（Tool Calling → JSON Mode → 纯文本）
+    context_manager.py   — 四层上下文压缩策略（L1→L3→L2→L4）
 
 所有公开接口通过本包重导出，外部代码可继续使用：
     from app.graph.nodes import router_node, ...
@@ -26,9 +27,20 @@ from .helpers import (
 # 从 structured_output 子模块导出
 from .structured_output import invoke_structured
 
+# 从 context_manager 子模块导出
+from .context_manager import (
+    compress_context,
+    apply_l1_intermediate_cleanup,
+    apply_l2_tool_output_trim,
+    apply_l3_persist_large_outputs,
+    apply_l4_llm_summary,
+    load_persisted_output,
+)
+
 # 从 models 子模块导出
 from .models import (
     ClinicalCheckpointOutput,
+    ContextSummaryOutput,
     GradeDocuments,
     ProfileExtractionOutput,
     QueryRewriteOutput,

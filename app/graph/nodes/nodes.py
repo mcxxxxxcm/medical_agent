@@ -1113,14 +1113,14 @@ def strip_rag_documents_from_history(history_text: str) -> str:
 
 
 def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 3,
-                                   compress_ai_answers: bool = False) -> str:
-    """构建对话历史文本（含RAG文档MicroCompact压缩），不含临床快照
+                                   compress_ai_answers: bool = False,
+                                   enable_context_compression: bool = True) -> str:
+    """构建对话历史文本（含四层上下文压缩），不含临床快照
 
     临床快照由 build_rag_prompt 单独注入，避免重复
     max_rounds: 最多注入最近N轮对话（1轮=1条Human+1条AI），控制prompt大小
-    compress_ai_answers: v9.4 新增——压缩AI回答，防止LLM从历史中复制旧答案作为事实
-        - True：AI回答只保留首句摘要（适用于RAG场景，文档才是事实来源）
-        - False：保留完整AI回答（适用于非RAG场景，如追问补全）
+    compress_ai_answers: RAG场景下压缩AI回答为首句摘要，防止复制旧答案
+    enable_context_compression: v9.5 新增——启用四层上下文压缩（L1→L3→L2→L4）
     """
     messages = state.get("messages", [])
 
@@ -1131,6 +1131,11 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
     max_msgs = max_rounds * 2
     if len(messages) > max_msgs:
         messages = messages[-max_msgs:]
+
+    # v9.5: 四层上下文压缩（L1→L3→L2→L4）
+    if enable_context_compression:
+        from app.graph.nodes.context_manager import compress_context
+        messages = compress_context(messages)
 
     # MicroCompact：对旧AI消息中的RAG文档内容进行压缩
     last_ai_index = -1
@@ -1143,6 +1148,9 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
     for i, msg in enumerate(messages):
         if isinstance(msg, SystemMessage):
             # 跳过临床快照的 SystemMessage，由 build_rag_prompt 单独注入
+            # 但保留 context_summary 类型的 SystemMessage
+            if getattr(msg, 'name', None) == 'context_summary':
+                history_parts.append(f"【摘要】：{msg.content}")
             continue
         elif isinstance(msg, HumanMessage):
             history_parts.append(f"用户：{msg.content}")
