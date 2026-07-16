@@ -117,6 +117,29 @@ def _looks_clear_medical_query(query: str) -> bool:
     return any(pattern in text for pattern in clear_patterns)
 
 
+def _apply_source_diversity(docs: List[Document], max_per_source: int = 2) -> List[Document]:
+    """文档来源多样性过滤：同一来源文档最多保留 max_per_source 个 chunk
+
+    避免高频主题（如"感冒"）的全部 top-k 结果来自同一文档，
+    导致其他文档的补充信息（如用药指南中的药物禁忌）丢失。
+
+    保留 Reranker 的排序优先级——同来源的 chunk 取排名最高的 max_per_source 个。
+    """
+    source_count: Dict[str, int] = {}
+    result = []
+    for doc in docs:
+        source = doc.metadata.get("source", doc.metadata.get("file_path", "unknown"))
+        count = source_count.get(source, 0)
+        if count < max_per_source:
+            result.append(doc)
+            source_count[source] = count + 1
+        else:
+            logger.debug(f"来源多样性过滤：跳过 {source} 的第 {count + 1} 个 chunk")
+    if len(result) < len(docs):
+        logger.info(f"来源多样性过滤：{len(docs)} -> {len(result)}（max_per_source={max_per_source}）")
+    return result
+
+
 class HybridRetriever(BaseRetriever):
     """基于 LangChain EnsembleRetriever 的混合检索器"""
 
@@ -492,9 +515,9 @@ class HybridRetriever(BaseRetriever):
         # Reranker 跳过判断：基于 Dense Top-1 置信度，而非候选数量
         should_skip_reranker = self._should_skip_reranker(query, candidates, top1_dense_score)
 
-        # 三阶段检索优化：RRF 融合后先轻量截断 top 8，再进 Reranker 精排 top k
-        # 减少 Reranker 入参数量，CPU 推理时间从 970ms 降至 ~300ms
-        RERANKER_INPUT_CAP = 8
+        # 三阶段检索优化：RRF 融合后先轻量截断，再进 Reranker 精排 top k
+        # v9.4: RERANKER_INPUT_CAP 8→10，配合来源多样性过滤需要更多候选
+        RERANKER_INPUT_CAP = 10
         reranker_input = candidates[:RERANKER_INPUT_CAP]
 
         # Reranker 重排序
@@ -528,6 +551,11 @@ class HybridRetriever(BaseRetriever):
                     f"跳过 Reranker：candidate_count={len(candidates)}, k={self.k}, rerank_top_k={self.rerank_top_k}, query={query[:50]}"
                 )
             final_docs = candidates[:self.k]
+
+        # v9.4: 文档来源多样性过滤——同一来源文档最多保留 max_per_source 个 chunk
+        # 避免"感冒"类高频主题全部命中同一文档，导致其他文档的补充信息丢失
+        MAX_PER_SOURCE = 2
+        final_docs = _apply_source_diversity(final_docs, max_per_source=MAX_PER_SOURCE)
 
         retrieval_time = (time.time() - retrieval_start) * 1000
 

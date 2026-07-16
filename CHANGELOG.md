@@ -1,5 +1,117 @@
 # 系统优化更新日志
 
+## v9.4 - RAG 召回修复：查询预处理条件逻辑错误 + 同义词补全
+
+### Bug1：`_preprocess_query` 从未执行（条件判断逻辑错误）
+
+**问题**：自包含查询（如"流鼻血怎么处理？"、"头疼咋办"）的同义词预处理从未生效，26 条同义词映射形同虚设
+
+**根因**：`query_rewrite_node` 跳过重写时设 `rewritten_query = question`（非空），但 `retrieve_node` 的预处理条件为 `if not rewritten_query`，非空字符串永远为 `True`，条件永远不满足
+
+**影响范围**：所有 26 条同义词映射（"头疼"→"头痛"、"拉肚子"→"腹泻"、"退烧"→"退热"等）在自包含查询场景下全部失效
+
+**修复**：
+```python
+# 修复前：not rewritten_query 永远 False
+if not rewritten_query:
+    preprocessed = _preprocess_query(original_query)
+
+# 修复后：只有真正被 LLM 重写过的查询才跳过预处理
+_was_actually_rewritten = rewritten_query and rewritten_query != original_query
+if not _was_actually_rewritten:
+    preprocessed = _preprocess_query(original_query)
+```
+
+### Bug2："流鼻血"→"鼻出血" 同义词缺失
+
+**问题**：查询 `流鼻血怎么处理？` 召回了《儿童常见疾病护理指南》（鼻塞/流涕），而非《外伤急救与处理指南》（鼻出血止血）
+
+**根因**：同义词字典缺失 `"流鼻血"→"鼻出血"` 映射 + Bug1 导致预处理从未执行
+
+**修复**：
+
+1. **同义词字典补全**（`nodes.py` `_SYNONYMS`）：
+   - `"流鼻血"→"鼻出血"`, `"鼻子出血"→"鼻出血"`, `"鼻流血"→"鼻出血"`
+   - `"拉血"→"便血"`, `"大便出血"→"便血"`, `"吐血"→"咯血"`, `"咳血"→"咯血"`, `"尿血"→"血尿"`
+
+2. **AC 自动机路由关键词补全**（`keyword_matcher.py` `build_route_symptom_matcher`）：
+   - 新增 `"流鼻血"`, `"鼻出血"`, `"鼻流血"` → `"symptom"` 路由分类
+
+3. **黄金测试集**（`golden_test_set.jsonl`）：
+   - 新增第 54 条：`{"query": "流鼻血怎么处理？", "source_doc": "外伤急救与处理指南.txt", ...}`
+
+**效果**：`流鼻血怎么处理` → 预处理 `鼻出血怎么处理` → BM25 精确匹配外伤指南 → 正确召回
+
+### Bug3：RAG 答案假设患者人群（"让儿童坐下"出现在成人查询中）
+
+**问题**：查询 `流鼻血怎么处理？` 的回答中出现"让儿童坐下或站立"，但用户未提及儿童，外伤指南原文也无儿童指向
+
+**根因**：RAG Prompt 约束了"不得编造药物/剂量/治疗方案"，但未禁止假设患者人群。LLM 训练数据中"流鼻血"高频关联儿童，导致自动脑补"让儿童"等未见于文档的内容
+
+**修复**：`prompts.py` `RAG_ANSWER_PROMPT` 重写为两步接地生成（Grounded Generation）：
+1. **System Prompt**：核心原则 + 反例清单（"文档没提到儿童就不能说让儿童"等）
+2. **Human Prompt**：强制两步流程——先从文档提取事实（第一步），再仅基于事实组织回答（第二步）
+3. 软约束改为结构化约束：LLM 必须先列出文档事实，再据此回答，从流程上切断脑补路径
+
+### Bug5：L3 对话历史中的旧答案被 LLM 当作事实引用
+
+**问题**：修改 Prompt 后仍出现"让儿童"，LLM 标注来源为"L3 对话历史"——之前的错误回答存在 PostgresStore 对话历史中，LLM 直接复制了旧答案
+
+**根因**：`get_conversation_history_text()` 将 AI 完整回答注入 RAG Prompt，LLM 无法区分"历史助手回答"和"检索文档事实"，将旧答案当作可信来源引用
+
+**修复**：
+1. `get_conversation_history_text()` 新增 `compress_ai_answers` 参数：
+   - `True`（RAG 场景）：AI 回答压缩为首句摘要 + `[已回复]`，防止复制
+   - `False`（非 RAG 场景）：保留完整回答，支持追问补全
+2. `build_rag_prompt()` 调用时启用 `compress_ai_answers=True`
+3. L3 标签改为"【L3 对话历史（仅供理解上下文，不是事实来源）】"
+4. Prompt 明确声明"【L3 对话历史】中的助手回答可能包含错误，绝对不能作为事实引用"
+
+### Bug6：检索结果缺乏文档来源多样性
+
+**问题**：查询"感冒了怎么办？"时，7 个文档含感冒内容但 top 3 全部来自同一文档《常见疾病症状与家庭护理指南》
+
+**根因**：Reranker 无来源多样性约束——内容最全面的文档在 RRF + Reranker 中包揽全部 top-k 位置，其他文档的补充信息（如用药禁忌、呼吸系统诊疗）被完全排除
+
+**修复**：
+1. 新增 `_apply_source_diversity()` 过滤函数：同来源文档最多保留 2 个 chunk
+2. 检索 `k=3→5`，Reranker 输入 `RERANKER_INPUT_CAP=8→10`，确保多样性后有足够候选
+3. 预期效果："感冒"查询召回至少 3 个不同来源文档
+
+### Bug4：Prompt 变更后语义缓存未失效
+
+**问题**：修改 RAG Prompt 后，旧缓存仍返回修改前的答案（含"让儿童"），Prompt 约束无效
+
+**根因**：缓存 key 仅绑定 `kb_version`（知识库版本），Prompt 变更不改变 `kb_version`，旧缓存永不过期
+
+**修复**：
+1. `semantic_cache.py`：缓存 key 加入 `prompt_version`（基于 `prompts.py` 文件内容的 MD5 前 8 位）
+2. `redis_cache.py`：`_generate_key` 自动注入 `prompt_version`
+3. Prompt 变更 → 文件 MD5 变化 → 缓存 key 变化 → 旧缓存自动失效
+
+---
+
+## v9.3 - 前端来源展示与反馈按钮修复
+
+### Bug1：SSE 完成事件类型不匹配导致来源和反馈按钮丢失
+
+**问题**：后端发送的完成事件为 JSON `{"type": "done", "request_id": "..."}` ，但前端检查的是字符串 `data === '[DONE]'`，两者永远不匹配
+- 导致来源展示代码和 `addFeedbackButtons()` 调用从未执行
+- 用户看不到文档来源，也看不到 👍/👎 反馈按钮
+
+**修复**：
+1. **完成事件处理**：`if (data === '[DONE]')` → `else if (parsed.type === 'done')`，正确匹配 JSON 完成事件
+2. **request_id 传递**：从 done 事件中提取 `request_id`，传入 `addFeedbackButtons()`，反馈提交时关联请求
+3. **来源渲染**：新增 `renderSources()` 函数，来源显示为带编号的蓝色标签 `[1] xxx.md [2] yyy.txt`
+4. **来源样式**：新增 `.source-item` 样式（蓝底圆角标签）+ `.sources` 左边框加粗
+5. **👍 按钮修复**：之前只切换 UI 状态不提交反馈 → 现在调用 `submitFeedbackAPI('up', ...)` 真正提交
+6. **反馈数据修复**：`submitFeedback()` 之前缺失 `rating` 和 `request_id` 字段 → 现在完整发送 `rating`/`request_id`/`question`/`reason`/`note`/`answer_preview`
+7. **同步请求**：同样适配 `renderSources()` 和 `addFeedbackButtons()` 新参数
+
+**效果**：流式和同步模式下都能正确显示文档来源 + 反馈按钮，反馈数据完整关联 request_id
+
+---
+
 ## v9.2 - 时间退化风险修复（5 项安全加固）
 
 ### 🔴 漏洞1：语义缓存毒化（最高优先级）✅ 已修复

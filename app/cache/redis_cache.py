@@ -146,6 +146,17 @@ class RedisCache:
             except Exception:
                 kwargs["kb_version"] = "unknown"
 
+        # v9.4: 自动注入 prompt_version，Prompt 变更后旧缓存自动失效
+        if "prompt_version" not in kwargs:
+            try:
+                import pathlib
+                prompts_path = pathlib.Path(__file__).parent.parent / "graph" / "nodes" / "prompts.py"
+                if prompts_path.exists():
+                    content = prompts_path.read_bytes()
+                    kwargs["prompt_version"] = hashlib.md5(content).hexdigest()[:8]
+            except Exception:
+                kwargs["prompt_version"] = "unknown"
+
         key_parts = [query]
         for k, v in sorted(kwargs.items()):
             if v is not None:

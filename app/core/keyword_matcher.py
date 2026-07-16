@@ -291,6 +291,7 @@ def build_route_symptom_matcher() -> KeywordMatcher:
         "麻木": "symptom", "抽筋": "symptom", "便秘": "symptom",
         "恶心": "symptom", "呕吐": "symptom", "腹泻": "symptom",
         "拉肚子": "symptom", "流鼻涕": "symptom", "鼻塞": "symptom",
+        "流鼻血": "symptom", "鼻出血": "symptom", "鼻流血": "symptom",
         "嗓子疼": "symptom", "喉咙痛": "symptom",
         # 意图关键词（暗示症状咨询）
         "怎么办": "symptom_intent", "咋办": "symptom_intent",

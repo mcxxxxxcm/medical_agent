@@ -104,9 +104,19 @@
             margin-top: 12px;
             padding: 8px 12px;
             background: #f8f9fa;
+            border-left: 3px solid #4285f4;
             border-radius: 6px;
             font-size: 12px;
             color: #666;
+        }
+
+        .source-item {
+            display: inline-block;
+            margin: 2px 6px 2px 0;
+            padding: 1px 6px;
+            background: #e8f0fe;
+            border-radius: 3px;
+            color: #4285f4;
         }
 
         .input-container {
@@ -547,6 +557,7 @@
         const decoder = new TextDecoder();
         let fullAnswer = '';
         let currentSources = [];
+        let currentRequestId = '';
         let buffer = '';  // SSE 跨 chunk 缓冲
 
         while (true) {
@@ -565,18 +576,6 @@
                 if (!line.startsWith('data: ')) continue;
                 const data = line.slice(6);
 
-                if (data === '[DONE]') {
-                    if (currentSources.length > 0) {
-                        const sourcesDiv = document.createElement('div');
-                        sourcesDiv.className = 'sources';
-                        sourcesDiv.innerHTML = `📚 来源：${currentSources.map(s => s.source).join(', ')}`;
-                        loadingDiv.appendChild(sourcesDiv);
-                    }
-                    addFeedbackButtons(loadingDiv, fullAnswer);
-                    scrollToBottom();
-                    continue;
-                }
-
                 if (data.startsWith('[ERROR]')) {
                     loadingDiv.innerHTML = data;
                     continue;
@@ -592,8 +591,19 @@
                     } else if (parsed && parsed.type === 'sources') {
                         // 文档来源元数据事件
                         currentSources = parsed.sources || [];
+                    } else if (parsed && parsed.type === 'done') {
+                        // 完成事件：展示来源 + 反馈按钮
+                        currentRequestId = parsed.request_id || '';
+                        if (currentSources.length > 0) {
+                            const sourcesDiv = document.createElement('div');
+                            sourcesDiv.className = 'sources';
+                            sourcesDiv.innerHTML = renderSources(currentSources);
+                            loadingDiv.appendChild(sourcesDiv);
+                        }
+                        addFeedbackButtons(loadingDiv, fullAnswer, currentRequestId, question);
+                        scrollToBottom();
                     }
-                    // 其他对象类型忽略，不拼接到答案
+                    // 其他对象类型（progress 等）忽略，不拼接到答案
                 } catch (e) {
                     // JSON 解析失败，忽略（不拼接到答案，避免 [object Object]）
                 }
@@ -628,11 +638,11 @@
         }
 
         if (data.sources && data.sources.length > 0) {
-            html += `<div class="sources">📚 来源：${data.sources.map(s => s.source).join(', ')}</div>`;
+            html += `<div class="sources">${renderSources(data.sources)}</div>`;
         }
 
         loadingDiv.innerHTML = html;
-        addFeedbackButtons(loadingDiv, data.answer || '');
+        addFeedbackButtons(loadingDiv, data.answer || '', data.request_id || '', question);
         scrollToBottom();
     }
 
@@ -653,6 +663,16 @@
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     }
 
+    // 渲染文档来源
+    function renderSources(sources) {
+        if (!sources || sources.length === 0) return '';
+        const items = sources.map((s, i) => {
+            const name = s.source || s.file_path || '未知来源';
+            return `<span class="source-item">[${i + 1}] ${name}</span>`;
+        }).join(' ');
+        return `📚 参考来源：${items}`;
+    }
+
     // 滚动到底部
     function scrollToBottom() {
         const container = document.getElementById('chatContainer');
@@ -661,9 +681,10 @@
 
     // ===== 用户反馈 =====
     let _feedbackActiveMsgEl = null;
+    let _feedbackCtx = { requestId: '', question: '', answerText: '' };
     let _selectedReason = '';
 
-    function addFeedbackButtons(msgDiv, answerText) {
+    function addFeedbackButtons(msgDiv, answerText, requestId, question) {
         const existing = msgDiv.querySelector('.feedback-btns');
         if (existing) existing.remove();
 
@@ -674,10 +695,13 @@
         const upBtn = document.createElement('button');
         upBtn.textContent = '👍';
         upBtn.title = '有帮助';
-        upBtn.onclick = () => {
-            upBtn.classList.toggle('active-up');
+        upBtn.onclick = async () => {
+            if (upBtn.classList.contains('active-up')) return; // 防重复提交
+            upBtn.classList.add('active-up');
             const downBtn = btns.querySelector('.down-btn');
             if (downBtn) downBtn.classList.remove('active-down');
+            await submitFeedbackAPI('up', requestId, question, answerText, '', '');
+            showFeedbackThanks(msgDiv);
         };
 
         const downBtn = document.createElement('button');
@@ -689,6 +713,7 @@
             upBtn.classList.remove('active-up');
             if (downBtn.classList.contains('active-down')) {
                 _feedbackActiveMsgEl = msgDiv;
+                _feedbackCtx = { requestId, question, answerText };
                 document.getElementById('pendingAnswerText').value = answerText.substring(0, 500);
                 _selectedReason = '';
                 document.querySelectorAll('#feedbackReasons .reason-option').forEach(el => el.classList.remove('selected'));
@@ -702,6 +727,36 @@
         btns.appendChild(upBtn);
         btns.appendChild(downBtn);
         msgDiv.appendChild(btns);
+    }
+
+    function showFeedbackThanks(msgDiv) {
+        const btns = msgDiv.querySelector('.feedback-btns');
+        if (btns) {
+            btns.innerHTML = '<span style="font-size:12px;color:#999;">✓ 感谢反馈</span>';
+        }
+    }
+
+    async function submitFeedbackAPI(rating, requestId, question, answerText, reason, note) {
+        const userId = document.getElementById('userId').value || 'default';
+        const threadId = document.getElementById('threadId').value || '';
+        try {
+            await fetch(`${API_BASE}/api/feedback`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    user_id: userId,
+                    thread_id: threadId,
+                    request_id: requestId || '',
+                    rating: rating,
+                    reason: reason || '',
+                    note: note || null,
+                    answer_preview: answerText.substring(0, 500),
+                    question: question || null,
+                })
+            });
+        } catch (e) {
+            console.warn('反馈提交失败:', e);
+        }
     }
 
     function closeFeedbackModal() {
@@ -732,38 +787,14 @@
             return;
         }
 
-        const userId = document.getElementById('userId').value || 'default';
-        const threadId = document.getElementById('threadId').value || '';
         const note = document.getElementById('feedbackNote').value;
-        const answerText = document.getElementById('pendingAnswerText').value;
+        const { requestId, question, answerText } = _feedbackCtx;
 
-        try {
-            await fetch(`${API_BASE}/api/feedback`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    user_id: userId,
-                    thread_id: threadId,
-                    reason: _selectedReason,
-                    note: note,
-                    answer_preview: answerText,
-                })
-            });
-        } catch (e) {
-            console.warn('反馈提交失败:', e);
-        }
+        await submitFeedbackAPI('down', requestId, question, answerText, _selectedReason, note);
 
         closeFeedbackModal();
-        // 显示已收到反馈
         if (_feedbackActiveMsgEl) {
-            const btns = _feedbackActiveMsgEl.querySelector('.feedback-btns');
-            if (btns) {
-                const thanks = document.createElement('span');
-                thanks.style.cssText = 'font-size:12px;color:#999;';
-                thanks.textContent = '感谢反馈';
-                btns.innerHTML = '';
-                btns.appendChild(thanks);
-            }
+            showFeedbackThanks(_feedbackActiveMsgEl);
         }
     }
 

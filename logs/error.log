@@ -653,3 +653,4 @@ AttributeError: 'Lock' object has no attribute 'acquire_nowait'
 }
 2026-06-22 01:46:49 - app.graph.nodes - ERROR - 查询重写失败：Completions.parse() got an unexpected keyword argument 'num_ctx'
 2026-06-22 01:47:02 - app.graph.nodes - ERROR - 临床状态快照更新失败：Completions.parse() got an unexpected keyword argument 'num_ctx'
+2026-07-16 12:43:03 - app.graph.nodes.nodes - ERROR - 查询重写失败：QueryRewriteOutput 结构化输出失败（2次尝试 × 3种策略），最后错误：None

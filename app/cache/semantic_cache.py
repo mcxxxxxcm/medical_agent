@@ -38,6 +38,22 @@ def _get_kb_version() -> str:
         return "unknown"
 
 
+def _get_prompt_version() -> str:
+    """获取 Prompt 模板版本指纹（基于 prompts.py 文件内容的 MD5）
+
+    Prompt 变更后缓存 key 自动变化，避免返回旧 Prompt 生成的缓存答案。
+    """
+    try:
+        import pathlib
+        prompts_path = pathlib.Path(__file__).parent.parent / "graph" / "nodes" / "prompts.py"
+        if prompts_path.exists():
+            content = prompts_path.read_bytes()
+            return hashlib.md5(content).hexdigest()[:8]
+    except Exception:
+        pass
+    return "unknown"
+
+
 class SemanticCache:
     """语义相似缓存管理器"""
 
@@ -319,8 +335,10 @@ class SemanticCache:
             return False
 
         # v9.2 漏洞1修复：缓存 key 绑定 kb_version，知识库更新自动失效旧缓存
+        # v9.4 修复：缓存 key 同时绑定 prompt_version，Prompt 变更自动失效旧缓存
         kb_version = _get_kb_version()
-        query_hash = hashlib.md5(f"{query}:{kb_version}".encode("utf-8")).hexdigest()
+        prompt_version = _get_prompt_version()
+        query_hash = hashlib.md5(f"{query}:{kb_version}:{prompt_version}".encode("utf-8")).hexdigest()
         key = f"{self.prefix}{query_hash}"
 
         data = {

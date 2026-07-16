@@ -818,6 +818,11 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "感冒灵颗粒": "感冒灵", "芬必得": "布洛芬缓释胶囊",
             "美林": "布洛芬混悬液", "泰诺": "对乙酰氨基酚",
             "扑热息痛": "对乙酰氨基酚", "芬必得": "布洛芬",
+            # v9.3: 口语症状词 → 书面语（修复"流鼻血"召回错误）
+            "流鼻血": "鼻出血", "鼻子出血": "鼻出血", "鼻流血": "鼻出血",
+            "拉血": "便血", "大便出血": "便血",
+            "吐血": "咯血", "咳血": "咯血",
+            "尿血": "血尿",
         }
         for colloquial, standard in _SYNONYMS.items():
             q = q.replace(colloquial, standard)
@@ -838,14 +843,19 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     # v9.0 查询预处理：对原始查询做同义词/纠错/语气词清理
     # 重写查询已经是高质量的自包含查询，不需要再预处理
-    if not rewritten_query:
+    # v9.4 修复：query_rewrite_node 跳过重写时设 rewritten_query=question（非空），
+    #   导致 `not rewritten_query` 永远为 False，预处理从未执行
+    #   改为：只有真正被 LLM 重写过的查询才跳过预处理
+    _was_actually_rewritten = rewritten_query and rewritten_query != original_query
+    if not _was_actually_rewritten:
         preprocessed = _preprocess_query(original_query)
         if preprocessed != original_query:
             logger.info(f"查询预处理：'{original_query}' → '{preprocessed}'")
             search_query = preprocessed
 
     try:
-        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
+        # v9.4: k=3→5，配合来源多样性过滤(max_per_source=2)，确保至少 3 个不同文档源
+        retriever = get_hybrid_retriever(k=5, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
         start_time = time.time()
         docs = retriever.invoke(
@@ -1102,11 +1112,15 @@ def strip_rag_documents_from_history(history_text: str) -> str:
     return result
 
 
-def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 3) -> str:
+def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 3,
+                                   compress_ai_answers: bool = False) -> str:
     """构建对话历史文本（含RAG文档MicroCompact压缩），不含临床快照
 
     临床快照由 build_rag_prompt 单独注入，避免重复
     max_rounds: 最多注入最近N轮对话（1轮=1条Human+1条AI），控制prompt大小
+    compress_ai_answers: v9.4 新增——压缩AI回答，防止LLM从历史中复制旧答案作为事实
+        - True：AI回答只保留首句摘要（适用于RAG场景，文档才是事实来源）
+        - False：保留完整AI回答（适用于非RAG场景，如追问补全）
     """
     messages = state.get("messages", [])
 
@@ -1134,17 +1148,27 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
             history_parts.append(f"用户：{msg.content}")
         elif isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            # AI消息截断，避免过长
-            # 医疗场景：包含药物/剂量/过敏等关键词的消息保留更多内容
-            _medical_keywords = ["mg", "ml", "剂量", "用药", "服用", "过敏", "禁忌", "副作用",
-                                 "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林",
-                                 "不要", "避免", "注意", "警告", "严重"]
-            has_medical_info = any(kw in content for kw in _medical_keywords)
-            truncate_len = 800 if has_medical_info else 400
-            if len(content) > truncate_len:
-                content = content[:truncate_len] + "..."
-            if i != last_ai_index:
-                content = strip_rag_documents_from_history(content)
+
+            if compress_ai_answers:
+                # v9.4: RAG场景下压缩AI回答，仅保留首句摘要
+                # 防止LLM从历史对话中复制旧答案作为"事实"来源
+                # 关键事实由临床快照和检索文档提供，不需要从历史AI回答中获取
+                first_sentence = content.split('。')[0].split('\n')[0]
+                if len(first_sentence) > 80:
+                    first_sentence = first_sentence[:80] + "..."
+                content = f"{first_sentence}...[已回复]"
+            else:
+                # 原始逻辑：保留完整AI回答（用于非RAG场景）
+                _medical_keywords = ["mg", "ml", "剂量", "用药", "服用", "过敏", "禁忌", "副作用",
+                                     "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林",
+                                     "不要", "避免", "注意", "警告", "严重"]
+                has_medical_info = any(kw in content for kw in _medical_keywords)
+                truncate_len = 800 if has_medical_info else 400
+                if len(content) > truncate_len:
+                    content = content[:truncate_len] + "..."
+                if i != last_ai_index:
+                    content = strip_rag_documents_from_history(content)
+
             history_parts.append(f"助手：{content}")
 
     return "\n".join(history_parts)
@@ -1305,8 +1329,9 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         frozen_profile_section = f"【L1 用户档案（永不压缩）】\n{profile_text}\n"
 
     # L3 短期窗口：注入近期对话历史
-    history_text = get_conversation_history_text(state)
-    history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
+    # v9.4: RAG场景启用 compress_ai_answers，防止LLM从历史中复制旧答案作为事实
+    history_text = get_conversation_history_text(state, compress_ai_answers=True)
+    history_section = f"【L3 对话历史（仅供理解上下文，不是事实来源）】\n{history_text}\n" if history_text else ""
 
     if not retrieved_docs:
         # 无检索文档时的降级 Prompt
