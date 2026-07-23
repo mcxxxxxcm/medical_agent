@@ -80,6 +80,7 @@ class MedicalAssistantState(TypedDict):
     rewritten_query: Optional[str]  # 检索用子查询（关键词优化，用于 BM25 稀疏检索）
     final_question: Optional[str]   # 重写后的完整自包含问题（用于答案生成）
     hyde_answer: Optional[str]      # HyDE 假想答案：用于 dense 检索，提升语义召回率
+    sub_questions: Optional[List[str]]  # v9.6: 拆解后的子问题列表（多子问题并行检索）
     retrieval_attempts: Optional[int]
 
     # ===== 临床状态快照（结构化JSON）=====
@@ -118,6 +119,7 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "rewritten_query": None,
         "final_question": None,
         "hyde_answer": None,
+        "sub_questions": None,
         "retrieval_attempts": 0,
         "clinical_checkpoint": None,
     }

@@ -774,6 +774,95 @@ def _symptoms_with_checkpoint_fallback(symptoms_payload: dict, state: MedicalAss
     logger.info(f"追问症状继承：从临床快照补充 {cp_symptoms}")
     return {"symptoms": symptoms_payload}
 
+
+@timing_decorator("问题拆解")
+def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
+    """长问题拆解节点：检测复合问题并拆解为独立子问题
+
+    触发条件（不用 LLM 的前置检测）：
+    1. 问题长度 > 20 字符（短问题不可能复合）
+    2. 问题中包含分隔标记（？？、？和、？另外、？还有、同时、另外、而且、以及）
+
+    LLM 拆解：调用 QUESTION_DECOMPOSE_PROMPT + invoke_structured
+    结果存入 state["sub_questions"]，供 knowledge_retrieval_node 并行检索
+    """
+    question = state.get("question", "")
+    sub_questions_existing = state.get("sub_questions")
+
+    # 已有子问题列表（自纠正重试），直接返回
+    if sub_questions_existing and len(sub_questions_existing) > 1:
+        logger.info(f"问题拆解：已有 {len(sub_questions_existing)} 个子问题，跳过")
+        return {}
+
+    # 前置检测：短问题不拆解
+    if len(question) <= 20:
+        logger.info(f"问题拆解：问题过短（{len(question)} 字符），不拆解")
+        return {"sub_questions": [question]}
+
+    # 前置检测：无复合标记不拆解
+    _COMPOUND_MARKERS = [
+        "？", "?",  # 中文/英文问号
+    ]
+    _COMPOUND_CONNECTORS = [
+        "另外", "还有", "同时", "而且", "以及", "并且", "还有个", "再问",
+    ]
+    question_mark_count = question.count("？") + question.count("?")
+    has_connector = any(c in question for c in _COMPOUND_CONNECTORS)
+
+    # 条件：至少 2 个问号 或 1 个问号 + 连接词
+    if question_mark_count < 2 and not has_connector:
+        logger.info(f"问题拆解：未检测到复合标记（{question_mark_count} 个问号，无连接词），不拆解")
+        return {"sub_questions": [question]}
+
+    logger.info(f"问题拆解：检测到复合标记（{question_mark_count} 个问号，连接词={has_connector}），调用 LLM 拆解")
+
+    # LLM 拆解
+    try:
+        from app.graph.nodes.prompts import QUESTION_DECOMPOSE_PROMPT
+        from app.graph.nodes.models import QuestionDecomposeOutput
+        from app.graph.nodes.structured_output import invoke_structured
+
+        llm = get_local_llm_json()
+        messages = QUESTION_DECOMPOSE_PROMPT.format_messages(question=question)
+
+        result: QuestionDecomposeOutput = invoke_structured(
+            llm, messages, QuestionDecomposeOutput, max_attempts=2,
+        )
+
+        if result.need_decompose and len(result.sub_questions) >= 2:
+            sub_questions = result.sub_questions[:4]  # 最多 4 个
+            logger.info(f"问题拆解完成：'{question[:30]}...' → {len(sub_questions)} 个子问题")
+            for i, sq in enumerate(sub_questions):
+                logger.info(f"  子问题{i + 1}：{sq}")
+            return {"sub_questions": sub_questions}
+        else:
+            logger.info(f"问题拆解：LLM 判定为单一问题，不拆解")
+            return {"sub_questions": [question]}
+
+    except Exception as e:
+        logger.warning(f"问题拆解 LLM 调用失败，使用规则拆解：{e}")
+        # 降级：按问号切分
+        sub_questions = _rule_based_decompose(question)
+        if len(sub_questions) >= 2:
+            logger.info(f"规则拆解：'{question[:30]}...' → {len(sub_questions)} 个子问题")
+        return {"sub_questions": sub_questions}
+
+
+def _rule_based_decompose(question: str) -> List[str]:
+    """规则拆解降级：按问号切分（不用 LLM）"""
+    import re
+    # 按？或? 切分
+    parts = re.split(r'[？?]', question)
+    parts = [p.strip() for p in parts if p.strip()]
+    if not parts:
+        return [question]
+    # 如果只有 1 段（没有问号），返回原问题
+    if len(parts) == 1:
+        return [question]
+    # 每段补上问号
+    return [p + "？" for p in parts]
+
+
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """知识检索节点
@@ -857,13 +946,57 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         # v9.4: k=3→5，配合来源多样性过滤(max_per_source=2)，确保至少 3 个不同文档源
         retriever = get_hybrid_retriever(k=5, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
-        start_time = time.time()
-        docs = retriever.invoke(
-            search_query,
-            original_query=original_query,  # 传递原始查询用于redis缓存
-            hyde_answer=hyde_answer,  # HyDE 假想答案用于 dense 检索
-        )
-        retrieval_time = (time.time() - start_time) * 1000
+        # v9.6: 多子问题并行检索
+        sub_questions = state.get("sub_questions") or [search_query]
+        if len(sub_questions) > 1:
+            # 并行检索每个子问题
+            logger.info(f"多子问题并行检索：{len(sub_questions)} 个子问题")
+            start_time = time.time()
+
+            all_sub_docs = []
+            for i, sub_q in enumerate(sub_questions):
+                # 子问题也做预处理
+                preprocessed_sub_q = _preprocess_query(sub_q)
+                if preprocessed_sub_q != sub_q:
+                    logger.info(f"  子问题{i + 1} 预处理：'{sub_q}' → '{preprocessed_sub_q}'")
+                    sub_q = preprocessed_sub_q
+
+                try:
+                    sub_docs = retriever.invoke(
+                        sub_q,
+                        original_query=original_query,
+                    )
+                    # 标注子问题来源
+                    for doc in sub_docs:
+                        doc.metadata["sub_question"] = sub_q
+                        doc.metadata["sub_question_idx"] = i + 1
+                    all_sub_docs.extend(sub_docs)
+                    logger.info(f"  子问题{i + 1} '{sub_q[:30]}' → {len(sub_docs)} 篇文档")
+                except Exception as e:
+                    logger.warning(f"  子问题{i + 1} 检索失败：{e}")
+
+            # 去重：同 source + 同 page_content 的文档只保留一个
+            seen = set()
+            unique_docs = []
+            for doc in all_sub_docs:
+                doc_key = (doc.metadata.get("source", ""), doc.page_content[:100])
+                if doc_key not in seen:
+                    seen.add(doc_key)
+                    unique_docs.append(doc)
+
+            docs = unique_docs
+            retrieval_time = (time.time() - start_time) * 1000
+            logger.info(f"多子问题检索完成：{len(all_sub_docs)} 篇 → 去重后 {len(docs)} 篇，耗时：{retrieval_time:.2f}ms")
+        else:
+            # 单一问题检索（原有逻辑）
+            start_time = time.time()
+            docs = retriever.invoke(
+                search_query,
+                original_query=original_query,
+                hyde_answer=hyde_answer,
+            )
+            retrieval_time = (time.time() - start_time) * 1000
+            logger.info(f"检索到{len(docs)}个相关文档，耗时：{retrieval_time:.2f}ms，第 {retrieval_attempts} 次检索")
 
         sources = []
         for doc in docs:
@@ -873,11 +1006,9 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 "content": doc.page_content[:100]
             })
 
-        logger.info(f"检索到{len(docs)}个相关文档，耗时：{retrieval_time:.2f}ms，第 {retrieval_attempts} 次检索")
-
         return {
             "retrieved_docs": docs,
-            "all_retrieved_docs": docs,  # 保存过滤前的完整检索文档
+            "all_retrieved_docs": docs,
             "sources": sources,
             "retrieval_attempts": retrieval_attempts,
         }

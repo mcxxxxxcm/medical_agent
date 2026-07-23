@@ -180,3 +180,27 @@ class ContextSummaryOutput(BaseModel):
         if not v or not v.strip():
             return "未知"
         return v.strip()
+
+
+class QuestionDecomposeOutput(BaseModel):
+    """长问题拆解输出（question_decompose_node）
+
+    对应 QUESTION_DECOMPOSE_PROMPT 的 JSON 输出格式。
+    need_decompose=True 时 sub_questions 包含 2~4 个独立子问题。
+    """
+    need_decompose: bool = Field(
+        description="是否需要拆解：True=问题包含多个独立子问题，False=单一问题不拆解"
+    )
+    sub_questions: List[str] = Field(
+        default_factory=list,
+        description="拆解后的子问题列表（need_decompose=False 时为空列表或包含原问题）"
+    )
+
+    @field_validator("sub_questions", mode="before")
+    @classmethod
+    def ensure_list(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return v

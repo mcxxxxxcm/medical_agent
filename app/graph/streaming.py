@@ -449,6 +449,12 @@ class StreamingOrchestrator:
         if rewrite_state:
             self._state.update(rewrite_state)
 
+        # 阶段2.5：长问题拆解（v9.6 新增）
+        from app.graph.nodes.nodes import question_decompose_node
+        decompose_state = question_decompose_node(self._state)
+        if decompose_state:
+            self._state.update(decompose_state)
+
         # 阶段3：知识检索
         yield await self._emit_progress("searching", "正在检索医学知识库...")
         retrieval_state = knowledge_retrieval_node(self._state)

@@ -1,5 +1,56 @@
 # 系统优化更新日志
 
+## v9.6 - 长问题拆解 + 多子问题并行检索
+
+### 新增：question_decompose_node 长问题拆解节点
+
+**背景**：用户提出复合问题（如"感冒了怎么办？布洛芬和对乙酰氨基酚哪个好？"）时，单一检索无法同时覆盖多个主题，导致部分子问题答案缺失
+
+**流程**：路由 → 查询重写 → **问题拆解** → 并行检索 → 评分 → 答案生成
+
+**拆解策略**（三层降级）：
+
+1. **前置检测**（不用 LLM）：
+   - 问题 ≤ 20 字符 → 不拆解
+   - 问号 < 2 个且无连接词 → 不拆解
+   - 检测连接词：另外/还有/同时/而且/以及/并且/再问
+
+2. **LLM 拆解**：`QUESTION_DECOMPOSE_PROMPT` + `invoke_structured` → `QuestionDecomposeOutput`
+   - `need_decompose`: 是否需要拆解
+   - `sub_questions`: 独立子问题列表（最多 4 个）
+   - 每个子问题必须自包含（不依赖其他子问题的答案）
+
+3. **规则降级**：LLM 失败时按问号切分
+
+**并行检索**（`knowledge_retrieval_node` 增强）：
+
+- `sub_questions` 有多个时，逐一检索每个子问题
+- 每个子问题独立做同义词预处理
+- 文档标注 `sub_question` + `sub_question_idx` 元数据
+- 检索结果按 `(source, page_content[:100])` 去重
+- 单一问题仍走原有逻辑（兼容）
+
+**新增文件/模型**：
+- `prompts.py`：`QUESTION_DECOMPOSE_PROMPT`
+- `models.py`：`QuestionDecomposeOutput`（need_decompose + sub_questions + field_validator）
+- `state.py`：`sub_questions: Optional[List[str]]`
+- `streaming.py`：阶段 2.5 插入问题拆解
+
+**示例**：
+```
+用户：感冒了怎么办？布洛芬和对乙酰氨基酚哪个好？
+  ↓ question_decompose_node
+子问题1：感冒了怎么办？
+子问题2：布洛芬和对乙酰氨基酚哪个好？
+  ↓ knowledge_retrieval_node（并行检索）
+子问题1 → 5 篇文档（常见疾病症状与家庭护理、呼吸系统诊疗...）
+子问题2 → 5 篇文档（常见药物使用指南、药物相互作用...）
+  ↓ 去重
+共 8 篇文档 → 答案生成
+```
+
+---
+
 ## v9.5 - 四层上下文压缩策略（L1→L3→L2→L4）
 
 ### 新增：context_manager.py 四层上下文压缩模块
