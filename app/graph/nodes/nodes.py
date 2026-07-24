@@ -816,7 +816,7 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     logger.info(f"问题拆解：检测到复合标记（{question_mark_count} 个问号，连接词={has_connector}），调用 LLM 拆解")
 
-    # LLM 拆解
+    # LLM 拆解（带超时保护）
     try:
         from app.graph.nodes.prompts import QUESTION_DECOMPOSE_PROMPT
         from app.graph.nodes.models import QuestionDecomposeOutput
@@ -825,9 +825,17 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
         llm = get_local_llm_json()
         messages = QUESTION_DECOMPOSE_PROMPT.format_messages(question=question)
 
+        # v9.6.1: max_attempts=1 + force_strategy="text_parse"
+        # Ollama 本地模型不支持 Tool Calling / JSON Mode，直接用 Layer 3 避免无效调用
+        # 超时保护：2s 内必须返回，否则降级规则拆解
+        decompose_deadline = time.time() + 2.0  # 2 秒超时
+
         result: QuestionDecomposeOutput = invoke_structured(
-            llm, messages, QuestionDecomposeOutput, max_attempts=2,
+            llm, messages, QuestionDecomposeOutput, max_attempts=1, force_strategy="text_only",
         )
+
+        if time.time() > decompose_deadline:
+            raise TimeoutError("问题拆解超时（>2s），降级规则拆解")
 
         if result.need_decompose and len(result.sub_questions) >= 2:
             sub_questions = result.sub_questions[:4]  # 最多 4 个
@@ -964,7 +972,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 try:
                     sub_docs = retriever.invoke(
                         sub_q,
-                        original_query=original_query,
+                        original_query=sub_q,  # 用子问题自身作为缓存 key，避免误命中其他子问题
                     )
                     # 标注子问题来源
                     for doc in sub_docs:

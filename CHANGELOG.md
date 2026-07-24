@@ -1,5 +1,22 @@
 # 系统优化更新日志
 
+## v9.6.1 - 问题拆解延迟修复（TTFT 7894ms → ~3000ms）
+
+### 修复：问题拆解节点延迟从 4850ms 降至 ~1200ms
+
+**根因**（日志1.txt 分析）：
+1. `invoke_structured` 尝试 2 次 × 3 种策略 = 6 次 LLM 调用，Ollama 本地模型不支持 Tool Calling/JSON Mode，前两层各报错，Layer 3 也解析失败 → 4 次 HTTP × ~1.2s = 4.85s
+2. 子问题2 语义缓存误命中子问题1 的结果（83.86% 相似度命中），导致药物文档未检索
+3. 文档去重过度：6 篇 → 3 篇 → 2 篇
+
+**修复**：
+- `max_attempts=2 → 1`，`force_strategy="text_only"`：跳过 Tool Calling 和 JSON Mode，直接用 Layer 3 纯文本解析
+- 2 秒超时保护：超过 2s 直接降级规则拆解
+- 子问题检索用 `original_query=sub_q`（子问题自身），避免缓存误命中
+- 降级规则拆解按问号切分（无需 LLM，0ms）
+
+---
+
 ## v9.6 - 长问题拆解 + 多子问题并行检索
 
 ### 新增：question_decompose_node 长问题拆解节点
