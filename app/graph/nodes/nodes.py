@@ -794,27 +794,39 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.info(f"问题拆解：已有 {len(sub_questions_existing)} 个子问题，跳过")
         return {}
 
-    # 前置检测：短问题不拆解
-    if len(question) <= 20:
-        logger.info(f"问题拆解：问题过短（{len(question)} 字符），不拆解")
-        return {"sub_questions": [question]}
-
-    # 前置检测：无复合标记不拆解
-    _COMPOUND_MARKERS = [
-        "？", "?",  # 中文/英文问号
-    ]
+    # 前置检测：复合标记检测（移除长度阈值，"发烧？便秘？"仅 8 字符但也应拆解）
     _COMPOUND_CONNECTORS = [
         "另外", "还有", "同时", "而且", "以及", "并且", "还有个", "再问",
     ]
     question_mark_count = question.count("？") + question.count("?")
     has_connector = any(c in question for c in _COMPOUND_CONNECTORS)
 
-    # 条件：至少 2 个问号 或 1 个问号 + 连接词
-    if question_mark_count < 2 and not has_connector:
-        logger.info(f"问题拆解：未检测到复合标记（{question_mark_count} 个问号，无连接词），不拆解")
+    # 条件1：至少 2 个问号 或 1 个问号 + 连接词
+    has_punctuation_or_connector = question_mark_count >= 2 or (question_mark_count >= 1 and has_connector)
+
+    # 条件2（无标点兜底）：症状实体检测——用 AC 自动机识别多个不同症状
+    # 解决"发烧怎么处理便秘怎么处理"这类无标点复合问题
+    has_multi_symptoms = False
+    matched_symptoms = []
+    if not has_punctuation_or_connector:
+        try:
+            from app.core.keyword_matcher import get_symptom_matcher
+            symptom_matcher = get_symptom_matcher()
+            matched_symptoms = symptom_matcher.get_matched_keywords(question, use_boundary=False)
+            # 去重后 ≥2 个不同症状 → 判定复合问题
+            if len(matched_symptoms) >= 2:
+                has_multi_symptoms = True
+        except Exception as e:
+            logger.debug(f"症状实体检测失败：{e}")
+
+    if not has_punctuation_or_connector and not has_multi_symptoms:
+        logger.info(f"问题拆解：未检测到复合标记（{question_mark_count} 个问号，无连接词，症状数={len(matched_symptoms)}），不拆解")
         return {"sub_questions": [question]}
 
-    logger.info(f"问题拆解：检测到复合标记（{question_mark_count} 个问号，连接词={has_connector}），调用 LLM 拆解")
+    if has_multi_symptoms and not has_punctuation_or_connector:
+        logger.info(f"问题拆解：检测到 {len(matched_symptoms)} 个症状实体（{matched_symptoms}），无标点/连接词，判定复合问题")
+    else:
+        logger.info(f"问题拆解：检测到复合标记（{question_mark_count} 个问号，连接词={has_connector}），调用 LLM 拆解")
 
     # LLM 拆解（带超时保护）
     try:
@@ -857,18 +869,40 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
 
 def _rule_based_decompose(question: str) -> List[str]:
-    """规则拆解降级：按问号切分（不用 LLM）"""
+    """规则拆解降级：优先按问号切分，问号不足时按症状边界切分（不用 LLM）"""
     import re
     # 按？或? 切分
     parts = re.split(r'[？?]', question)
     parts = [p.strip() for p in parts if p.strip()]
     if not parts:
         return [question]
-    # 如果只有 1 段（没有问号），返回原问题
-    if len(parts) == 1:
-        return [question]
-    # 每段补上问号
-    return [p + "？" for p in parts]
+    # 有问号且切出多段
+    if len(parts) >= 2:
+        return [p + "？" for p in parts]
+
+    # 无问号或仅1段 → 尝试按症状实体边界切分
+    # 例："发烧怎么处理便秘怎么处理" → ["发烧怎么处理", "便秘怎么处理"]
+    try:
+        from app.core.keyword_matcher import get_symptom_matcher
+        symptom_matcher = get_symptom_matcher()
+        matches = symptom_matcher.findall(question, use_boundary=False)
+        if len(matches) >= 2:
+            # 按症状在文本中的位置切分
+            # 每个症状实体的 start 位置作为新子问题的起始
+            sub_questions = []
+            for i, m in enumerate(matches):
+                start = m["start"]
+                end = matches[i + 1]["start"] if i + 1 < len(matches) else len(question)
+                fragment = question[start:end].strip()
+                if fragment:
+                    sub_questions.append(fragment)
+            if len(sub_questions) >= 2:
+                logger.info(f"按症状边界切分：{sub_questions}")
+                return sub_questions
+    except Exception as e:
+        logger.debug(f"症状边界切分失败：{e}")
+
+    return [question]
 
 
 @timing_decorator("知识检索")
@@ -957,31 +991,40 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         # v9.6: 多子问题并行检索
         sub_questions = state.get("sub_questions") or [search_query]
         if len(sub_questions) > 1:
-            # 并行检索每个子问题
             logger.info(f"多子问题并行检索：{len(sub_questions)} 个子问题")
             start_time = time.time()
 
-            all_sub_docs = []
-            for i, sub_q in enumerate(sub_questions):
-                # 子问题也做预处理
+            # v9.6.2: 真正并行检索（ThreadPoolExecutor），而非串行 for 循环
+            # 每个子问题的 retriever.invoke 包含 Embedding + Dense + BM25 + Reranker，
+            # 串行执行 2 个子问题约 2×2s=4s，并行约 2s
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            def _retrieve_sub_question(idx: int, sub_q: str) -> tuple:
+                """单个子问题检索（线程安全）"""
                 preprocessed_sub_q = _preprocess_query(sub_q)
                 if preprocessed_sub_q != sub_q:
-                    logger.info(f"  子问题{i + 1} 预处理：'{sub_q}' → '{preprocessed_sub_q}'")
+                    logger.info(f"  子问题{idx + 1} 预处理：'{sub_q}' → '{preprocessed_sub_q}'")
                     sub_q = preprocessed_sub_q
+                sub_docs = retriever.invoke(
+                    sub_q,
+                    original_query=sub_q,  # 用子问题自身作为缓存 key，避免误命中其他子问题
+                )
+                for doc in sub_docs:
+                    doc.metadata["sub_question"] = sub_q
+                    doc.metadata["sub_question_idx"] = idx + 1
+                return idx, sub_q, sub_docs
 
-                try:
-                    sub_docs = retriever.invoke(
-                        sub_q,
-                        original_query=sub_q,  # 用子问题自身作为缓存 key，避免误命中其他子问题
-                    )
-                    # 标注子问题来源
-                    for doc in sub_docs:
-                        doc.metadata["sub_question"] = sub_q
-                        doc.metadata["sub_question_idx"] = i + 1
-                    all_sub_docs.extend(sub_docs)
-                    logger.info(f"  子问题{i + 1} '{sub_q[:30]}' → {len(sub_docs)} 篇文档")
-                except Exception as e:
-                    logger.warning(f"  子问题{i + 1} 检索失败：{e}")
+            all_sub_docs = []
+            with ThreadPoolExecutor(max_workers=min(len(sub_questions), 4)) as pool:
+                futures = {pool.submit(_retrieve_sub_question, i, sq): i for i, sq in enumerate(sub_questions)}
+                for future in as_completed(futures):
+                    try:
+                        idx, sub_q, sub_docs = future.result()
+                        all_sub_docs.extend(sub_docs)
+                        logger.info(f"  子问题{idx + 1} '{sub_q[:30]}' → {len(sub_docs)} 篇文档")
+                    except Exception as e:
+                        idx = futures[future]
+                        logger.warning(f"  子问题{idx + 1} 检索失败：{e}")
 
             # 去重：同 source + 同 page_content 的文档只保留一个
             seen = set()
@@ -1393,7 +1436,10 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
         # 只过滤掉明显不相关的尾部文档（关键词完全不重叠且非前2名）
         filtered_docs = []
         for index, doc in enumerate(retrieved_docs):
-            overlap = has_query_overlap(question, doc.page_content)
+            # v9.6.2: 多子问题检索的文档用子问题做重叠检查，而非原始复合问题
+            # 例：原始问题"发烧怎么处理便秘怎么处理"，子问题1的文档用"发烧怎么处理"检查
+            check_question = doc.metadata.get("sub_question") or question
+            overlap = has_query_overlap(check_question, doc.page_content)
             # 前2名无条件保留（Reranker排序可信），其余需关键词重叠
             if index < 2 or overlap:
                 filtered_docs.append(doc)
@@ -1407,7 +1453,9 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
     # Reranker 未执行：用关键词重叠做启发式过滤
     filtered_docs = []
     for index, doc in enumerate(retrieved_docs):
-        overlap = has_query_overlap(question, doc.page_content)
+        # v9.6.2: 多子问题检索的文档用子问题做重叠检查
+        check_question = doc.metadata.get("sub_question") or question
+        overlap = has_query_overlap(check_question, doc.page_content)
         threshold_fallback = bool(doc.metadata.get("rerank_threshold_fallback"))
         keep_doc = overlap or (index == 0 and threshold_fallback)
         if keep_doc:
@@ -3028,7 +3076,7 @@ async def stream_answer_generation(state: MedicalAssistantState):
     )
 
     # 日志记录 prompt 大小，用于 TTFT 分析
-    prompt_chars = len(prompt)
+    prompt_chars = sum(len(msg.content) for msg in prompt if hasattr(msg, 'content'))
     prompt_est_tokens = prompt_chars // 2  # 中文约2字/token的粗略估算
     logger.info(f"RAG Prompt 大小：{prompt_chars}字符，估算约{prompt_est_tokens} tokens")
 

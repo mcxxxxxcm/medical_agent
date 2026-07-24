@@ -379,10 +379,14 @@ class HybridRetriever(BaseRetriever):
         # 阈值说明：ChromaDB cosine distance，0.0=完全相同，<0.08 对应 cosine_similarity>0.92
         # 注意：top1_dense_score >= 0（distance=0.0 是完美匹配，必须触发跳过）
         # v9.2 漏洞4修复：固定阈值 → 自适应阈值（基于百分位统计）
-        from app.core.adaptive_threshold import get_adaptive_threshold
-        at = get_adaptive_threshold()
-        at.observe("HIGH_CONFIDENCE_THRESHOLD", top1_dense_score)  # 记录观察值
-        HIGH_CONFIDENCE_THRESHOLD = at.get("HIGH_CONFIDENCE_THRESHOLD")
+        # v9.6.2: 阈值获取失败时用默认值，避免跳过 Reranker
+        try:
+            from app.core.adaptive_threshold import get_adaptive_threshold
+            at = get_adaptive_threshold()
+            at.observe("HIGH_CONFIDENCE_THRESHOLD", top1_dense_score)  # 记录观察值
+            HIGH_CONFIDENCE_THRESHOLD = at.get("HIGH_CONFIDENCE_THRESHOLD")
+        except (KeyError, Exception):
+            HIGH_CONFIDENCE_THRESHOLD = 0.08  # 默认值
         if 0 <= top1_dense_score < HIGH_CONFIDENCE_THRESHOLD:
             logger.info(
                 f"Dense Top-1 置信度极高（distance={top1_dense_score:.4f} < {HIGH_CONFIDENCE_THRESHOLD:.4f}），跳过重排"
@@ -526,10 +530,15 @@ class HybridRetriever(BaseRetriever):
                 reranker = get_reranker()
                 rerank_start = time.time()
                 # v9.2 漏洞4修复：Reranker 阈值自适应
-                from app.core.adaptive_threshold import get_adaptive_threshold
-                at = get_adaptive_threshold()
-                # 观察 reranker 最高分（后续校准用）
-                adaptive_reranker_threshold = at.get("RERANKER_THRESHOLD")
+                # v9.6.2: 阈值获取失败时用默认值，而非让整个 Reranker 被跳过
+                try:
+                    from app.core.adaptive_threshold import get_adaptive_threshold
+                    at = get_adaptive_threshold()
+                    adaptive_reranker_threshold = at.get("RERANKER_THRESHOLD")
+                except (KeyError, Exception) as te:
+                    logger.warning(f"自适应阈值获取失败，使用默认值 0.02：{te}")
+                    adaptive_reranker_threshold = 0.02
+                    at = None
                 final_docs = reranker.rerank(
                     query=query,
                     documents=reranker_input,
@@ -537,7 +546,7 @@ class HybridRetriever(BaseRetriever):
                     score_threshold=adaptive_reranker_threshold
                 )
                 # 记录 reranker 评分观察值（取最高分）
-                if final_docs:
+                if final_docs and at is not None:
                     top_rerank_score = max(d.metadata.get("relevance_score", 0) for d in final_docs) if final_docs else 0
                     at.observe("RERANKER_THRESHOLD", top_rerank_score)
                 rerank_ms = (time.time() - rerank_start) * 1000
@@ -552,9 +561,10 @@ class HybridRetriever(BaseRetriever):
                 )
             final_docs = candidates[:self.k]
 
-        # v9.4: 文档来源多样性过滤——同一来源文档最多保留 max_per_source 个 chunk
+        # v9.4→v9.6.1: 文档来源多样性过滤——同一来源文档最多保留 max_per_source 个 chunk
         # 避免"感冒"类高频主题全部命中同一文档，导致其他文档的补充信息丢失
-        MAX_PER_SOURCE = 2
+        # max_per_source=2→3：多子问题检索时需要更多同源文档覆盖不同子问题
+        MAX_PER_SOURCE = 3
         final_docs = _apply_source_diversity(final_docs, max_per_source=MAX_PER_SOURCE)
 
         retrieval_time = (time.time() - retrieval_start) * 1000

@@ -18,6 +18,7 @@ v9.2 漏洞4修复：硬编码阈值随数据分布漂移失效
 """
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -290,46 +291,50 @@ class AdaptiveThreshold:
 
 # ===== 全局单例 =====
 _adaptive_threshold: Optional[AdaptiveThreshold] = None
+_threshold_lock = threading.Lock()
 
 
 def get_adaptive_threshold() -> AdaptiveThreshold:
-    """获取自适应阈值管理器单例"""
+    """获取自适应阈值管理器单例（线程安全）"""
     global _adaptive_threshold
     if _adaptive_threshold is None:
-        _adaptive_threshold = AdaptiveThreshold()
+        with _threshold_lock:
+            # 双重检查锁定
+            if _adaptive_threshold is None:
+                _adaptive_threshold = AdaptiveThreshold()
 
-        # 注册系统阈值
-        # HIGH_CONFIDENCE_THRESHOLD: Dense Top-1 distance 的 P5
-        # 含义：Top-1 距离优于历史 95% 查询时，跳过 Reranker
-        _adaptive_threshold.register(
-            name="HIGH_CONFIDENCE_THRESHOLD",
-            default=0.08,
-            strategy="percentile",
-            percentile=5.0,
-            min_value=0.01,  # 下限：至少 0.01，避免过度跳过 Reranker
-            max_value=0.20,  # 上限：0.2 以上无论多密集都不应跳过
-        )
+                # 注册系统阈值
+                # HIGH_CONFIDENCE_THRESHOLD: Dense Top-1 distance 的 P5
+                # 含义：Top-1 距离优于历史 95% 查询时，跳过 Reranker
+                _adaptive_threshold.register(
+                    name="HIGH_CONFIDENCE_THRESHOLD",
+                    default=0.08,
+                    strategy="percentile",
+                    percentile=5.0,
+                    min_value=0.01,  # 下限：至少 0.01，避免过度跳过 Reranker
+                    max_value=0.20,  # 上限：0.2 以上无论多密集都不应跳过
+                )
 
-        # RERANKER_THRESHOLD: Reranker 评分的 P5
-        # 含义：评分低于历史 95% 文档的分数才被过滤
-        _adaptive_threshold.register(
-            name="RERANKER_THRESHOLD",
-            default=0.02,
-            strategy="percentile",
-            percentile=5.0,
-            min_value=0.005,
-            max_value=0.10,
-        )
+                # RERANKER_THRESHOLD: Reranker 评分的 P5
+                # 含义：评分低于历史 95% 文档的分数才被过滤
+                _adaptive_threshold.register(
+                    name="RERANKER_THRESHOLD",
+                    default=0.02,
+                    strategy="percentile",
+                    percentile=5.0,
+                    min_value=0.005,
+                    max_value=0.10,
+                )
 
-        # SEMANTIC_CACHE_THRESHOLD: 语义缓存相似度的 P95
-        # 含义：相似度高于历史 95% 的查询对才命中缓存
-        _adaptive_threshold.register(
-            name="SEMANTIC_CACHE_THRESHOLD",
-            default=0.92,
-            strategy="percentile",
-            percentile=95.0,
-            min_value=0.85,
-            max_value=0.99,
-        )
+                # SEMANTIC_CACHE_THRESHOLD: 语义缓存相似度的 P95
+                # 含义：相似度高于历史 95% 的查询对才命中缓存
+                _adaptive_threshold.register(
+                    name="SEMANTIC_CACHE_THRESHOLD",
+                    default=0.92,
+                    strategy="percentile",
+                    percentile=95.0,
+                    min_value=0.85,
+                    max_value=0.99,
+                )
 
     return _adaptive_threshold

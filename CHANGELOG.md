@@ -1,8 +1,69 @@
 # 系统优化更新日志
 
-## v9.6.1 - 问题拆解延迟修复（TTFT 7894ms → ~3000ms）
+## v9.6.2 - 无标点复合问题拆解增强 + 子问题并行检索 + 过滤修复
 
-### 修复：问题拆解节点延迟从 4850ms 降至 ~1200ms
+### 修复1：无标点复合问题漏拆解导致漏召回文档
+
+**场景**：用户输入"发烧怎么处理便秘怎么处理"（无问号、无连接词），当前检测逻辑（问号数 ≥ 2 或连接词）无法识别为复合问题，跳过拆解，导致便秘文档未召回
+
+**修复**：在 `question_decompose_node` 中增加**症状实体检测**作为第二层判断：
+
+1. **前置检测三层逻辑**：
+   - 条件1（原有）：问号数 ≥ 2 或 1 个问号 + 连接词
+   - 条件2（新增）：用 `get_symptom_matcher()` AC 自动机识别 ≥2 个不同症状实体
+   - 两个条件都不满足时才跳过拆解
+
+2. **规则降级拆解增强**（`_rule_based_decompose`）：
+   - 优先按问号切分（原有逻辑）
+   - 问号不足时按**症状实体边界**切分：根据症状在文本中的位置，从每个症状开始到下一个症状之前切出一个子问题
+   - 例："发烧怎么处理便秘怎么处理" → ["发烧怎么处理", "便秘怎么处理"]
+
+### 修复2：子问题检索串行执行导致首字延迟翻倍
+
+**问题**：`knowledge_retrieval_node` 中多子问题用 `for` 循环串行调用 `retriever.invoke()`，2 个子问题串行约 4s
+
+**修复**：改用 `ThreadPoolExecutor` 真正并行检索，检索耗时从 ~4s 降到 ~2s
+
+### 修复3：adaptive_threshold 竞态导致 Reranker 被整体跳过
+
+**问题**：`ThreadPoolExecutor` 并行检索时，`get_adaptive_threshold()` 阈值尚未注册，触发 `KeyError("未注册的阈值：RERANKER_THRESHOLD")`，整个 Reranker 被 `except` 跳过，返回 7 篇未精排的低质量文档 → 启发式过滤 10→2 → LLM 说"文档未提及"
+
+**修复**（双重保险）：
+1. `adaptive_threshold.py`：`get_adaptive_threshold()` 改为双重检查锁定（DCL），确保初始化+注册原子完成
+2. `hybrid_retriever.py`：阈值获取失败时**用默认值**（RERANKER_THRESHOLD=0.02, HIGH_CONFIDENCE_THRESHOLD=0.08），而非让整个 Reranker 被跳过。这是防御性修复，即使 DCL 失败也能保证 Reranker 正常执行
+
+### 修复4：启发式过滤用复合问题检查子问题文档导致过度过滤
+
+**问题**：多子问题检索后，`filter_relevant_docs` 用原始复合问题（"发烧怎么处理便秘怎么处理"）对所有文档做关键词重叠检查。子问题2 的便秘文档可能不含"发烧"关键词，被误判为不相关而过滤掉
+
+**修复**：文档标注了 `sub_question` 元数据，过滤时对有 `sub_question` 的文档用子问题而非原始复合问题做重叠检查
+
+### 修复5：RAG Prompt 大小日志错误
+
+**问题**：`len(prompt)` 返回消息条数（2条），不是字符数，日志显示"2字符"
+
+**修复**：改为 `sum(len(msg.content) for msg in prompt)`
+
+**改动文件**：
+- `nodes.py`：`question_decompose_node`、`_rule_based_decompose`、`knowledge_retrieval_node`、`filter_relevant_docs`、`stream_answer_generation`
+- `adaptive_threshold.py`：`get_adaptive_threshold()` 线程安全（DCL）
+- `hybrid_retriever.py`：阈值获取失败时用默认值，防御性修复
+
+---
+
+## v9.6.1 - 问题拆解延迟修复 + 拆解条件修复
+
+### 修复1：移除长度阈值（"发烧？便秘？"仅 8 字符但也应拆解）
+
+**根因**：`len(question) <= 20` 跳过了 14 字符的复合问题"发烧怎么处理？便秘怎么处理？"
+**修复**：移除长度阈值，仅用问号数 ≥ 2 或连接词作为复合检测条件
+
+### 修复2：来源多样性过滤 max_per_source 2→3
+
+**根因**：多子问题检索后，5 篇文档经 `max_per_source=2` 过滤只剩 2 篇（且同源），便秘文档被丢弃
+**修复**：`max_per_source=3`，给多子问题检索更多空间
+
+### 修复3：问题拆解节点延迟 4850ms → ~1200ms
 
 **根因**（日志1.txt 分析）：
 1. `invoke_structured` 尝试 2 次 × 3 种策略 = 6 次 LLM 调用，Ollama 本地模型不支持 Tool Calling/JSON Mode，前两层各报错，Layer 3 也解析失败 → 4 次 HTTP × ~1.2s = 4.85s
