@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -50,6 +51,16 @@ def load_pdf(file_path: Path) -> List[Document]:
             timeout=300,
         )
         docs = loader.load()
+
+        # 扫描件检测：MinerU 解析出的文档几乎无文本 → 可能是扫描件
+        total_chars = sum(len(doc.page_content) for doc in docs)
+        if total_chars < 50 and docs:
+            logger.info(f"MinerU 解析文本过少（{total_chars} 字符），疑似扫描件，尝试 OCR")
+            try:
+                return load_scanned_pdf(file_path)
+            except Exception as ocr_err:
+                logger.warning(f"扫描件 OCR 失败：{ocr_err}，返回 MinerU 原始结果")
+
         logger.info(f"MinerU 解析 PDF 成功：{file_path.name}，生成 {len(docs)} 个文档")
         return docs
     except ImportError:
@@ -269,6 +280,279 @@ def load_md(file_path: Path) -> List[Document]:
     raise ValueError(f"无法解码 Markdown：{file_path.name}")
 
 
+# ===== 扫描件 OCR 加载器 =====
+
+# 支持的图片扩展名
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"}
+
+# PaddleOCR 版面结构标签 → Markdown 映射
+_LAYOUT_LABEL_MAP = {
+    "title": "heading",
+    "text": "text",
+    "table": "table",
+    "figure": "figure",
+    "figure_caption": "text",
+    "table_caption": "text",
+    "header": "header",
+    "footer": "footer",
+    "reference": "text",
+    "equation": "text",
+}
+
+
+def _ocr_image_to_markdown(
+    image_path: str,
+    use_table_rec: bool = True,
+    lang: str = "ch",
+) -> str:
+    """使用 PaddleOCR PP-Structure 对图片/扫描页进行版面分析 + OCR + 表格识别
+
+    流程（参考日志1：先还原结构，再输出结构化内容）：
+        1. PP-Structure 版面分析 → 检测 text/table/title/figure 区域
+        2. 文本区域 → OCR → 纯文本
+        3. 表格区域 → 表格识别 → HTML → Markdown 表格
+        4. 标题区域 → OCR → Markdown 标题层级（# / ## / ###）
+        5. 按阅读顺序组装 Markdown
+
+    Args:
+        image_path: 图片路径
+        use_table_rec: 是否启用表格识别（PP-Structure table）
+        lang: OCR 语言（ch=中英文混合）
+
+    Returns:
+        Markdown 格式文本
+    """
+    try:
+        from paddleocr import PPStructure
+    except ImportError:
+        raise ValueError(
+            "扫描件 OCR 需要 PaddleOCR，请安装：\n"
+            "  pip install paddleocr paddlepaddle\n"
+            "  或 GPU 版：pip install paddleocr paddlepaddle-gpu"
+        )
+
+    # 初始化 PP-Structure（版面分析 + OCR + 表格识别）
+    engine = PPStructure(
+        image_dir=image_path,
+        show_log=False,
+        layout=True,          # 版面分析
+        table=use_table_rec,  # 表格识别
+        ocr=True,             # OCR
+        lang=lang,
+        recovery=True,        # 版面还原模式
+    )
+
+    # 执行分析
+    result = engine(image_path)
+
+    # 组装 Markdown
+    md_lines = []
+    for region in result:
+        label = region.get("type", "text")
+        bbox = region.get("bbox", [0, 0, 0, 0])
+        page_number = region.get("page_no", -1)
+
+        mapped_label = _LAYOUT_LABEL_MAP.get(label, "text")
+
+        if mapped_label == "heading":
+            # 标题区域 → Markdown 标题
+            text = region.get("res", [])
+            if isinstance(text, list):
+                text = " ".join([item.get("text", "") for item in text])
+            if text.strip():
+                # 根据字号推断层级（简化：用 bbox 高度启发式）
+                h = bbox[3] - bbox[1] if len(bbox) >= 4 else 0
+                level = "##" if h < 30 else "#"  # 大字→H1，中字→H2
+                md_lines.append(f"{level} {text.strip()}\n")
+
+        elif mapped_label == "table":
+            # 表格区域
+            if use_table_rec and "res" in region:
+                table_res = region["res"]
+                if isinstance(table_res, dict) and "html" in table_res:
+                    # PaddleOCR 表格识别输出 HTML → 转 Markdown
+                    html_table = table_res["html"]
+                    md_table = _html_table_to_markdown(html_table)
+                    md_lines.append(md_table + "\n")
+                elif isinstance(table_res, list):
+                    # 降级：OCR 文本列表
+                    text = " ".join([item.get("text", "") for item in table_res])
+                    if text.strip():
+                        md_lines.append(text.strip() + "\n")
+            else:
+                # 未启用表格识别，OCR 当文本
+                text = region.get("res", [])
+                if isinstance(text, list):
+                    text = " ".join([item.get("text", "") for item in text])
+                if text.strip():
+                    md_lines.append(text.strip() + "\n")
+
+        elif mapped_label == "text":
+            # 文本区域
+            text = region.get("res", [])
+            if isinstance(text, list):
+                text = " ".join([item.get("text", "") for item in text])
+            if text.strip():
+                md_lines.append(text.strip() + "\n")
+
+        elif mapped_label == "header":
+            # 页眉（忽略，不进入正文）
+            pass
+        elif mapped_label == "footer":
+            # 页脚（忽略）
+            pass
+        elif mapped_label == "figure":
+            # 图片区域（记录占位，OCR 无法提取图中文字）
+            md_lines.append("<!-- 图片区域 -->\n")
+
+    return "\n".join(md_lines)
+
+
+def _html_table_to_markdown(html: str) -> str:
+    """将 PaddleOCR 输出的 HTML 表格转为 Markdown 表格
+
+    处理：
+        1. 解析 <table><tr><td> 结构
+        2. 合并单元格（colspan/rowspan）→ fill-down 继承
+        3. 输出 Markdown 表格
+    """
+    try:
+        from html.parser import HTMLParser
+
+        class TableParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.rows = []
+                self.current_row = []
+                self.current_cell = ""
+                self.in_cell = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "tr":
+                    self.current_row = []
+                elif tag in ("td", "th"):
+                    self.in_cell = True
+                    self.current_cell = ""
+
+            def handle_endtag(self, tag):
+                if tag in ("td", "th"):
+                    self.in_cell = False
+                    self.current_row.append(self.current_cell.strip())
+                elif tag == "tr" and self.current_row:
+                    self.rows.append(self.current_row)
+
+            def handle_data(self, data):
+                if self.in_cell:
+                    self.current_cell += data
+
+        parser = TableParser()
+        parser.feed(html)
+
+        if not parser.rows:
+            return ""
+
+        # 构建 Markdown 表格
+        # 第一行作为表头
+        headers = parser.rows[0]
+        # 对齐列数
+        max_cols = max(len(row) for row in parser.rows)
+        headers = headers + [""] * (max_cols - len(headers))
+
+        lines = []
+        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("| " + " | ".join(["---"] * max_cols) + " |")
+
+        for row in parser.rows[1:]:
+            row = row + [""] * (max_cols - len(row))
+            lines.append("| " + " | ".join(row) + " |")
+
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+def load_scanned_image(file_path: Path) -> List[Document]:
+    """加载扫描件图片，使用 PaddleOCR 进行版面分析 + OCR + 表格识别
+
+    支持：.png, .jpg, .jpeg, .tiff, .bmp, .webp
+
+    流程：
+        图片 → PaddleOCR PP-Structure → 版面分析 → OCR/表格识别 → Markdown → Document
+    """
+    md_content = _ocr_image_to_markdown(str(file_path))
+    if not md_content.strip():
+        logger.warning(f"OCR 未识别出内容：{file_path.name}")
+        return []
+
+    doc = Document(
+        page_content=md_content,
+        metadata={
+            "is_scanned": True,
+            "ocr_engine": "paddleocr",
+        },
+    )
+    logger.info(f"扫描件 OCR 完成：{file_path.name}，识别 {len(md_content)} 字符")
+    return [doc]
+
+
+def load_scanned_pdf(file_path: Path) -> List[Document]:
+    """加载扫描件 PDF（每页转图片后 OCR）
+
+    流程：
+        1. pdf2image 将 PDF 每页转为图片
+        2. 每页图片 → PaddleOCR PP-Structure → Markdown
+        3. 按页组装，标注页码元数据
+    """
+    try:
+        from pdf2image import convert_from_path
+    except ImportError:
+        raise ValueError("扫描件 PDF 需要 pdf2image + poppler，请安装：pip install pdf2image")
+
+    try:
+        from PIL import Image
+    except ImportError:
+        raise ValueError("需要 Pillow：pip install Pillow")
+
+    # PDF 每页转图片
+    try:
+        images = convert_from_path(str(file_path), dpi=300)
+    except Exception as e:
+        raise ValueError(f"PDF 转图片失败（需安装 poppler）：{e}")
+
+    if not images:
+        return []
+
+    docs = []
+    for page_num, image in enumerate(images, start=1):
+        # 临时保存图片
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            image.save(tmp.name, "PNG")
+            tmp_path = tmp.name
+
+        try:
+            md_content = _ocr_image_to_markdown(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
+        if not md_content.strip():
+            continue
+
+        doc = Document(
+            page_content=md_content,
+            metadata={
+                "is_scanned": True,
+                "ocr_engine": "paddleocr",
+                "page_number": page_num,
+                "total_pages": len(images),
+            },
+        )
+        docs.append(doc)
+
+    logger.info(f"扫描件 PDF OCR 完成：{file_path.name}，{len(docs)}/{len(images)} 页有内容")
+    return docs
+
+
 # 全局定义字典说明文档加载的策略
 LOADERS = {
     ".txt": load_txt,
@@ -278,6 +562,14 @@ LOADERS = {
     ".xlsx": load_xlsx,
     ".xls": load_xlsx,
     ".csv": load_csv,
+    # 扫描件图片
+    ".png": load_scanned_image,
+    ".jpg": load_scanned_image,
+    ".jpeg": load_scanned_image,
+    ".tiff": load_scanned_image,
+    ".tif": load_scanned_image,
+    ".bmp": load_scanned_image,
+    ".webp": load_scanned_image,
 }
 
 
@@ -290,10 +582,32 @@ def load_single_file(file_path: Path) -> List[Document]:
 
 
 def add_metadata(docs: List[Document], file_path: Path) -> None:
-    """为文档列表添加来源等元数据。"""
+    """为文档列表添加来源等元数据（溯源必备）。
+
+    溯源元数据清单（参考日志1：入库时除正文外还要保存的元数据）：
+        - source: 文档文件名（如"发热诊断与家庭护理指南.txt"）
+        - file_path: 文档完整路径
+        - file_type: 文档类型（txt/pdf/docx/xlsx/csv/md/image）
+        - file_size: 文件大小（字节）
+        - doc_hash: 文档内容 MD5 前 8 位（防篡改校验）
+    """
+    file_type = file_path.suffix.lstrip(".").lower()
+    file_size = file_path.stat().st_size if file_path.exists() else 0
+
+    # 文档内容哈希（防篡改校验）
+    doc_hash = ""
+    try:
+        content_bytes = file_path.read_bytes()
+        doc_hash = hashlib.md5(content_bytes).hexdigest()[:8]
+    except Exception:
+        pass
+
     for doc in docs:
         doc.metadata["source"] = file_path.name
         doc.metadata["file_path"] = str(file_path)
+        doc.metadata["file_type"] = file_type
+        doc.metadata["file_size"] = file_size
+        doc.metadata["doc_hash"] = doc_hash
 
 
 def load_medical_documents(docs_dir: str | Path = "docs/medical") -> List[Document]:
@@ -731,6 +1045,7 @@ def _generate_row_chunks(
     # 构建上下文前缀
     source = metadata.get("source", "未知文档")
     context_parts = []
+    context_parts.append(f"文档：{source}")
     if table_title:
         context_parts.append(f"表格：{table_title}")
     if header_cols:
@@ -754,6 +1069,8 @@ def _generate_row_chunks(
             "table_title": table_title,
             "table_headers": header_cols,
             "table_row_count": len(data_lines),
+            # 溯源字段
+            "source_trace": f"{source} | {table_title} | 概览（前3行）",
         },
     )
     result_docs.append(overview_doc)
@@ -786,6 +1103,8 @@ def _generate_row_chunks(
                 "row_index": row_idx,
                 "row_primary_key": row_primary_key,
                 "row_summary": summary,
+                # 溯源字段
+                "source_trace": f"{source} | {table_title} | 行{row_idx}: {row_primary_key}",
             },
         )
         result_docs.append(row_doc)

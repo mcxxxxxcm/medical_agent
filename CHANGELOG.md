@@ -100,7 +100,62 @@
 - `loader.py`：新增 `_split_table_aware`（行级切片）、`_generate_row_chunks`、`_generate_row_summary`
 - `loader.py`：新增 `_segment_by_table`（表格/非表格分段）
 - `loader.py`：修改 `split_documents`、`_split_by_markdown_headers`（含表格章节走行级切片）
+- `loader.py`：增强 `add_metadata`（溯源元数据：file_type/file_size/doc_hash/source_trace）
 - `LOADERS` 字典：新增 `.md` `.xlsx` `.xls` `.csv`
+
+### 新增6：扫描件 OCR 模块（PaddleOCR PP-Structure）
+
+**流程**（参考日志1：先还原结构，再输出结构化内容）：
+```
+扫描件图片/PDF
+  → pdf2image（PDF逐页转图片，DPI=300）
+  → PaddleOCR PP-Structure
+    → 版面分析（layout）：检测 text/table/title/figure 区域
+    → 文本区域 → OCR → 纯文本
+    → 表格区域 → 表格识别（table rec）→ HTML → _html_table_to_markdown → Markdown 表格
+    → 标题区域 → OCR → Markdown 标题层级（bbox 高度启发式推断 H1/H2）
+    → 页眉/页脚 → 忽略（不进入正文）
+  → 按阅读顺序组装 Markdown
+  → 标准 chunking pipeline（表格感知 → 行级切片）
+```
+
+**扫描件 PDF 自动检测**：
+- MinerU 解析后总文本 < 50 字符 → 疑似扫描件 → 自动降级 `load_scanned_pdf()`
+- 无需手动标注"这是扫描件"
+
+**新增函数**：
+- `_ocr_image_to_markdown()`：PP-Structure 版面分析 + OCR + 表格识别
+- `_html_table_to_markdown()`：HTML 表格 → Markdown 表格（处理合并单元格）
+- `load_scanned_image()`：图片扫描件加载器
+- `load_scanned_pdf()`：PDF 扫描件加载器（逐页 OCR）
+
+**依赖**：
+- `paddleocr` + `paddlepaddle`（或 GPU 版 `paddlepaddle-gpu`）
+- `pdf2image` + `poppler`（扫描件 PDF 逐页转图片）
+- `Pillow`
+
+**LOADERS 字典新增**：`.png` `.jpg` `.jpeg` `.tiff` `.tif` `.bmp` `.webp`
+
+### 新增7：文档溯源元数据增强
+
+**问题**：原有 `add_metadata` 仅添加 `source` 和 `file_path`，无法满足溯源需求——答案引用了某条数据，却无法追溯来自哪个文档的哪一行
+
+**解决**：`add_metadata()` 增强为溯源元数据清单
+
+| 元数据 | 说明 | 溯源用途 | 示例 |
+|--------|------|---------|------|
+| `source` | 文档文件名 | 定位文档 | `"发热诊断与家庭护理指南.txt"` |
+| `file_path` | 完整路径 | 打开原文 | `"d:/Agent/.../发热诊断与家庭护理指南.txt"` |
+| `file_type` | 文件类型 | 选择打开方式 | `"txt"` |
+| `file_size` | 文件大小 | 完整性校验 | `15234` |
+| `doc_hash` | 内容 MD5 前8位 | 防篡改校验 | `"a3f7b2c1"` |
+| `page_number` | 页码（PDF/扫描件） | 定位页码 | `5` |
+| `source_trace` | 溯源路径 | 一键追溯 | `"指南.txt \| 药物对比 \| 行5: 每日最大量"` |
+
+**`source_trace` 格式**：`文档名 | 表格标题 | 行号: 行主键`
+- 表格行级 chunk：`"发热诊断与家庭护理指南.txt | 对乙酰氨基酚 vs 布洛芬对比 | 行5: 每日最大量"`
+- 表格概览 chunk：`"发热诊断与家庭护理指南.txt | 对乙酰氨基酚 vs 布洛芬对比 | 概览（前3行）"`
+- 非表格 chunk：无 `source_trace`（通过 `source` + `page_number` 追溯）
 
 ---
 
