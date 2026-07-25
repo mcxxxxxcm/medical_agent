@@ -1,6 +1,7 @@
 import os
+import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -88,11 +89,195 @@ def load_docx(file_path: Path) -> List[Document]:
         raise
 
 
+# ===== 表格文档加载器 =====
+
+def _dataframe_to_markdown_table(df, max_rows: int = 200, fill_down: bool = True) -> str:
+    """将 pandas DataFrame 转为 Markdown 表格字符串
+
+    Args:
+        df: pandas DataFrame
+        max_rows: 最大行数，超过截断并标注
+        fill_down: 合并单元格继承（fill-down），将空值填充为上一个非空值
+                   如"解热镇痛药"行下的多行都继承该分类
+    """
+    if df.empty:
+        return ""
+
+    # 截断过长表格
+    truncated = len(df) > max_rows
+    if truncated:
+        df = df.head(max_rows)
+
+    # 合并单元格继承（fill-down）
+    if fill_down:
+        for col in df.columns:
+            prev_val = ""
+            for idx in df.index:
+                val = str(df.at[idx, col]).strip()
+                if val and val != "nan" and val != "NaN" and val != "None":
+                    prev_val = val
+                elif prev_val:
+                    df.at[idx, col] = prev_val
+
+    # 填充 NaN
+    df = df.fillna("")
+
+    # 构建 Markdown 表格
+    headers = [str(col).strip() for col in df.columns]
+    lines = []
+    # 表头行
+    lines.append("| " + " | ".join(headers) + " |")
+    # 分隔行
+    lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+    # 数据行
+    for _, row in df.iterrows():
+        cells = [str(val).strip().replace("\n", " ") for val in row]
+        lines.append("| " + " | ".join(cells) + " |")
+
+    if truncated:
+        lines.append(f"\n> 表格已截断，仅展示前 {max_rows} 行（共 {len(df)} 行）")
+
+    return "\n".join(lines)
+
+
+def load_xlsx(file_path: Path) -> List[Document]:
+    """加载 Excel 文件，每个 Sheet 转为一个 Document（Markdown 表格格式）
+
+    流程：
+        1. openpyxl 读取 Excel（无需 Excel 运行时）
+        2. 每个 Sheet → DataFrame → Markdown 表格
+        3. 添加表格元数据（sheet_name, row_count, col_count, is_table）
+        4. 空行/空列自动跳过
+
+    支持：.xlsx, .xls（xlrd 降级）
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ValueError("加载 Excel 需要 pandas + openpyxl，请安装：pip install pandas openpyxl")
+
+    docs: List[Document] = []
+    try:
+        # 读取所有 Sheet
+        xls = pd.ExcelFile(str(file_path), engine="openpyxl")
+    except Exception:
+        # 降级尝试 xlrd（.xls 格式）
+        try:
+            xls = pd.ExcelFile(str(file_path), engine="xlrd")
+        except Exception as e:
+            raise ValueError(f"无法读取 Excel 文件：{e}，请安装 openpyxl 或 xlrd")
+
+    for sheet_name in xls.sheet_names:
+        try:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+            if df.empty:
+                logger.debug(f"跳过空 Sheet：{sheet_name}")
+                continue
+
+            # 去除全为 NaN 的列
+            df = df.dropna(axis=1, how="all")
+            if df.empty:
+                continue
+
+            md_table = _dataframe_to_markdown_table(df)
+            if not md_table:
+                continue
+
+            # 构建表头摘要（用于检索增强）
+            headers = [str(col).strip() for col in df.columns]
+            header_summary = f"表格列：{', '.join(headers)}"
+            row_count = len(df)
+            col_count = len(df.columns)
+
+            doc = Document(
+                page_content=md_table,
+                metadata={
+                    "sheet_name": sheet_name,
+                    "is_table": True,
+                    "table_headers": headers,
+                    "table_row_count": row_count,
+                    "table_col_count": col_count,
+                    "table_header_summary": header_summary,
+                },
+            )
+            docs.append(doc)
+        except Exception as e:
+            logger.warning(f"读取 Sheet '{sheet_name}' 失败：{e}")
+            continue
+
+    logger.info(f"Excel 加载完成：{file_path.name}，{len(docs)} 个 Sheet")
+    return docs
+
+
+def load_csv(file_path: Path) -> List[Document]:
+    """加载 CSV 文件，转为 Markdown 表格 Document
+
+    支持：.csv（自动检测编码和分隔符）
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ValueError("加载 CSV 需要 pandas，请安装：pip install pandas")
+
+    # 多编码尝试
+    encodings = ["utf-8", "gbk", "gb2312", "utf-8-sig", "latin-1"]
+    df = None
+    for encoding in encodings:
+        try:
+            df = pd.read_csv(str(file_path), encoding=encoding)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+
+    if df is None:
+        raise ValueError(f"无法解码 CSV：{file_path.name}")
+
+    if df.empty:
+        return []
+
+    df = df.dropna(axis=1, how="all")
+    md_table = _dataframe_to_markdown_table(df)
+    if not md_table:
+        return []
+
+    headers = [str(col).strip() for col in df.columns]
+    header_summary = f"表格列：{', '.join(headers)}"
+
+    doc = Document(
+        page_content=md_table,
+        metadata={
+            "is_table": True,
+            "table_headers": headers,
+            "table_row_count": len(df),
+            "table_col_count": len(df.columns),
+            "table_header_summary": header_summary,
+        },
+    )
+    logger.info(f"CSV 加载完成：{file_path.name}，{len(df)} 行 × {len(df.columns)} 列")
+    return [doc]
+
+
+def load_md(file_path: Path) -> List[Document]:
+    """加载 Markdown 文件，保留原始 Markdown 格式（含表格）"""
+    encodings = ["utf-8", "gbk", "utf-8-sig"]
+    for encoding in encodings:
+        try:
+            content = file_path.read_text(encoding=encoding)
+            return [Document(page_content=content)]
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"无法解码 Markdown：{file_path.name}")
+
+
 # 全局定义字典说明文档加载的策略
 LOADERS = {
     ".txt": load_txt,
     ".pdf": load_pdf,
     ".docx": load_docx,
+    ".md": load_md,
+    ".xlsx": load_xlsx,
+    ".xls": load_xlsx,
+    ".csv": load_csv,
 }
 
 
@@ -151,10 +336,13 @@ def split_documents(
     优先使用 Markdown 标题层级切分（Docling 输出的 Markdown），
     回退到 RecursiveCharacterTextSplitter。
 
+    表格感知：检测 Markdown 表格，保持表格原子性（不拆分跨行），
+    并添加表格上下文元数据（表头摘要、列名、行数）。
+
     Args:
          docs: 原始文档列表
-         chunk_size: 每个块的最大字符数量（默认1000，比之前500更大以保留语义完整性）
-         chunk_overlap: 块间重叠字符数（默认200，20%重叠防止边界丢失）
+         chunk_size: 每个块的最大字符数量（默认500）
+         chunk_overlap: 块间重叠字符数（默认50）
          use_markdown_splitter: 是否使用 Markdown 结构感知切分
 
     Returns:
@@ -163,12 +351,125 @@ def split_documents(
     if not docs:
         return []
 
+    # 表格感知预处理：提取文档中的表格，添加元数据
+    docs = _enrich_table_metadata(docs)
+
     # 判断是否使用 Markdown 切分器
     if use_markdown_splitter and _has_markdown_headers(docs):
         return _split_by_markdown_headers(docs, chunk_size, chunk_overlap)
 
     # 回退到普通递归切分
     return _split_by_recursive(docs, chunk_size, chunk_overlap)
+
+
+# ===== 表格感知处理 =====
+
+# Markdown 表格行匹配：| xxx | yyy |
+_MD_TABLE_ROW = re.compile(r"^\s*\|.+\|\s*$")
+# Markdown 表格分隔行：| --- | --- |
+_MD_TABLE_SEP = re.compile(r"^\s*\|[\s\-:]+\|[\s\-:|]*\|\s*$")
+
+
+def _detect_markdown_tables(content: str) -> List[Tuple[int, int, List[str]]]:
+    """检测 Markdown 内容中的所有表格区域
+
+    Returns:
+        List of (start_line, end_line, headers) for each table
+        headers: 表头列名列表（用于上下文增强）
+    """
+    lines = content.split("\n")
+    tables = []
+    i = 0
+    while i < len(lines):
+        # 查找表头行：| xxx | yyy | 格式
+        if _MD_TABLE_ROW.match(lines[i]) and i + 1 < len(lines) and _MD_TABLE_SEP.match(lines[i + 1]):
+            start = i
+            # 提取表头
+            header_line = lines[i].strip()
+            headers = [cell.strip() for cell in header_line.strip("|").split("|")]
+            # 跳过分隔行，找数据行
+            i += 2
+            while i < len(lines) and _MD_TABLE_ROW.match(lines[i]):
+                i += 1
+            tables.append((start, i, headers))
+        else:
+            i += 1
+    return tables
+
+
+def _extract_table_context(content: str, table_start: int, headers: List[str]) -> str:
+    """提取表格的上下文信息
+
+    策略：
+        1. 向上查找最近的 Markdown 标题（## xxx）作为表格标题
+        2. 组合标题+表头作为表格上下文摘要
+
+    Returns:
+        表格上下文摘要字符串
+    """
+    lines = content.split("\n")
+
+    # 向上查找最近的标题（最多 10 行）
+    table_title = ""
+    for j in range(table_start - 1, max(table_start - 10, -1), -1):
+        if j < 0:
+            break
+        line = lines[j].strip()
+        if line.startswith("#"):
+            table_title = line.lstrip("#").strip()
+            break
+
+    # 构建上下文摘要
+    parts = []
+    if table_title:
+        parts.append(f"表格标题：{table_title}")
+    if headers:
+        parts.append(f"表格列：{', '.join(headers)}")
+    return "；".join(parts) if parts else ""
+
+
+def _enrich_table_metadata(docs: List[Document]) -> List[Document]:
+    """表格感知预处理：检测文档中的 Markdown 表格，添加元数据
+
+    对每个文档：
+        1. 检测所有 Markdown 表格区域
+        2. 为整个文档标注 is_table / table_count
+        3. 收集所有表格的表头（用于检索增强）
+    """
+    for doc in docs:
+        # 已有 is_table 元数据的文档（Excel/CSV 加载器设置），跳过
+        if doc.metadata.get("is_table"):
+            continue
+
+        content = doc.page_content
+        tables = _detect_markdown_tables(content)
+
+        if not tables:
+            continue
+
+        # 标注文档含表格
+        doc.metadata["is_table"] = True
+        doc.metadata["table_count"] = len(tables)
+
+        # 收集所有表格的表头（用于检索增强）
+        all_headers = []
+        for _, _, headers in tables:
+            all_headers.extend(headers)
+        if all_headers:
+            doc.metadata["table_headers"] = list(dict.fromkeys(all_headers))  # 去重保序
+
+    return docs
+
+
+def _extract_table_title(lines: List[str], table_start: int) -> str:
+    """向上查找最近的 Markdown 标题作为表格标题"""
+    for j in range(table_start - 1, max(table_start - 10, -1), -1):
+        if j < 0:
+            break
+        line = lines[j].strip()
+        if line.startswith("#"):
+            return line.lstrip("#").strip()
+    return ""
 
 
 def _has_markdown_headers(docs: List[Document]) -> bool:
@@ -230,17 +531,30 @@ def _split_by_markdown_headers(
                 merged_metadata = {**doc.metadata, **chunk.metadata}
 
                 if len(chunk.page_content) > chunk_size:
-                    # 超大章节，递归切分
-                    sub_chunks = recursive_splitter.split_text(chunk.page_content)
-                    for sub_text in sub_chunks:
-                        sub_doc = Document(
-                            page_content=sub_text,
-                            metadata={**merged_metadata},
-                        )
-                        all_chunks.append(sub_doc)
+                    # 超大章节，检查是否含表格
+                    has_table = _detect_markdown_tables(chunk.page_content)
+                    if has_table:
+                        # 含表格：行级切片（每行独立 chunk + 概览 chunk）
+                        sub_docs = _split_table_aware(chunk.page_content, chunk_size, merged_metadata)
+                        all_chunks.extend(sub_docs)
+                    else:
+                        # 无表格：普通递归切分
+                        sub_chunks = recursive_splitter.split_text(chunk.page_content)
+                        for sub_text in sub_chunks:
+                            sub_doc = Document(
+                                page_content=sub_text,
+                                metadata={**merged_metadata},
+                            )
+                            all_chunks.append(sub_doc)
                 else:
-                    chunk.metadata = merged_metadata
-                    all_chunks.append(chunk)
+                    # 小章节，但可能含表格→仍需行级切片
+                    has_table = _detect_markdown_tables(chunk.page_content)
+                    if has_table:
+                        sub_docs = _split_table_aware(chunk.page_content, chunk_size, merged_metadata)
+                        all_chunks.extend(sub_docs)
+                    else:
+                        chunk.metadata = merged_metadata
+                        all_chunks.append(chunk)
 
         except Exception as e:
             logger.warning(f"Markdown 切分失败，回退到递归切分：{e}")
@@ -249,6 +563,290 @@ def _split_by_markdown_headers(
 
     logger.info(f"Markdown 结构感知切分完成：{len(docs)} 个文档 → {len(all_chunks)} 个块")
     return all_chunks
+
+
+def _split_table_aware(
+    content: str,
+    chunk_size: int,
+    metadata: dict,
+) -> List[Document]:
+    """表格感知切分：行级切片 + 双格式（概览 chunk + 行级 chunk）
+
+    设计原则（参考日志1：复杂表格入库最佳实践）：
+        1. 每个表格行独立成 chunk，携带完整上下文（表头+表格标题+章节）
+        2. 每个行 chunk 附带自然语言摘要（用于 Embedding/BM25 检索增强）
+        3. 额外生成一个概览 chunk（表头 + 前 3 行），支持对比类查询
+        4. 非表格文本正常递归切分
+
+    Args:
+        content: 章节文本内容
+        chunk_size: 最大 chunk 字符数
+        metadata: 继承的元数据
+
+    Returns:
+        切分后的 Document 列表
+    """
+    lines = content.split("\n")
+    tables = _detect_markdown_tables(content)
+
+    if not tables:
+        # 无表格，直接递归切分
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=50,
+            separators=["\n\n", "\n", "。", "，", ",", " ", ""],
+        )
+        chunks = splitter.split_text(content)
+        return [Document(page_content=t, metadata={**metadata}) for t in chunks]
+
+    # 标记表格行
+    table_line_set = set()
+    for start, end, _ in tables:
+        for line_idx in range(start, end):
+            table_line_set.add(line_idx)
+
+    result_docs = []
+
+    # 分段处理：表格区域 vs 非表格区域
+    segments = _segment_by_table(lines, table_line_set)
+
+    for seg_text, is_table, seg_start_line in segments:
+        if not seg_text.strip():
+            continue
+
+        if is_table:
+            # 找到对应的表格信息
+            table_info = None
+            for t_start, t_end, t_headers in tables:
+                if t_start <= seg_start_line < t_end:
+                    table_info = (t_start, t_end, t_headers)
+                    break
+
+            if table_info:
+                t_start, t_end, headers = table_info
+                table_title = _extract_table_title(lines, t_start)
+                # 行级切片 + 概览 chunk
+                table_docs = _generate_row_chunks(seg_text, headers, table_title, metadata)
+                result_docs.extend(table_docs)
+            else:
+                # 降级：整表保留
+                doc = Document(page_content=seg_text, metadata={**metadata, "is_table": True})
+                result_docs.append(doc)
+        else:
+            # 非表格区域：递归切分
+            if len(seg_text) <= chunk_size:
+                doc = Document(page_content=seg_text, metadata={**metadata})
+                result_docs.append(doc)
+            else:
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=chunk_size,
+                    chunk_overlap=50,
+                    separators=["\n\n", "\n", "。", "，", ",", " ", ""],
+                )
+                sub_chunks = splitter.split_text(seg_text)
+                for sub_text in sub_chunks:
+                    doc = Document(page_content=sub_text, metadata={**metadata})
+                    result_docs.append(doc)
+
+    return result_docs
+
+
+def _segment_by_table(lines: List[str], table_line_set: set) -> List[Tuple[str, bool, int]]:
+    """将文档行按表格/非表格区域分段
+
+    Returns:
+        List of (text, is_table, start_line_index)
+    """
+    segments = []
+    current_lines = []
+    current_is_table = False
+    current_start = 0
+
+    for i, line in enumerate(lines):
+        is_table_line = i in table_line_set
+        if is_table_line != current_is_table and current_lines:
+            segments.append(("\n".join(current_lines), current_is_table, current_start))
+            current_lines = []
+            current_start = i
+        if not current_lines:
+            current_start = i
+        current_lines.append(line)
+        current_is_table = is_table_line
+
+    if current_lines:
+        segments.append(("\n".join(current_lines), current_is_table, current_start))
+
+    return segments
+
+
+def _generate_row_chunks(
+    table_text: str,
+    headers: List[str],
+    table_title: str,
+    metadata: dict,
+) -> List[Document]:
+    """行级切片：每行独立 chunk + 自然语言摘要 + 概览 chunk
+
+    双格式策略：
+        1. 概览 chunk（1个）：表头 + 前 3 行 → 支持对比类查询（"布洛芬和对乙酰氨基酚哪个好？"）
+        2. 行级 chunk（N个）：每行 1 个 → 支持精确查询（"布洛芬的每日最大量？"）
+
+    每个行级 chunk 内容格式：
+        ---
+        【表格上下文】
+        文档：{source}
+        表格：{table_title}
+        字段：{headers}
+        ---
+        | header1 | header2 | ... |
+        |---------|---------|-----|
+        | val1    | val2    | ... |
+        ---
+        摘要：{natural_language_summary}
+        ---
+    """
+    table_lines = table_text.split("\n")
+
+    # 解析表头行和分隔行
+    header_line = ""
+    sep_line = ""
+    data_lines = []
+    for line in table_lines:
+        if _MD_TABLE_SEP.match(line):
+            sep_line = line
+            continue
+        if _MD_TABLE_ROW.match(line) and not sep_line:
+            header_line = line
+            continue
+        if _MD_TABLE_ROW.match(line) and sep_line:
+            data_lines.append(line)
+
+    if not header_line or not data_lines:
+        # 无法解析，降级整表保留
+        return [Document(page_content=table_text, metadata={**metadata, "is_table": True})]
+
+    # 解析表头列名
+    header_cols = [cell.strip() for cell in header_line.strip("|").split("|")]
+
+    # 构建上下文前缀
+    source = metadata.get("source", "未知文档")
+    context_parts = []
+    if table_title:
+        context_parts.append(f"表格：{table_title}")
+    if header_cols:
+        context_parts.append(f"字段：{', '.join(header_cols)}")
+    context_str = "\n".join(context_parts)
+
+    result_docs = []
+
+    # === 概览 chunk ===
+    overview_rows = data_lines[:3]
+    overview_text = "\n".join([header_line, sep_line] + overview_rows)
+    if len(data_lines) > 3:
+        overview_text += f"\n... (共 {len(data_lines)} 行数据)"
+    overview_content = f"【表格概览】\n{context_str}\n---\n{overview_text}"
+    overview_doc = Document(
+        page_content=overview_content,
+        metadata={
+            **metadata,
+            "is_table": True,
+            "chunk_type": "table_overview",
+            "table_title": table_title,
+            "table_headers": header_cols,
+            "table_row_count": len(data_lines),
+        },
+    )
+    result_docs.append(overview_doc)
+
+    # === 行级 chunk ===
+    for row_idx, data_line in enumerate(data_lines):
+        # 解析行数据
+        row_cells = [cell.strip() for cell in data_line.strip("|").split("|")]
+
+        # 单行 Markdown 表格
+        row_table = f"{header_line}\n{sep_line}\n{data_line}"
+
+        # 自然语言摘要
+        summary = _generate_row_summary(header_cols, row_cells, table_title)
+
+        # 构建完整 chunk 内容
+        row_content = f"【表格上下文】\n{context_str}\n---\n{row_table}\n---\n摘要：{summary}"
+
+        # 行主键：第一列的值（如"布洛芬"、"退热效果"等）
+        row_primary_key = row_cells[0] if row_cells else ""
+
+        row_doc = Document(
+            page_content=row_content,
+            metadata={
+                **metadata,
+                "is_table": True,
+                "chunk_type": "table_row",
+                "table_title": table_title,
+                "table_headers": header_cols,
+                "row_index": row_idx,
+                "row_primary_key": row_primary_key,
+                "row_summary": summary,
+            },
+        )
+        result_docs.append(row_doc)
+
+    return result_docs
+
+
+def _generate_row_summary(
+    headers: List[str],
+    cells: List[str],
+    table_title: str,
+) -> str:
+    """生成单行数据的自然语言摘要
+
+    策略：
+        1. 第一列作为主维度（如"退热效果"、"布洛芬"）
+        2. 其余列按"字段：值"拼接
+        3. 附加表格标题作为上下文
+
+    示例：
+        headers=["项目", "对乙酰氨基酚", "布洛芬"]
+        cells=["每日最大量", "2000mg", "1200mg"]
+        → "在退热药物对比中，每日最大量：对乙酰氨基酚为2000mg，布洛芬为1200mg"
+    """
+    if not headers or not cells:
+        return ""
+
+    # 对齐 headers 和 cells（可能不等长）
+    min_len = min(len(headers), len(cells))
+    headers = headers[:min_len]
+    cells = cells[:min_len]
+
+    primary_key = cells[0] if cells else ""
+
+    # 判断表格类型：第一列是"维度"还是"实体"
+    # 如果第一列的 header 是"项目"/"症状"/"指标"等→维度表（对比表）
+    # 如果第一列的 header 是"药物"/"名称"/"项目"等→实体表（参数表）
+    _DIMENSION_HEADERS = {"项目", "症状", "指标", "参数", "类型", "特征", "区别", "方面"}
+    is_dimension_table = headers[0] in _DIMENSION_HEADERS if headers else False
+
+    parts = []
+    if is_dimension_table:
+        # 对比表：每行是一个维度，列是不同实体
+        # 如"每日最大量：对乙酰氨基酚为2000mg，布洛芬为1200mg"
+        for i in range(1, min_len):
+            if cells[i]:
+                parts.append(f"{headers[i]}为{cells[i]}")
+        summary = f"{primary_key}：" + "，".join(parts) if parts else primary_key
+    else:
+        # 实体表：每行是一个实体，列是不同属性
+        # 如"布洛芬：退热效果良好，止痛效果中重度，抗炎作用有"
+        for i in range(1, min_len):
+            if cells[i]:
+                parts.append(f"{headers[i]}{cells[i]}")
+        summary = f"{primary_key}：" + "，".join(parts) if parts else primary_key
+
+    # 附加表格标题
+    if table_title:
+        summary = f"在{table_title}中，{summary}"
+
+    return summary
 
 
 def _split_by_recursive(

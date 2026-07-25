@@ -1430,16 +1430,31 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
         doc.metadata.get("rerank_score") is not None for doc in retrieved_docs
     )
 
+    # v9.6.2: 多子问题检索的文档不能用统一的 Reranker 排序做位置判断
+    # 因为不同子问题的文档分别 Rerank，分数不可交叉比较
+    # 且每个子问题的 top-k 文档已经过各自 Reranker 精排，本身就是高质量的
+    # 直接信任子问题的 Reranker 排序，不做启发式过滤
+    has_sub_questions = any(
+        doc.metadata.get("sub_question") is not None for doc in retrieved_docs
+    )
+
+    if has_sub_questions:
+        # 多子问题检索：各子问题已分别 Reranker 精排，跳过启发式过滤
+        # 原因：
+        # 1. 每个子问题的 top-k 文档已过各自 Reranker 精排，质量有保证
+        # 2. 邻域扩展的兄弟章节可能内容与 sub_question 不同（如发热查询扩展出便秘章节）
+        #    但它们是原始检索结果的结构邻居，有价值
+        # 3. 用 has_query_overlap 做交叉过滤会导致：
+        #    兄弟章节的 sub_question 不匹配内容 → 误杀 → 丢失关键文档
+        # 4. 去重已在上层完成，不会重复
+        logger.info(f"多子问题检索：跳过启发式过滤，保留全部 {len(retrieved_docs)} 篇文档")
+        return retrieved_docs
+
     if has_rerank_scores:
-        # Reranker 已执行：信任排序结果，保留 Top 文档
-        # Reranker 的分数范围取决于模型（bge-reranker 可以为负值），不能用绝对阈值
-        # 只过滤掉明显不相关的尾部文档（关键词完全不重叠且非前2名）
+        # 单一问题 Reranker 排序：信任排序结果，保留 Top 文档
         filtered_docs = []
         for index, doc in enumerate(retrieved_docs):
-            # v9.6.2: 多子问题检索的文档用子问题做重叠检查，而非原始复合问题
-            # 例：原始问题"发烧怎么处理便秘怎么处理"，子问题1的文档用"发烧怎么处理"检查
-            check_question = doc.metadata.get("sub_question") or question
-            overlap = has_query_overlap(check_question, doc.page_content)
+            overlap = has_query_overlap(question, doc.page_content)
             # 前2名无条件保留（Reranker排序可信），其余需关键词重叠
             if index < 2 or overlap:
                 filtered_docs.append(doc)
@@ -1447,15 +1462,12 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
                 logger.info(f"文档启发式过滤（Reranker排序靠后+无重叠）：{doc.page_content[:50]}...")
 
         # Reranker 已执行时，至少保留前2名（Reranker排序可信）
-        # 但如果前2名也完全不相关（极端情况），仍返回空列表
         return filtered_docs
 
-    # Reranker 未执行：用关键词重叠做启发式过滤
+    # 单一问题 + Reranker 未执行：用关键词重叠做启发式过滤
     filtered_docs = []
     for index, doc in enumerate(retrieved_docs):
-        # v9.6.2: 多子问题检索的文档用子问题做重叠检查
-        check_question = doc.metadata.get("sub_question") or question
-        overlap = has_query_overlap(check_question, doc.page_content)
+        overlap = has_query_overlap(question, doc.page_content)
         threshold_fallback = bool(doc.metadata.get("rerank_threshold_fallback"))
         keep_doc = overlap or (index == 0 and threshold_fallback)
         if keep_doc:
