@@ -1,5 +1,145 @@
 # 系统优化更新日志
 
+## v9.9 - 知识库更新架构优化（参考日志1最佳实践）
+
+### 核心改进：6 大问题修复
+
+| # | 日志1 指出的问题 | 修复 | 效果 |
+|---|----------------|------|------|
+| 1 | 只插入新向量，不删除旧向量 | 软删除旧版本 + version_id +1 | 修改5次不会留下5个版本 |
+| 2 | Embedding 模型混用 | embedding_model/dimension 元数据 + 一致性校验 | 索引=查询模型不一致时告警 |
+| 3 | Chunk 策略变了历史数据不重建 | chunk_strategy 版本化 + reconciliation 检测 | 策略变更触发全量重建 |
+| 4 | 文档删除后仍被召回 | is_deleted 软删除 + 检索过滤 | 删除文档不再被检索命中 |
+| 5 | 变更检测漏检 | 变更检测 API（磁盘 mtime vs 索引 updated_at） | 轮询兜底防漏检 |
+| 6 | 更新无审计记录 | SQLite 审计日志（doc_id/change_type/result/elapsed） | 出问题可定位到具体环节 |
+
+### 元数据体系（每个 chunk 必备）
+
+```json
+{
+  "doc_id": "发热诊断与家庭护理指南.txt",
+  "chunk_id": "发热诊断与家庭护理指南.txt_a3f7b2c1d4e5f6a7",
+  "content_hash": "a3f7b2c1d4e5f6a7",
+  "version_id": 3,
+  "is_deleted": false,
+  "embedding_model": "embedding-3",
+  "embedding_dimension": 2048,
+  "chunk_strategy": "v9.9_row_level_table_aware",
+  "updated_at": "2026-07-24T15:30:00",
+  "source_trace": "指南.txt | 药物对比 | 行5: 每日最大量"
+}
+```
+
+### 新增接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/kb/status` | GET | 知询知识库状态 + 一致性校验 + Embedding 信息 |
+| `/api/admin/kb/upload` | POST | 上传文档（增量去重 + 版本管理 + 软删除旧版本 + 审计） |
+| `/api/admin/kb/documents/{filename}` | DELETE | 软删除文档（is_deleted=True） |
+| `/api/admin/kb/restore/{filename}` | POST | 恢复误删文档 |
+| `/api/admin/kb/rebuild` | POST | 重建知识库（审计日志） |
+| `/api/admin/kb/audit-log` | GET | 查询审计日志 |
+| `/api/admin/kb/reconcile` | GET | 一致性校验（磁盘/向量库/Embedding/策略） |
+| `/api/admin/kb/stale-detect` | GET | 变更检测（陈旧文档） |
+
+### 增量更新流程（content_hash 去重）
+
+```
+上传文档 → 切分 → content_hash 计算
+  → 对比已有 hash
+    → 未变化：跳过 Embedding（0ms vs ~200ms/chunk）
+    → 已变化：软删除旧版本 → 写入新版本 → version_id +1
+  → 审计日志记录
+```
+
+### 一致性校验（reconciliation）
+
+```
+磁盘文件列表 ⊕ 向量库 source 列表
+  → missing_in_index：磁盘有但索引无（新文档未入库）
+  → missing_on_disk：索引有但磁盘无（删除未同步）
+  → embedding_mismatch：Embedding 模型不一致（需重建）
+  → chunk_strategy_mismatch：切分策略不一致（需重建）
+  → soft_deleted_count：软删除记录数
+```
+
+### 检索时软删除过滤
+
+- ChromaDB 查询自动加 `where={"is_deleted": False}`
+- BM25 在重建时跳过 is_deleted=True 的文档
+- 软删除后 30 天由 `physical_cleanup_stale_deletes()` 物理清理
+
+**新增文件**：
+- `app/rag/kb_updater.py`：知识库更新管理核心模块
+
+**改动文件**：
+- `routes.py`：6 个新接口 + 上传/删除集成 kb_updater
+- `hybrid_retriever.py`：ChromaDB 查询加 is_deleted 过滤
+
+---
+
+## v9.8 - 知识库管理 API + 并发安全
+
+### 新增1：知识库管理接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/kb/status` | GET | 知询知识库状态（文档列表、向量数、kb_version、更新状态） |
+| `/api/admin/kb/upload` | POST | 上传文档（multipart/form-data，支持多文件），增量入库 |
+| `/api/admin/kb/documents/{filename}` | DELETE | 删除指定文档（ChromaDB chunks + 磁盘文件 + 缓存清除） |
+| `/api/admin/kb/rebuild` | POST | 重建知识库（清空→重新加载→切分→索引→写入） |
+
+**所有接口需管理员认证**：`X-Admin-API-Key` header 或本地访问（127.0.0.1）
+
+**上传流程**：
+```
+POST /api/admin/kb/upload (multipart/form-data)
+  → 保存文件到 docs/medical/
+  → load_single_file() 按扩展名自动选择加载器
+  → split_documents() 切分（表格感知→行级切片）
+  → ParentChildManager.build_index() 构建父子索引
+  → add_documents_to_store() 增量写入 ChromaDB
+  → 清除缓存（Redis + 语义缓存）
+```
+
+**删除流程**：
+```
+DELETE /api/admin/kb/documents/xxx.txt
+  → ChromaDB._collection.get(where={"source": "xxx.txt"})
+  → ChromaDB._collection.delete(ids=...)
+  → 磁盘删除文件 + BM25 缓存失效
+  → 清除缓存
+```
+
+### 新增2：知识库更新并发安全（写锁 + 状态追踪）
+
+**问题**：重建知识库期间（清空旧数据 → 写入新数据），用户检索请求可能命中半空向量库，返回不完整结果；并发上传/重建可能造成数据覆盖
+
+**解决**：
+
+| 机制 | 实现 | 保证 |
+|------|------|------|
+| **asyncio.Lock 写锁** | `_kb_update_lock` | 同一时间只有一个更新操作（上传/删除/重建） |
+| **更新状态追踪** | `_kb_update_status` | 前端可查询进度，更新中拒绝新的更新请求（409 Conflict） |
+| **非阻塞检索** | 检索不加锁 | 更新期间检索继续使用当前数据，新数据就绪后原子切换 |
+| **run_in_executor** | CPU 密集操作在线程池执行 | 不阻塞 FastAPI 事件循环，其他请求正常处理 |
+| **缓存清除** | 更新完成后统一清除 | 防止旧缓存返回过期答案 |
+
+**并发场景处理**：
+
+| 场景 | 行为 |
+|------|------|
+| 重建中 + 用户查询 | 查询走旧数据（ChromaDB persist），重建完成后下次查询走新数据 |
+| 重建中 + 再次重建 | 返回 409 Conflict，提示"知识库正在更新中" |
+| 上传中 + 用户查询 | 查询走当前数据，上传完成后下次查询包含新文档 |
+| 上传中 + 删除 | 写锁排队，串行执行 |
+
+**改动文件**：
+- `routes.py`：新增 4 个知识库管理接口 + `_kb_update_lock` + `_kb_update_status`
+
+---
+
 ## v9.7 - 表格数据知识库处理（行级切片+双格式）
 
 ### 设计原则（参考日志1：复杂表格入库最佳实践）

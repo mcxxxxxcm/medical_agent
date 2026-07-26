@@ -175,7 +175,7 @@ class HybridRetriever(BaseRetriever):
         """构建 EnsembleRetriever（向量检索 + BM25 检索）"""
         # 1. 向量检索器
         vector_retriever = self.vector_store.as_retriever(
-            search_kwargs={"k": self.k * 2}
+            search_kwargs={"k": self.k * 2, "filter": {"is_deleted": False}}
         )
 
         # 2. 加载文档用于 BM25
@@ -271,7 +271,8 @@ class HybridRetriever(BaseRetriever):
                         qr = col.query(
                             query_embeddings=[query_embedding],
                             n_results=top_k,
-                            include=["documents", "metadatas", "distances"]
+                            include=["documents", "metadatas", "distances"],
+                            where={"is_deleted": False},
                         )
                         if qr and qr["ids"] and qr["ids"][0]:
                             docs = []

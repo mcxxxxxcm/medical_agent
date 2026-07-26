@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - 医疗助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+        }
+        .header h1 { font-size: 20px; font-weight: 500; }
+        .header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        .header a:hover { opacity: 1; }
+
+        .container { max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+
+        .card {
+            background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .card h2 { font-size: 16px; color: #333; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .status-item { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
+        .status-item .label { font-size: 12px; color: #999; }
+        .status-item .value { font-size: 20px; font-weight: 600; color: #333; margin-top: 4px; }
+
+        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 8px; font-size: 14px;
+            cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .btn-danger { background: #ff4d4f; color: white; }
+        .btn-success { background: #52c41a; color: white; }
+        .btn-warning { background: #faad14; color: #333; }
+        .btn-outline { background: white; color: #666; border: 1px solid #ddd; }
+
+        .file-table { width: 100%; border-collapse: collapse; }
+        .file-table th { text-align: left; padding: 10px 12px; background: #f8f9fa; font-size: 13px; color: #666; border-bottom: 1px solid #e8e8e8; }
+        .file-table td { padding: 10px 12px; font-size: 14px; color: #333; border-bottom: 1px solid #f0f0f0; }
+        .file-table tr:hover td { background: #fafafa; }
+        .file-type-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
+        }
+        .type-txt { background: #e8f5e9; color: #2e7d32; }
+        .type-pdf { background: #fbe9e7; color: #c62828; }
+        .type-docx { background: #e3f2fd; color: #1565c0; }
+        .type-xlsx { background: #fff3e0; color: #e65100; }
+        .type-md { background: #f3e5f5; color: #7b1fa2; }
+        .type-image { background: #e0f7fa; color: #00838f; }
+        .type-other { background: #f5f5f5; color: #666; }
+
+        .upload-area {
+            border: 2px dashed #ddd; border-radius: 12px; padding: 32px; text-align: center;
+            cursor: pointer; transition: all 0.2s; margin-bottom: 16px;
+        }
+        .upload-area:hover { border-color: #667eea; background: #f8f9ff; }
+        .upload-area.dragover { border-color: #667eea; background: #f0f2ff; }
+        .upload-area .icon { font-size: 36px; color: #999; margin-bottom: 8px; }
+        .upload-area .text { font-size: 14px; color: #666; }
+        .upload-area .hint { font-size: 12px; color: #999; margin-top: 4px; }
+
+        .upload-progress { display: none; margin-top: 12px; }
+        .upload-progress.show { display: block; }
+        .progress-bar { height: 4px; background: #e8e8e8; border-radius: 2px; overflow: hidden; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(135deg, #667eea, #764ba2); transition: width 0.3s; }
+        .progress-text { font-size: 12px; color: #666; margin-top: 4px; }
+
+        .log-list { max-height: 400px; overflow-y: auto; }
+        .log-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; display: flex; gap: 12px; align-items: center; }
+        .log-time { color: #999; min-width: 140px; }
+        .log-type { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .log-add { background: #e8f5e9; color: #2e7d32; }
+        .log-modify { background: #fff3e0; color: #e65100; }
+        .log-delete { background: #fbe9e7; color: #c62828; }
+        .log-rebuild { background: #e3f2fd; color: #1565c0; }
+        .log-restore { background: #f3e5f5; color: #7b1fa2; }
+        .log-success { color: #52c41a; }
+        .log-failed { color: #ff4d4f; }
+        .log-doc { color: #333; min-width: 160px; }
+
+        .reconcile-report { font-size: 13px; }
+        .reconcile-report .issue { padding: 6px 12px; margin: 4px 0; background: #fff7e6; border-left: 3px solid #faad14; border-radius: 4px; }
+        .reconcile-report .ok { padding: 6px 12px; margin: 4px 0; background: #f6ffed; border-left: 3px solid #52c41a; border-radius: 4px; }
+
+        .confirm-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center;
+        }
+        .confirm-overlay.show { display: flex; }
+        .confirm-box { background: white; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+        .confirm-box h3 { margin-bottom: 12px; font-size: 16px; }
+        .confirm-box p { font-size: 14px; color: #666; margin-bottom: 20px; }
+        .confirm-box .actions { justify-content: flex-end; }
+
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: white; font-size: 14px; z-index: 2000; transform: translateX(120%); transition: transform 0.3s; }
+        .toast.show { transform: translateX(0); }
+        .toast-success { background: #52c41a; }
+        .toast-error { background: #ff4d4f; }
+        .toast-info { background: #667eea; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>知识库管理</h1>
+    <a href="/">← 返回对话</a>
+</div>
+
+<div class="container">
+    <!-- 状态概览 -->
+    <div class="card">
+        <h2>📊 知识库状态</h2>
+        <div class="status-grid" id="statusGrid">
+            <div class="status-item"><div class="label">文档数量</div><div class="value" id="fileCount">-</div></div>
+            <div class="status-item"><div class="label">向量数量</div><div class="value" id="vectorCount">-</div></div>
+            <div class="status-item"><div class="label">知识库版本</div><div class="value" id="kbVersion" style="font-size:14px">-</div></div>
+            <div class="status-item"><div class="label">Embedding 模型</div><div class="value" id="embeddingModel" style="font-size:14px">-</div></div>
+            <div class="status-item"><div class="label">切分策略</div><div class="value" id="chunkStrategy" style="font-size:14px">-</div></div>
+            <div class="status-item"><div class="label">更新状态</div><div class="value" id="updateStatus" style="font-size:14px">空闲</div></div>
+        </div>
+    </div>
+
+    <!-- 一致性校验 -->
+    <div class="card">
+        <h2>🔍 一致性校验</h2>
+        <div class="actions" style="margin-bottom: 12px;">
+            <button class="btn btn-outline" onclick="runReconcile()">执行校验</button>
+            <button class="btn btn-outline" onclick="detectStale()">变更检测</button>
+        </div>
+        <div id="reconcileResult" class="reconcile-report" style="font-size:13px;color:#999;">点击"执行校验"检查知识库一致性</div>
+    </div>
+
+    <!-- 文档列表 -->
+    <div class="card">
+        <h2>📁 文档列表</h2>
+        <div class="actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">上传文档</button>
+            <button class="btn btn-warning" onclick="confirmRebuild()">重建知识库</button>
+            <button class="btn btn-outline" onclick="refreshStatus()">刷新</button>
+        </div>
+        <input type="file" id="fileInput" multiple style="display:none" onchange="handleUpload(this.files)" accept=".txt,.pdf,.docx,.md,.xlsx,.xls,.csv,.png,.jpg,.jpeg">
+        <div class="upload-progress" id="uploadProgress">
+            <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+            <div class="progress-text" id="progressText">上传中...</div>
+        </div>
+        <table class="file-table">
+            <thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
+            <tbody id="fileTableBody"><tr><td colspan="5" style="text-align:center;color:#999">加载中...</td></tr></tbody>
+        </table>
+    </div>
+
+    <!-- 审计日志 -->
+    <div class="card">
+        <h2>📋 审计日志</h2>
+        <div class="log-list" id="logList"><div style="text-align:center;color:#999;padding:16px">加载中...</div></div>
+    </div>
+</div>
+
+<!-- 确认对话框 -->
+<div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+        <h3 id="confirmTitle">确认操作</h3>
+        <p id="confirmMsg">确定要执行此操作吗？</p>
+        <div class="actions">
+            <button class="btn btn-outline" onclick="closeConfirm()">取消</button>
+            <button class="btn btn-danger" id="confirmBtn" onclick="executeConfirm()">确认</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let _confirmAction = null;
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', () => {
+    refreshStatus();
+    loadAuditLog();
+});
+
+// ===== 状态查询 =====
+async function refreshStatus() {
+    try {
+        const res = await fetch(`${API}/api/admin/kb/status`);
+        const data = await res.json();
+
+        document.getElementById('fileCount').textContent = data.file_count;
+        document.getElementById('vectorCount').textContent = data.vector_count;
+        document.getElementById('kbVersion').textContent = data.kb_version || '-';
+        document.getElementById('embeddingModel').textContent = data.embedding_model?.embedding_model || '-';
+        document.getElementById('chunkStrategy').textContent = data.chunk_strategy || '-';
+
+        const status = data.update_status || {};
+        const statusEl = document.getElementById('updateStatus');
+        if (status.updating) {
+            statusEl.innerHTML = `<span style="color:#faad14">⏳ ${status.progress || '更新中'}</span>`;
+        } else {
+            statusEl.innerHTML = '<span style="color:#52c41a">空闲</span>';
+        }
+
+        // 渲染文件列表
+        renderFileTable(data.files || []);
+
+        // 渲染一致性校验结果
+        if (data.reconciliation && Object.keys(data.reconciliation).length > 0) {
+            renderReconcile(data.reconciliation);
+        }
+    } catch (e) {
+        showToast('获取状态失败: ' + e.message, 'error');
+    }
+}
+
+function renderFileTable(files) {
+    const tbody = document.getElementById('fileTableBody');
+    if (!files.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999">暂无文档</td></tr>';
+        return;
+    }
+    tbody.innerHTML = files.map(f => `
+        <tr>
+            <td>${f.name}</td>
+            <td><span class="file-type-badge type-${getTypeClass(f.type)}">${f.type.toUpperCase()}</span></td>
+            <td>${formatSize(f.size)}</td>
+            <td>${formatTime(f.modified)}</td>
+            <td><button class="btn btn-danger" style="padding:4px 12px;font-size:12px" onclick="confirmDelete('${f.name}')">删除</button></td>
+        </tr>
+    `).join('');
+}
+
+function getTypeClass(type) {
+    const map = { txt: 'txt', pdf: 'pdf', docx: 'docx', xlsx: 'xlsx', xls: 'xlsx', csv: 'xlsx', md: 'md' };
+    if (['png','jpg','jpeg','tiff','bmp','webp'].includes(type)) return 'image';
+    return map[type] || 'other';
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function formatTime(ts) {
+    if (!ts) return '-';
+    const d = new Date(ts * 1000);
+    return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// ===== 上传文档 =====
+async function handleUpload(files) {
+    if (!files.length) return;
+
+    const progressEl = document.getElementById('uploadProgress');
+    const fillEl = document.getElementById('progressFill');
+    const textEl = document.getElementById('progressText');
+    progressEl.classList.add('show');
+    fillEl.style.width = '0%';
+    textEl.textContent = `正在上传 ${files.length} 个文件...`;
+
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+
+    try {
+        const res = await fetch(`${API}/api/admin/kb/upload`, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (res.ok) {
+            fillEl.style.width = '100%';
+            const uploaded = (data.uploaded || []).map(f => f.name).join(', ');
+            const chunks = (data.uploaded || []).reduce((s, f) => s + (f.chunks || 0), 0);
+            textEl.textContent = `上传成功：${uploaded}（${chunks} 个 chunks）`;
+            showToast(`上传成功，共 ${chunks} 个 chunks`, 'success');
+            refreshStatus();
+            loadAuditLog();
+        } else {
+            textEl.textContent = '上传失败：' + (data.detail || JSON.stringify(data.errors));
+            showToast('上传失败', 'error');
+        }
+    } catch (e) {
+        textEl.textContent = '上传出错：' + e.message;
+        showToast('上传出错', 'error');
+    }
+
+    document.getElementById('fileInput').value = '';
+    setTimeout(() => progressEl.classList.remove('show'), 5000);
+}
+
+// ===== 删除文档 =====
+function confirmDelete(filename) {
+    showConfirm('删除文档', `确定要删除 "${filename}" 吗？删除后可从审计日志恢复。`, async () => {
+        try {
+            const res = await fetch(`${API}/api/admin/kb/documents/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`已删除 ${filename}（${data.deleted_chunks} 个 chunks）`, 'success');
+                refreshStatus();
+                loadAuditLog();
+            } else {
+                showToast('删除失败: ' + data.detail, 'error');
+            }
+        } catch (e) { showToast('删除出错: ' + e.message, 'error'); }
+    });
+}
+
+// ===== 重建知识库 =====
+function confirmRebuild() {
+    showConfirm('重建知识库', '重建期间知识库服务可能短暂不可用，确定继续？', async () => {
+        try {
+            showToast('知识库重建中，请稍候...', 'info');
+            const res = await fetch(`${API}/api/admin/kb/rebuild`, { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`重建完成：${data.document_count} 文档，${data.chunk_count} chunks，耗时 ${data.elapsed_seconds}s`, 'success');
+                refreshStatus();
+                loadAuditLog();
+            } else {
+                showToast('重建失败: ' + data.detail, 'error');
+            }
+        } catch (e) { showToast('重建出错: ' + e.message, 'error'); }
+    });
+}
+
+// ===== 一致性校验 =====
+async function runReconcile() {
+    try {
+        const res = await fetch(`${API}/api/admin/kb/reconcile`);
+        const data = await res.json();
+        renderReconcile(data);
+    } catch (e) { showToast('校验失败: ' + e.message, 'error'); }
+}
+
+function renderReconcile(data) {
+    const el = document.getElementById('reconcileResult');
+    let html = '';
+
+    const issues = [];
+    if (data.missing_in_index?.length) issues.push(`未入库文档：${data.missing_in_index.join(', ')}`);
+    if (data.missing_on_disk?.length) issues.push(`磁盘缺失（索引残留）：${data.missing_on_disk.join(', ')}`);
+    if (data.embedding_mismatch?.length) issues.push(...data.embedding_mismatch.map(m => `Embedding 不一致：${m.source}（索引=${m.index_model}，当前=${m.current_model}）`));
+    if (data.chunk_strategy_mismatch?.length) issues.push(...data.chunk_strategy_mismatch.map(m => `切分策略不一致：${m.source}（索引=${m.index_strategy}，当前=${m.current_strategy}）`));
+
+    if (issues.length === 0) {
+        html = '<div class="ok">✅ 知识库一致性正常</div>';
+    } else {
+        html = issues.map(i => `<div class="issue">⚠️ ${i}</div>`).join('');
+    }
+
+    if (data.soft_deleted_count > 0) {
+        html += `<div style="margin-top:8px;color:#999;font-size:12px">软删除记录：${data.soft_deleted_count} 条</div>`;
+    }
+
+    el.innerHTML = html;
+}
+
+// ===== 变更检测 =====
+async function detectStale() {
+    try {
+        const res = await fetch(`${API}/api/admin/kb/stale-detect?hours=24`);
+        const data = await res.json();
+        const el = document.getElementById('reconcileResult');
+        if (data.stale_documents?.length) {
+            el.innerHTML = data.stale_documents.map(s =>
+                `<div class="issue">⚠️ 陈旧文档：${s.source}（磁盘更新于 ${s.disk_mtime}，索引停留在 ${s.index_updated_at}，落后 ${s.staleness_hours}h）</div>`
+            ).join('');
+        } else {
+            el.innerHTML = '<div class="ok">✅ 无陈旧文档（所有索引与磁盘同步）</div>';
+        }
+    } catch (e) { showToast('检测失败: ' + e.message, 'error'); }
+}
+
+// ===== 审计日志 =====
+async function loadAuditLog() {
+    try {
+        const res = await fetch(`${API}/api/admin/kb/audit-log?limit=30`);
+        const data = await res.json();
+        const el = document.getElementById('logList');
+        if (!data.logs?.length) {
+            el.innerHTML = '<div style="text-align:center;color:#999;padding:16px">暂无日志</div>';
+            return;
+        }
+        el.innerHTML = data.logs.map(log => {
+            const typeClass = `log-${log.change_type}`;
+            const resultClass = log.result === 'success' ? 'log-success' : 'log-failed';
+            return `<div class="log-item">
+                <span class="log-time">${log.timestamp?.slice(0, 19) || '-'}</span>
+                <span class="log-type ${typeClass}">${log.change_type}</span>
+                <span class="log-doc">${log.doc_id}</span>
+                <span class="${resultClass}">${log.result}</span>
+                <span style="color:#999">${log.chunk_count} chunks, v${log.version_id}, ${log.elapsed_ms}ms</span>
+                ${log.error_message ? `<span style="color:#ff4d4f;font-size:12px">错误: ${log.error_message}</span>` : ''}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        document.getElementById('logList').innerHTML = '<div style="text-align:center;color:#999">加载失败</div>';
+    }
+}
+
+// ===== 确认对话框 =====
+function showConfirm(title, msg, action) {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMsg').textContent = msg;
+    document.getElementById('confirmOverlay').classList.add('show');
+    _confirmAction = action;
+}
+function closeConfirm() { document.getElementById('confirmOverlay').classList.remove('show'); _confirmAction = null; }
+function executeConfirm() { closeConfirm(); if (_confirmAction) _confirmAction(); }
+
+// ===== Toast =====
+function showToast(msg, type = 'info') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `toast toast-${type} show`;
+    setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

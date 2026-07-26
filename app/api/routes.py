@@ -41,6 +41,7 @@ from app.memory import get_checkpointer, get_long_term_memory
 from app.memory.checkpointer import close_checkpointer
 from app.rag.hybrid_retriever import get_hybrid_retriever
 from app.rag.reranker import get_reranker
+from app.rag.loader import LOADERS
 
 logger = get_logger(__name__)
 
@@ -283,6 +284,12 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 async def root():
     """首页"""
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+@app.get("/admin")
+async def admin_page():
+    """知识库管理页面"""
+    return FileResponse(str(STATIC_DIR / "admin.html"))
 
 
 # 异常处理
@@ -631,6 +638,481 @@ async def feedback_golden_candidates(limit: int = 50):
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
+
+
+# ===== 知识库管理 API =====
+
+# 知识库更新写锁（防止并发更新导致数据不一致）
+_kb_update_lock = asyncio.Lock()
+# 知识库更新状态
+_kb_update_status = {
+    "updating": False,
+    "progress": "",
+    "started_at": None,
+    "error": None,
+}
+
+
+@app.get("/api/admin/kb/status")
+async def kb_status(request: Request):
+    """知识库状态查询（需管理员认证）
+
+    返回：文档数量、向量库信息、更新状态等
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    config = get_config()
+    docs_dir = config.DOCS_DIR
+
+    # 扫描文档目录
+    supported_ext = set(LOADERS.keys())
+    files = []
+    if docs_dir.exists():
+        for f in docs_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in supported_ext:
+                files.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "type": f.suffix.lstrip("."),
+                    "modified": f.stat().st_mtime,
+                })
+
+    # 向量库信息
+    try:
+        from app.rag.vector_store import get_vector_store, get_kb_version
+        vs = get_vector_store()
+        kb_version = get_kb_version()
+        # ChromaDB 文档数
+        doc_count = 0
+        if hasattr(vs, '_collection') and vs._collection:
+            doc_count = vs._collection.count()
+    except Exception:
+        kb_version = "unknown"
+        doc_count = 0
+
+    # Embedding 模型信息 + 一致性校验
+    from app.rag.kb_updater import get_embedding_model_info, run_reconciliation, CHUNK_STRATEGY_VERSION
+    embedding_info = get_embedding_model_info()
+    reconciliation = run_reconciliation(docs_dir, vs) if doc_count > 0 else {}
+
+    return {
+        "docs_dir": str(docs_dir),
+        "files": files,
+        "file_count": len(files),
+        "kb_version": kb_version,
+        "vector_count": doc_count,
+        "update_status": _kb_update_status,
+        "embedding_model": embedding_info,
+        "chunk_strategy": CHUNK_STRATEGY_VERSION,
+        "reconciliation": reconciliation,
+    }
+
+
+@app.post("/api/admin/kb/upload")
+async def kb_upload(request: Request):
+    """上传文档到知识库（需管理员认证）
+
+    支持：.txt .pdf .docx .md .xlsx .xls .csv .png .jpg .jpeg
+    流程：保存文件到 docs/medical/ → 加载 → 切分 → 增量写入向量库
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    if _kb_update_status["updating"]:
+        return JSONResponse(status_code=409, content={"detail": "知识库正在更新中，请稍后重试"})
+
+    # 使用 multipart/form-data 上传
+    from fastapi import UploadFile, File as FastAPIFile
+    form = await request.form()
+
+    uploaded_files = []
+    errors = []
+
+    config = get_config()
+    docs_dir = config.DOCS_DIR
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    for field_name, file_item in form.items():
+        if not hasattr(file_item, 'filename') or not file_item.filename:
+            continue
+
+        filename = file_item.filename
+        suffix = Path(filename).suffix.lower()
+
+        # 检查支持的格式
+        try:
+            from app.rag.loader import LOADERS
+            supported = set(LOADERS.keys())
+        except Exception:
+            supported = {".txt", ".pdf", ".docx", ".md", ".xlsx", ".xls", ".csv"}
+
+        if suffix not in supported:
+            errors.append({"file": filename, "error": f"不支持的文件类型：{suffix}"})
+            continue
+
+        # 保存文件
+        target_path = docs_dir / filename
+        try:
+            content = await file_item.read()
+            with open(target_path, 'wb') as f:
+                f.write(content)
+            uploaded_files.append({
+                "name": filename,
+                "size": len(content),
+                "type": suffix.lstrip("."),
+            })
+        except Exception as e:
+            errors.append({"file": filename, "error": str(e)})
+
+    if not uploaded_files:
+        return JSONResponse(status_code=400, content={"detail": "无有效文件上传", "errors": errors})
+
+    # 增量入库（加写锁）
+    async with _kb_update_lock:
+        _kb_update_status["updating"] = True
+        _kb_update_status["progress"] = "增量入库中"
+        _kb_update_status["started_at"] = time.time()
+        _kb_update_status["error"] = None
+
+        try:
+            # 加载上传的文件
+            from app.rag.loader import load_single_file, split_documents, add_metadata
+            from app.rag.vector_store import add_documents_to_store, get_vector_store
+            from app.rag.parent_child_store import get_parent_child_manager
+            from app.rag.kb_updater import (
+                enrich_chunk_metadata, filter_unchanged_chunks,
+                get_existing_content_hashes, get_document_version,
+                soft_delete_document, log_kb_audit,
+            )
+
+            total_chunks = 0
+            skipped_chunks = 0
+            for file_info in uploaded_files:
+                file_path = docs_dir / file_info["name"]
+                start_time = time.time()
+                try:
+                    # 加载 + 添加元数据
+                    docs = load_single_file(file_path)
+                    add_metadata(docs, file_path)
+
+                    # 切分
+                    chunks = split_documents(docs)
+
+                    # 版本管理：已存在则软删除旧版本 + 版本号+1
+                    vs = get_vector_store()
+                    old_version = get_document_version(vs, file_info["name"])
+                    if old_version > 0:
+                        # 文档修改：软删除旧版本
+                        soft_delete_document(vs, file_info["name"])
+                        version_id = old_version + 1
+                    else:
+                        version_id = 1
+
+                    # 增强元数据（content_hash, chunk_id, version_id, embedding_model...）
+                    chunks = enrich_chunk_metadata(chunks, file_info["name"], version_id=version_id)
+
+                    # 增量去重：content_hash 未变化的 chunk 跳过 Embedding
+                    existing_hashes = get_existing_content_hashes(vs)
+                    changed_chunks, unchanged_chunks = filter_unchanged_chunks(chunks, existing_hashes)
+
+                    if not changed_chunks:
+                        file_info["chunks"] = 0
+                        file_info["skipped"] = "all_unchanged"
+                        skipped_chunks += len(unchanged_chunks)
+                        continue
+
+                    total_chunks += len(changed_chunks)
+
+                    # 构建父子索引
+                    parent_manager = get_parent_child_manager()
+                    child_chunks = parent_manager.build_index(changed_chunks, child_chunk_size=150)
+
+                    # 写入向量库
+                    add_documents_to_store(child_chunks)
+
+                    file_info["chunks"] = len(changed_chunks)
+                    if unchanged_chunks:
+                        file_info["skipped_unchanged"] = len(unchanged_chunks)
+
+                    # 审计日志
+                    elapsed_ms = int((time.time() - start_time) * 1000)
+                    log_kb_audit(
+                        doc_id=file_info["name"],
+                        change_type="modify" if old_version > 0 else "add",
+                        chunk_count=len(changed_chunks),
+                        version_id=version_id,
+                        result="success",
+                        elapsed_ms=elapsed_ms,
+                    )
+                except Exception as e:
+                    errors.append({"file": file_info["name"], "error": str(e)})
+                    logger.error(f"文件入库失败：{file_info['name']} - {e}")
+                    log_kb_audit(
+                        doc_id=file_info["name"],
+                        change_type="add",
+                        result="failed",
+                        error_message=str(e),
+                    )
+
+            # 清除缓存（知识库变更后旧缓存无效）
+            try:
+                cache = get_cache()
+                cache.clear()
+                semantic_cache = get_semantic_cache()
+                semantic_cache.clear()
+            except Exception:
+                pass
+
+            _kb_update_status["progress"] = "完成"
+        except Exception as e:
+            _kb_update_status["error"] = str(e)
+            logger.error(f"知识库增量入库失败：{e}")
+        finally:
+            _kb_update_status["updating"] = False
+            _kb_update_status["started_at"] = None
+
+    return {
+        "uploaded": uploaded_files,
+        "total_chunks": total_chunks,
+        "errors": errors,
+    }
+
+
+@app.delete("/api/admin/kb/documents/{filename}")
+async def kb_delete_document(filename: str, request: Request):
+    """从知识库删除指定文档（需管理员认证）
+
+    流程：
+        1. 从 ChromaDB 删除该文档的所有 chunks（按 source 元数据过滤）
+        2. 从 ParentChildStore 删除对应 parent 文档
+        3. 从磁盘删除文件
+        4. 清除缓存
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    if _kb_update_status["updating"]:
+        return JSONResponse(status_code=409, content={"detail": "知识库正在更新中，请稍后重试"})
+
+    async with _kb_update_lock:
+        config = get_config()
+        docs_dir = config.DOCS_DIR
+        file_path = docs_dir / filename
+
+        if not file_path.exists():
+            return JSONResponse(status_code=404, content={"detail": f"文件不存在：{filename}"})
+
+        deleted_chunks = 0
+        try:
+            # 1. 软删除（is_deleted=True，非物理删除）
+            from app.rag.vector_store import get_vector_store
+            from app.rag.kb_updater import soft_delete_document, log_kb_audit
+
+            vs = get_vector_store()
+            deleted_chunks = soft_delete_document(vs, filename)
+
+            # 2. 从磁盘删除文件
+            file_path.unlink()
+
+            # 3. 清除缓存
+            try:
+                cache = get_cache()
+                cache.clear()
+                semantic_cache = get_semantic_cache()
+                semantic_cache.clear()
+            except Exception:
+                pass
+
+            # 4. BM25 缓存失效
+            bm25_cache = config.BM25_CACHE_PATH
+            if bm25_cache.exists():
+                bm25_cache.unlink()
+
+            # 5. 审计日志
+            log_kb_audit(
+                doc_id=filename,
+                change_type="delete",
+                chunk_count=deleted_chunks,
+                result="success",
+            )
+
+            logger.info(f"知识库文档已软删除：{filename}（{deleted_chunks} 个 chunks）")
+        except Exception as e:
+            logger.error(f"知识库文档删除失败：{filename} - {e}")
+            log_kb_audit(doc_id=filename, change_type="delete", result="failed", error_message=str(e))
+            return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return {
+        "deleted": True,
+        "filename": filename,
+        "deleted_chunks": deleted_chunks,
+        "soft_delete": True,
+    }
+
+
+@app.post("/api/admin/kb/restore/{filename}")
+async def kb_restore_document(filename: str, request: Request):
+    """恢复软删除的文档（误删恢复）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    async with _kb_update_lock:
+        from app.rag.vector_store import get_vector_store
+        from app.rag.kb_updater import restore_deleted_document, log_kb_audit
+
+        vs = get_vector_store()
+        count = restore_deleted_document(vs, filename)
+
+        if count == 0:
+            return JSONResponse(status_code=404, content={"detail": f"未找到可恢复的文档：{filename}"})
+
+        log_kb_audit(doc_id=filename, change_type="restore", chunk_count=count, result="success")
+
+    return {"restored": True, "filename": filename, "restored_chunks": count}
+
+
+@app.get("/api/admin/kb/audit-log")
+async def kb_audit_log(limit: int = 50, request: Request = None):
+    """查询知识库更新审计日志"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    from app.rag.kb_updater import get_kb_audit_log
+    return {"logs": get_kb_audit_log(limit)}
+
+
+@app.get("/api/admin/kb/reconcile")
+async def kb_reconcile(request: Request):
+    """一致性校验：对比磁盘/向量库/Embedding/切分策略，检测差异"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    from app.rag.kb_updater import run_reconciliation
+    from app.rag.vector_store import get_vector_store
+
+    config = get_config()
+    vs = get_vector_store()
+    report = run_reconciliation(config.DOCS_DIR, vs)
+    return report
+
+
+@app.get("/api/admin/kb/stale-detect")
+async def kb_stale_detect(hours: int = 24, request: Request = None):
+    """变更检测：查找源系统已更新但索引未同步的陈旧文档"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    from app.rag.kb_updater import detect_stale_documents
+    from app.rag.vector_store import get_vector_store
+
+    config = get_config()
+    vs = get_vector_store()
+    stale = detect_stale_documents(config.DOCS_DIR, vs, max_staleness_hours=hours)
+    return {"stale_documents": stale, "threshold_hours": hours}
+
+
+@app.post("/api/admin/kb/rebuild")
+async def kb_rebuild(request: Request):
+    """重建知识库（需管理员认证）
+
+    流程（双缓冲策略，保证更新期间服务不中断）：
+        1. 加写锁
+        2. 清空旧向量库 + ParentChildStore + BM25 缓存
+        3. 重新加载全部文档 → 切分 → 构建父子索引 → 写入向量库
+        4. 原子切换：新向量库就绪后，旧实例自动失效
+        5. 清除所有缓存
+        6. 释放写锁
+
+    并发安全：
+        - 写锁（_kb_update_lock）：同一时间只有一个重建任务
+        - 检索请求不加锁，走当前生效的向量库实例
+        - 重建期间检索继续使用旧数据，新数据就绪后原子切换
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    if _kb_update_status["updating"]:
+        return JSONResponse(status_code=409, content={"detail": "知识库正在更新中，请稍后重试"})
+
+    async with _kb_update_lock:
+        _kb_update_status["updating"] = True
+        _kb_update_status["progress"] = "重建中：清空旧数据"
+        _kb_update_status["started_at"] = time.time()
+        _kb_update_status["error"] = None
+
+        try:
+            # 1. 清空旧数据
+            from app.rag.vector_store import clear_vector_store, get_vector_store
+            from app.rag.parent_child_store import reset_parent_child_manager, get_parent_child_manager
+            from app.rag.loader import load_medical_documents, split_documents
+
+            clear_vector_store()
+            reset_parent_child_manager()
+
+            # 删除 BM25 缓存
+            config = get_config()
+            bm25_cache = config.BM25_CACHE_PATH
+            if bm25_cache.exists():
+                bm25_cache.unlink()
+
+            _kb_update_status["progress"] = "重建中：加载文档"
+
+            # 2. 加载文档（在 executor 中执行，避免阻塞事件循环）
+            loop = asyncio.get_event_loop()
+            docs = await loop.run_in_executor(None, load_medical_documents)
+
+            _kb_update_status["progress"] = f"重建中：切分文档（{len(docs)} 个）"
+
+            # 3. 切分
+            parent_docs = await loop.run_in_executor(None, split_documents, docs)
+
+            _kb_update_status["progress"] = f"重建中：构建索引（{len(parent_docs)} 个 chunks）"
+
+            # 4. 构建父子索引
+            parent_manager = get_parent_child_manager()
+            child_chunks = await loop.run_in_executor(
+                None, lambda: parent_manager.build_index(parent_docs, child_chunk_size=150)
+            )
+
+            _kb_update_status["progress"] = f"重建中：写入向量库（{len(child_chunks)} 个 child chunks）"
+
+            # 5. 写入向量库
+            await loop.run_in_executor(None, lambda: get_vector_store(child_chunks, force_rebuild=True))
+
+            # 6. 持久化 ParentStore
+            await loop.run_in_executor(None, parent_manager.save_to_disk)
+
+            # 7. 清除所有缓存
+            try:
+                cache = get_cache()
+                cache.clear()
+                semantic_cache = get_semantic_cache()
+                semantic_cache.clear()
+            except Exception:
+                pass
+
+            _kb_update_status["progress"] = "完成"
+
+            elapsed = time.time() - _kb_update_status["started_at"]
+            logger.info(f"知识库重建完成：{len(docs)} 个文档 → {len(parent_docs)} 个 chunks → {len(child_chunks)} 个 child chunks，耗时 {elapsed:.1f}s")
+
+            return {
+                "rebuilt": True,
+                "document_count": len(docs),
+                "chunk_count": len(parent_docs),
+                "child_chunk_count": len(child_chunks),
+                "elapsed_seconds": round(elapsed, 1),
+            }
+
+        except Exception as e:
+            _kb_update_status["error"] = str(e)
+            _kb_update_status["progress"] = f"失败：{str(e)}"
+            logger.error(f"知识库重建失败：{e}")
+            return JSONResponse(status_code=500, content={"detail": str(e)})
+        finally:
+            _kb_update_status["updating"] = False
+            _kb_update_status["started_at"] = None
 
 
 # 启动入口
