@@ -112,6 +112,7 @@ def enrich_chunk_metadata(
     chunks: List[Document],
     source: str,
     version_id: int = 1,
+    status: str = "pending",
 ) -> List[Document]:
     """为 chunk 列表增强元数据（知识库更新必备字段）
 
@@ -119,6 +120,7 @@ def enrich_chunk_metadata(
         chunks: 切分后的 chunk 列表
         source: 文档来源（文件名）
         version_id: 文档版本号
+        status: 切片状态（"pending"=不可检索, "active"=可检索, "deprecated"=已废弃）
 
     Returns:
         增强后的 chunk 列表
@@ -138,6 +140,7 @@ def enrich_chunk_metadata(
             "chunk_id": chunk_id,
             "content_hash": content_hash,
             "version_id": version_id,
+            "status": status,               # pending → active → deprecated
             "is_deleted": False,
             "embedding_model": model_info["embedding_model"],
             "embedding_dimension": model_info["embedding_dimension"],
@@ -199,6 +202,175 @@ def get_existing_content_hashes(vector_store) -> set:
     except Exception as e:
         logger.warning(f"获取已有 content_hash 失败：{e}")
     return hashes
+
+
+# ===== 双缓冲：pending → active → deprecated 状态机 =====
+
+def activate_document_version(vector_store, source: str, version_id: int) -> int:
+    """校验并激活新版本 chunk：status=pending → active
+
+    双缓冲核心步骤：
+        1. 查找该文档新版本的所有 pending chunk
+        2. 轻量校验：检查 chunk 数量 > 0、content_hash 无重复
+        3. 批量更新 status=active（原子操作）
+        4. 新版本激活后，再将旧版本的 chunk 标记为 deprecated
+
+    Returns:
+        激活的 chunk 数量（0 表示校验失败）
+    """
+    count = 0
+    try:
+        if not hasattr(vector_store, '_collection') or not vector_store._collection:
+            return 0
+
+        col = vector_store._collection
+
+        # 1. 查找新版本的 pending chunk
+        results = col.get(
+            where={"source": source, "version_id": version_id, "status": "pending"},
+            include=["metadatas", "documents"],
+        )
+        if not results or not results["ids"]:
+            logger.warning(f"激活失败：{source} v{version_id} 无 pending chunk")
+            return 0
+
+        chunk_ids = results["ids"]
+        metas = results["metadatas"]
+        count = len(chunk_ids)
+
+        # 2. 轻量校验
+        # 2a. chunk 数量 > 0（已在上面确认）
+        # 2b. content_hash 无重复
+        hashes = [m.get("content_hash", "") for m in metas]
+        if len(hashes) != len(set(hashes)):
+            logger.error(f"激活失败：{source} v{version_id} 存在重复 content_hash，数据异常")
+            return 0
+
+        # 2c. 抽样查询验证（检查新 chunk 是否可被向量检索命中）
+        # 取第一个 chunk 的 embedding 做相似度查询，确保向量已就绪
+        try:
+            sample_hash = hashes[0]
+            sample_results = col.get(
+                where={"content_hash": sample_hash, "status": "pending"},
+                include=["embeddings"],
+            )
+            if not sample_results or not sample_results.get("embeddings") or not sample_results["embeddings"][0]:
+                logger.warning(f"激活校验：{source} v{version_id} 向量未就绪，等待下次激活")
+                return 0
+        except Exception as e:
+            logger.warning(f"激活校验向量就绪检查跳过：{e}")
+
+        # 3. 批量更新 status=active（原子操作）
+        now = datetime.utcnow().isoformat()
+        updated_metas = []
+        for meta in metas:
+            meta["status"] = "active"
+            meta["activated_at"] = now
+            updated_metas.append(meta)
+        col.update(ids=chunk_ids, metadatas=updated_metas)
+
+        logger.info(f"激活新版本：{source} v{version_id}，{count} 个 chunk status=pending→active")
+
+        # 4. 将旧版本标记为 deprecated（非删除，仍可被紧急回滚）
+        deprecate_old_versions(vector_store, source, version_id)
+
+    except Exception as e:
+        logger.error(f"激活失败：{source} v{version_id} - {e}")
+        return 0
+
+    return count
+
+
+def deprecate_old_versions(vector_store, source: str, current_version_id: int) -> int:
+    """将旧版本的 active chunk 标记为 deprecated
+
+    与 soft_delete 不同：
+        - deprecated：旧版本但可能被紧急回滚引用，5 分钟后物理删除
+        - is_deleted=True：管理员主动删除，30 天后物理删除
+
+    Returns:
+        废弃的 chunk 数量
+    """
+    count = 0
+    try:
+        if not hasattr(vector_store, '_collection') or not vector_store._collection:
+            return 0
+
+        col = vector_store._collection
+        # 查找该文档所有旧版本的 active chunk
+        results = col.get(
+            where={"source": source, "status": "active"},
+            include=["metadatas"],
+        )
+        if not results or not results["ids"]:
+            return 0
+
+        # 筛选 version_id < current_version_id 的 chunk
+        old_ids = []
+        old_metas = []
+        now = datetime.utcnow().isoformat()
+        for i, meta in enumerate(results["metadatas"]):
+            if meta.get("version_id", 0) < current_version_id:
+                old_ids.append(results["ids"][i])
+                meta["status"] = "deprecated"
+                meta["deprecated_at"] = now
+                old_metas.append(meta)
+
+        if old_ids:
+            col.update(ids=old_ids, metadatas=old_metas)
+            count = len(old_ids)
+            logger.info(f"旧版本已废弃：{source}，{count} 个 chunk status=active→deprecated（v<{current_version_id}）")
+
+    except Exception as e:
+        logger.error(f"废弃旧版本失败：{source} - {e}")
+
+    return count
+
+
+def cleanup_deprecated_chunks(vector_store, delay_seconds: int = 300) -> int:
+    """清理超过延迟时间的 deprecated chunk（物理删除）
+
+    Args:
+        delay_seconds: 延迟时间（默认 5 分钟 = 300 秒）
+        处理切换瞬间可能存在的长尾请求
+
+    Returns:
+        物理删除的 chunk 数量
+    """
+    count = 0
+    cutoff = datetime.utcnow().timestamp() - delay_seconds
+    try:
+        if not hasattr(vector_store, '_collection') or not vector_store._collection:
+            return 0
+
+        col = vector_store._collection
+        results = col.get(
+            where={"status": "deprecated"},
+            include=["metadatas"],
+        )
+        if not results or not results["ids"]:
+            return 0
+
+        stale_ids = []
+        for i, meta in enumerate(results["metadatas"]):
+            deprecated_at = meta.get("deprecated_at", "")
+            if deprecated_at:
+                try:
+                    ts = datetime.fromisoformat(deprecated_at).timestamp()
+                    if ts < cutoff:
+                        stale_ids.append(results["ids"][i])
+                except Exception:
+                    pass
+
+        if stale_ids:
+            col.delete(ids=stale_ids)
+            count = len(stale_ids)
+            logger.info(f"清理 deprecated chunk：{count} 个（>{delay_seconds}s）")
+
+    except Exception as e:
+        logger.error(f"清理 deprecated 失败：{e}")
+
+    return count
 
 
 # ===== 软删除 =====

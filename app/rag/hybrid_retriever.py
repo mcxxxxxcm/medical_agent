@@ -175,7 +175,7 @@ class HybridRetriever(BaseRetriever):
         """构建 EnsembleRetriever（向量检索 + BM25 检索）"""
         # 1. 向量检索器
         vector_retriever = self.vector_store.as_retriever(
-            search_kwargs={"k": self.k * 2, "filter": {"is_deleted": False}}
+            search_kwargs={"k": self.k * 2, "filter": {"is_deleted": False, "status": "active"}}
         )
 
         # 2. 加载文档用于 BM25
@@ -272,7 +272,7 @@ class HybridRetriever(BaseRetriever):
                             query_embeddings=[query_embedding],
                             n_results=top_k,
                             include=["documents", "metadatas", "distances"],
-                            where={"is_deleted": False},
+                            where={"is_deleted": False, "status": "active"},
                         )
                         if qr and qr["ids"] and qr["ids"][0]:
                             docs = []
@@ -636,3 +636,23 @@ def get_hybrid_retriever(
         use_reranker=use_reranker,
         rerank_top_k=rerank_top_k
     )
+
+
+# 全局检索器实例（支持双集合切换时重置）
+_hybrid_retriever_instance: Optional[HybridRetriever] = None
+
+
+def get_cached_hybrid_retriever(**kwargs) -> HybridRetriever:
+    """获取缓存的检索器实例（单例）"""
+    global _hybrid_retriever_instance
+    if _hybrid_retriever_instance is None:
+        _hybrid_retriever_instance = get_hybrid_retriever(**kwargs)
+    return _hybrid_retriever_instance
+
+
+def reset_hybrid_retriever():
+    """重置检索器实例（双集合切换后调用，触发 BM25 重建）"""
+    global _hybrid_retriever_instance
+    _hybrid_retriever_instance = None
+    _embedding_cache.clear()
+    logger.info("HybridRetriever 已重置，下次检索将重建 BM25 索引")

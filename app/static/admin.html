@@ -145,7 +145,9 @@
         <h2>📁 文档列表</h2>
         <div class="actions" style="margin-bottom: 16px;">
             <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">上传文档</button>
-            <button class="btn btn-warning" onclick="confirmRebuild()">重建知识库</button>
+            <button class="btn btn-warning" onclick="confirmRebuild()">重建知识库（零停机）</button>
+            <button class="btn btn-outline" onclick="rollbackCollection()">紧急回滚</button>
+            <button class="btn btn-outline" onclick="showCollectionInfo()">集合信息</button>
             <button class="btn btn-outline" onclick="refreshStatus()">刷新</button>
         </div>
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleUpload(this.files)" accept=".txt,.pdf,.docx,.md,.xlsx,.xls,.csv,.png,.jpg,.jpeg">
@@ -314,22 +316,56 @@ function confirmDelete(filename) {
     });
 }
 
-// ===== 重建知识库 =====
+// ===== 重建知识库（双集合零停机） =====
+let rebuildPolling = null;
+
 function confirmRebuild() {
-    showConfirm('重建知识库', '重建期间知识库服务可能短暂不可用，确定继续？', async () => {
+    showConfirm('重建知识库', '重建期间服务不中断（双集合零停机），用户查询始终走完整版本。确定继续？', async () => {
         try {
-            showToast('知识库重建中，请稍候...', 'info');
+            showToast('知识库重建中（影子集合构建），请稍候...', 'info');
             const res = await fetch(`${API}/api/admin/kb/rebuild`, { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
-                showToast(`重建完成：${data.document_count} 文档，${data.chunk_count} chunks，耗时 ${data.elapsed_seconds}s`, 'success');
+                showToast(`重建完成：${data.document_count} 文档，集合 ${data.collection_name}，耗时 ${data.elapsed_seconds}s`, 'success');
                 refreshStatus();
                 loadAuditLog();
             } else {
-                showToast('重建失败: ' + data.detail, 'error');
+                showToast('重建失败: ' + (data.detail || '未知错误'), 'error');
             }
         } catch (e) { showToast('重建出错: ' + e.message, 'error'); }
     });
+}
+
+// 紧急回滚
+async function rollbackCollection() {
+    showConfirm('紧急回滚', '将切换回上一个活跃集合，当前集合的检索结果将立即变更。确定继续？', async () => {
+        try {
+            const res = await fetch(`${API}/api/admin/kb/rollback`, { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`回滚成功：当前集合 → ${data.active_collection}`, 'success');
+                refreshStatus();
+            } else {
+                showToast('回滚失败: ' + (data.detail || '无可用旧集合'), 'error');
+            }
+        } catch (e) { showToast('回滚出错: ' + e.message, 'error'); }
+    });
+}
+
+// 查看集合信息
+async function showCollectionInfo() {
+    try {
+        const res = await fetch(`${API}/api/admin/kb/collection-info`);
+        const data = await res.json();
+        const info = [
+            `活跃集合：${data.active_collection || 'default'}`,
+            `活跃目录：${data.active_persist_dir || '-'}`,
+            `向量数量：${data.active_vector_count ?? '-'}`,
+            `切换时间：${data.switched_at || '-'}`,
+            data.previous_collection ? `上一集合：${data.previous_collection}` : null,
+        ].filter(Boolean).join('\n');
+        alert(info);
+    } catch (e) { showToast('查询失败: ' + e.message, 'error'); }
 }
 
 // ===== 一致性校验 =====

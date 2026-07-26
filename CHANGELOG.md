@@ -1,5 +1,143 @@
 # 系统优化更新日志
 
+## v9.11 - 双集合零停机：全库重建窗口期消除
+
+### 核心改进：影子集合 + 别名指针 + 原子切换
+
+**问题**：v9.10 的全量重建流程是"清空旧数据 → 写入新数据"，中间存在 80s+ 窗口期，
+期间用户检索到空库 → "文档中未提及"。单文档更新已用双缓冲解决，但全库重建
+的重建周期更长（1-5 分钟），必须用更彻底的隔离方案。
+
+**方案**：双集合（Dual-Collection）+ 别名指针切换
+
+```
+旧方案（原地重建，有 80s+ 窗口期）：
+  t0  clear_vector_store()     → 旧数据全部删除！
+  t1  加载 → 切分 → 索引       → ~80s
+  t2  写入向量库               → 期间检索全空
+
+新方案（双集合，零停机）：
+  t0  创建影子集合 medical_kb_v20260726_185100
+  t1  加载 → 切分 → 写入影子集合 → 对线上完全不可见
+  t2  校验（chunk数、召回率、模型一致性）
+  t3  校验通过 → 原子切换指针 → 毫秒级生效
+  t4  5 分钟后延迟清理旧集合
+  ↑ 全程：用户要么看到完整旧版，要么看到完整新版
+```
+
+### 四阶段流程
+
+| 阶段 | 操作 | 用户感知 |
+|------|------|---------|
+| **构建** | 影子集合写入，对线上不可见 | 始终走旧集合，完整结果 |
+| **校验** | chunk数 + 抽样召回率 + 模型一致性 | 同上 |
+| **切换** | 别名指针原子更新 + 刷新全局实例 | 毫秒级切换到新集合 |
+| **清理** | 5 分钟后删除旧集合 | 无感知 |
+
+### 新增组件
+
+| 组件 | 说明 |
+|------|------|
+| `DualCollectionManager` | 影子集合创建/校验/切换/回滚/清理 |
+| `kb_active.json` | 别名指针配置（active_collection + previous_collection） |
+| `validate_shadow_collection()` | 四维校验（chunk数/召回率/模型一致/pending状态） |
+| `switch_active_collection()` | 原子切换（temp文件→rename） |
+| `schedule_cleanup_old_collection()` | 延迟5分钟清理旧集合 |
+| `rollback_to_previous()` | 紧急回滚到上一活跃集合 |
+
+### 新增 API
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/kb/rebuild` | POST | 双集合重建（替代原地重建） |
+| `/api/admin/kb/rollback` | POST | 紧急回滚到上一集合 |
+| `/api/admin/kb/collection-info` | GET | 查询当前/上一集合信息 |
+
+### 改动文件
+
+- `vector_store.py`：新增 `DualCollectionManager`（~340 行）
+- `routes.py`：`kb_rebuild` 改用双集合流程 + 新增回滚/集合信息 API
+- `hybrid_retriever.py`：新增 `reset_hybrid_retriever()` + `get_cached_hybrid_retriever()`
+- `admin.html`：重建按钮改为"零停机" + 新增回滚按钮/集合信息按钮
+
+---
+
+## v9.10 - 双缓冲：消除知识库更新检索空窗期
+
+### 核心改进：pending → active → deprecated 状态机
+
+**问题**：v9.9 的增量更新流程是"先软删旧版本 → 再写新版本"，中间存在 ~1s 检索空窗期，
+该文档在此期间对用户完全不可见。
+
+**解决**：双缓冲——新版本写入时 `status=pending`（不可检索）→ 校验通过 →
+批量激活 `status=active`（原子操作）→ 旧版本 `status=deprecated`（5 分钟后清理）。
+
+```
+旧方案（有检索空窗）：
+  t0  soft_delete(旧)     → is_deleted=True → 该文档不可检索
+  t1  写入新版本          → 新 chunk 可检索
+  ↑ t0~t1 之间：该文档 = 不存在（空窗 ~1s）
+
+新方案（双缓冲，无空窗）：
+  t0  写入新版本(status=pending) → 对检索不可见，旧版本仍可检索 ✅
+  t1  校验新版本 → 激活(status=active) → 原子操作
+  t2  旧版本(status=deprecated) → 5 分钟后物理清理
+  ↑ 全程无空窗：t0 前走旧版本，t1 后走新版本
+```
+
+### 状态机
+
+```
+  ┌─────────┐     校验通过      ┌─────────┐     5分钟后      ┌────────────┐
+  │ pending │ ─────────────→  │  active │ ─────────────→  │ (物理删除) │
+  │ 不可检索 │     激活         │  可检索  │     清理         │            │
+  └─────────┘                  └─────────┘                  └────────────┘
+       ↑                            │
+       │ 校验失败                    │ 有新版本激活时
+       │ (兜底：旧版本仍可用)        ↓
+       │                       ┌────────────┐
+       └───────────────────── │ deprecated │ ← 可被紧急回滚
+                               │  不可检索   │
+                               └────────────┘
+```
+
+### 检索层过滤
+
+```python
+# ChromaDB 查询强制过滤
+where={"is_deleted": False, "status": "active"}
+
+# 效果：
+# pending chunk    → 不可检索（正在写入/校验中）
+# active chunk     → 可检索（正常状态）
+# deprecated chunk → 不可检索（旧版本，5 分钟后物理删除）
+# is_deleted=True  → 不可检索（管理员主动删除，30 天后物理删除）
+```
+
+### 更新期间降级提示
+
+前端发送消息前检测知识库更新状态，若正在更新则显示非阻断提示：
+> "知识库正在同步最新指南，部分结果可能略有延迟"
+
+提示 5 秒后自动消失，不阻断用户操作。
+
+### 新增函数
+
+| 函数 | 说明 |
+|------|------|
+| `activate_document_version()` | 校验并激活新版本：pending→active + 废弃旧版本 |
+| `deprecate_old_versions()` | 旧版本 active→deprecated（非删除，可回滚） |
+| `cleanup_deprecated_chunks()` | 清理超过 5 分钟的 deprecated chunk |
+
+### 改动文件
+
+- `kb_updater.py`：新增 3 个双缓冲函数 + `enrich_chunk_metadata` 增加 `status` 参数
+- `hybrid_retriever.py`：ChromaDB 查询加 `status=active` 过滤
+- `routes.py`：上传接口改用双缓冲流程
+- `index.html`：发送消息前检测更新状态，非阻断提示
+
+---
+
 ## v9.9 - 知识库更新架构优化（参考日志1最佳实践）
 
 ### 核心改进：6 大问题修复

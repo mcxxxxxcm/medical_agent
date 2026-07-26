@@ -494,6 +494,27 @@
 
         if ((!question && !currentImageBase64) || isStreaming) return;
 
+        // 知识库更新状态检测（非阻断提示）
+        try {
+            const statusRes = await fetch(`${window.location.origin}/api/admin/kb/status`);
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData.update_status && statusData.update_status.updating) {
+                    const tip = document.createElement('div');
+                    tip.className = 'message assistant';
+                    tip.style.background = '#fff7e6';
+                    tip.style.borderLeft = '3px solid #faad14';
+                    tip.style.padding = '8px 16px';
+                    tip.style.margin = '8px 0';
+                    tip.style.fontSize = '13px';
+                    tip.style.color = '#8c6d1f';
+                    tip.textContent = '知识库正在同步最新指南，部分结果可能略有延迟';
+                    document.getElementById('messages').appendChild(tip);
+                    setTimeout(() => tip.remove(), 5000);
+                }
+            }
+        } catch (e) {} // 非阻断，失败不影响发送
+
         const userId = document.getElementById('userId').value || 'default';
         const threadId = document.getElementById('threadId').value || null;
         const streamMode = document.getElementById('streamMode').value;

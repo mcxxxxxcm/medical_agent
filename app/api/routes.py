@@ -15,6 +15,8 @@ API接口：
     GET /api/health：健康检查
 """
 import asyncio
+import json
+import shutil
 import time
 import uuid
 from collections import defaultdict
@@ -784,6 +786,7 @@ async def kb_upload(request: Request):
                 enrich_chunk_metadata, filter_unchanged_chunks,
                 get_existing_content_hashes, get_document_version,
                 soft_delete_document, log_kb_audit,
+                activate_document_version,
             )
 
             total_chunks = 0
@@ -799,18 +802,13 @@ async def kb_upload(request: Request):
                     # 切分
                     chunks = split_documents(docs)
 
-                    # 版本管理：已存在则软删除旧版本 + 版本号+1
+                    # 版本管理：已存在则版本号+1（不先删旧版本！双缓冲）
                     vs = get_vector_store()
                     old_version = get_document_version(vs, file_info["name"])
-                    if old_version > 0:
-                        # 文档修改：软删除旧版本
-                        soft_delete_document(vs, file_info["name"])
-                        version_id = old_version + 1
-                    else:
-                        version_id = 1
+                    version_id = old_version + 1 if old_version > 0 else 1
 
-                    # 增强元数据（content_hash, chunk_id, version_id, embedding_model...）
-                    chunks = enrich_chunk_metadata(chunks, file_info["name"], version_id=version_id)
+                    # 增强元数据：status=pending（不可检索！）
+                    chunks = enrich_chunk_metadata(chunks, file_info["name"], version_id=version_id, status="pending")
 
                     # 增量去重：content_hash 未变化的 chunk 跳过 Embedding
                     existing_hashes = get_existing_content_hashes(vs)
@@ -828,10 +826,20 @@ async def kb_upload(request: Request):
                     parent_manager = get_parent_child_manager()
                     child_chunks = parent_manager.build_index(changed_chunks, child_chunk_size=150)
 
-                    # 写入向量库
+                    # 写入向量库（status=pending，检索层看不到！）
                     add_documents_to_store(child_chunks)
 
-                    file_info["chunks"] = len(changed_chunks)
+                    # 双缓冲：校验 → 激活新版本(status=active) → 废弃旧版本(status=deprecated)
+                    activated = activate_document_version(vs, file_info["name"], version_id)
+                    if activated == 0:
+                        # 校验失败：新 chunk 仍在 pending 状态，不影响旧版本检索
+                        file_info["chunks"] = len(changed_chunks)
+                        file_info["status"] = "pending_verification_failed"
+                        logger.warning(f"文档入库但激活失败：{file_info['name']} v{version_id}，chunk 仍在 pending 状态")
+                    else:
+                        file_info["chunks"] = len(changed_chunks)
+                        file_info["status"] = "active"
+
                     if unchanged_chunks:
                         file_info["skipped_unchanged"] = len(unchanged_chunks)
 
@@ -1014,20 +1022,25 @@ async def kb_stale_detect(hours: int = 24, request: Request = None):
 
 @app.post("/api/admin/kb/rebuild")
 async def kb_rebuild(request: Request):
-    """重建知识库（需管理员认证）
+    """重建知识库（需管理员认证）— 双集合零停机方案
 
-    流程（双缓冲策略，保证更新期间服务不中断）：
+    流程（影子集合 + 别名指针，全程服务不中断）：
         1. 加写锁
-        2. 清空旧向量库 + ParentChildStore + BM25 缓存
-        3. 重新加载全部文档 → 切分 → 构建父子索引 → 写入向量库
-        4. 原子切换：新向量库就绪后，旧实例自动失效
-        5. 清除所有缓存
-        6. 释放写锁
+        2. 创建影子集合（带时间戳的独立目录，对线上完全不可见）
+        3. 加载全部文档 → 切分 → 构建父子索引 → 写入影子集合
+        4. 校验影子集合（chunk数、抽样召回率、模型一致性）
+           ├─ 失败 → 丢弃影子集合 + 告警 → 服务不中断
+           └─ 通过 → 继续
+        5. 激活影子集合中的 pending chunk → active
+        6. 原子切换：别名指针指向影子集合
+        7. 重建 BM25 索引 + 清除缓存
+        8. 释放写锁
+        9. 5 分钟后延迟清理旧集合
 
     并发安全：
-        - 写锁（_kb_update_lock）：同一时间只有一个重建任务
-        - 检索请求不加锁，走当前生效的向量库实例
-        - 重建期间检索继续使用旧数据，新数据就绪后原子切换
+        - 写锁：同一时间只有一个重建任务
+        - 检索请求始终走 active 集合，不受影子集合构建影响
+        - 切换是原子的：用户要么看到完整旧版，要么看到完整新版
     """
     if not _verify_admin_key(request):
         return JSONResponse(status_code=403, content={"detail": "无权访问"})
@@ -1037,36 +1050,32 @@ async def kb_rebuild(request: Request):
 
     async with _kb_update_lock:
         _kb_update_status["updating"] = True
-        _kb_update_status["progress"] = "重建中：清空旧数据"
+        _kb_update_status["progress"] = "重建中：创建影子集合"
         _kb_update_status["started_at"] = time.time()
         _kb_update_status["error"] = None
 
+        shadow_name = None
+        shadow_persist_dir = None
+
         try:
-            # 1. 清空旧数据
-            from app.rag.vector_store import clear_vector_store, get_vector_store
-            from app.rag.parent_child_store import reset_parent_child_manager, get_parent_child_manager
+            from app.rag.vector_store import get_dual_collection_manager
+            from app.rag.parent_child_store import get_parent_child_manager
             from app.rag.loader import load_medical_documents, split_documents
+            from app.rag.kb_updater import enrich_chunk_metadata, log_kb_audit
 
-            clear_vector_store()
-            reset_parent_child_manager()
+            dcm = get_dual_collection_manager()
 
-            # 删除 BM25 缓存
-            config = get_config()
-            bm25_cache = config.BM25_CACHE_PATH
-            if bm25_cache.exists():
-                bm25_cache.unlink()
-
+            # 1. 创建影子集合
+            shadow_name, shadow_persist_dir = dcm.create_shadow_collection()
             _kb_update_status["progress"] = "重建中：加载文档"
 
-            # 2. 加载文档（在 executor 中执行，避免阻塞事件循环）
+            # 2. 加载文档
             loop = asyncio.get_event_loop()
             docs = await loop.run_in_executor(None, load_medical_documents)
-
             _kb_update_status["progress"] = f"重建中：切分文档（{len(docs)} 个）"
 
             # 3. 切分
             parent_docs = await loop.run_in_executor(None, split_documents, docs)
-
             _kb_update_status["progress"] = f"重建中：构建索引（{len(parent_docs)} 个 chunks）"
 
             # 4. 构建父子索引
@@ -1074,16 +1083,77 @@ async def kb_rebuild(request: Request):
             child_chunks = await loop.run_in_executor(
                 None, lambda: parent_manager.build_index(parent_docs, child_chunk_size=150)
             )
+            _kb_update_status["progress"] = f"重建中：写入影子集合（{len(child_chunks)} 个 child chunks）"
 
-            _kb_update_status["progress"] = f"重建中：写入向量库（{len(child_chunks)} 个 child chunks）"
+            # 5. 增强元数据（全量重建，所有 chunk status=active）
+            child_chunks = enrich_chunk_metadata(
+                child_chunks, source="rebuild", version_id=1, status="active"
+            )
 
-            # 5. 写入向量库
-            await loop.run_in_executor(None, lambda: get_vector_store(child_chunks, force_rebuild=True))
+            # 6. 写入影子集合（对线上完全不可见！）
+            def _progress_cb(done, total):
+                _kb_update_status["progress"] = f"重建中：写入影子集合（{done}/{total}）"
 
-            # 6. 持久化 ParentStore
+            shadow_vs = await loop.run_in_executor(
+                None, lambda: dcm.build_shadow_collection(
+                    child_chunks, shadow_name, shadow_persist_dir, _progress_cb
+                )
+            )
+
+            _kb_update_status["progress"] = "重建中：校验影子集合"
+
+            # 7. 校验影子集合
+            validation = await loop.run_in_executor(
+                None, lambda: dcm.validate_shadow_collection(shadow_vs, len(child_chunks))
+            )
+            if not validation["valid"]:
+                # 校验失败：丢弃影子集合，服务不中断
+                error_msg = f"影子集合校验失败：{validation['errors']}"
+                logger.error(error_msg)
+                # 清理影子集合
+                try:
+                    shutil.rmtree(shadow_persist_dir)
+                except Exception:
+                    pass
+                _kb_update_status["error"] = error_msg
+                _kb_update_status["progress"] = f"校验失败（已回滚）"
+                return JSONResponse(status_code=500, content={
+                    "detail": error_msg,
+                    "validation": validation,
+                })
+
+            if validation.get("warnings"):
+                logger.warning(f"影子集合校验警告：{validation['warnings']}")
+
+            # 8. 激活 pending chunk（如有）
+            await loop.run_in_executor(None, dcm.activate_pending_chunks, shadow_vs)
+
+            _kb_update_status["progress"] = "重建中：原子切换集合"
+
+            # 9. 原子切换：别名指针指向影子集合
+            dcm.switch_active_collection(shadow_name, str(shadow_persist_dir))
+
+            # 10. 持久化 ParentStore
             await loop.run_in_executor(None, parent_manager.save_to_disk)
 
-            # 7. 清除所有缓存
+            _kb_update_status["progress"] = "重建中：重建 BM25 索引"
+
+            # 11. 重建 BM25 索引（基于新集合数据）
+            # 删除旧 BM25 缓存，HybridRetriever 下次检索时自动重建
+            config = get_config()
+            bm25_cache = config.BM25_CACHE_PATH
+            if bm25_cache.exists():
+                bm25_cache.unlink()
+            # 重置 HybridRetriever 实例，触发 BM25 重建
+            try:
+                from app.rag.hybrid_retriever import reset_hybrid_retriever
+                reset_hybrid_retriever()
+            except Exception:
+                pass
+
+            _kb_update_status["progress"] = "重建中：清除缓存"
+
+            # 12. 清除所有缓存
             try:
                 cache = get_cache()
                 cache.clear()
@@ -1092,27 +1162,120 @@ async def kb_rebuild(request: Request):
             except Exception:
                 pass
 
+            # 13. 审计日志
+            try:
+                from app.rag.vector_store import get_vector_store
+                vs = get_vector_store()
+                log_kb_audit(vs, "full_rebuild", "rebuild", "success",
+                             details=f"docs={len(docs)}, chunks={len(parent_docs)}, child_chunks={len(child_chunks)}, shadow={shadow_name}")
+            except Exception:
+                pass
+
+            # 14. 延迟清理旧集合（5 分钟后）
+            dcm.schedule_cleanup_old_collection(delay_seconds=300)
+
             _kb_update_status["progress"] = "完成"
 
             elapsed = time.time() - _kb_update_status["started_at"]
-            logger.info(f"知识库重建完成：{len(docs)} 个文档 → {len(parent_docs)} 个 chunks → {len(child_chunks)} 个 child chunks，耗时 {elapsed:.1f}s")
+            logger.info(
+                f"知识库重建完成（双集合）：{shadow_name}，"
+                f"{len(docs)} 个文档 → {len(parent_docs)} 个 chunks → {len(child_chunks)} 个 child chunks，"
+                f"耗时 {elapsed:.1f}s"
+            )
 
             return {
                 "rebuilt": True,
+                "collection_name": shadow_name,
                 "document_count": len(docs),
                 "chunk_count": len(parent_docs),
                 "child_chunk_count": len(child_chunks),
                 "elapsed_seconds": round(elapsed, 1),
+                "validation": validation,
             }
 
         except Exception as e:
             _kb_update_status["error"] = str(e)
             _kb_update_status["progress"] = f"失败：{str(e)}"
             logger.error(f"知识库重建失败：{e}")
+            # 清理影子集合（如果已创建）
+            if shadow_persist_dir and Path(shadow_persist_dir).exists():
+                try:
+                    shutil.rmtree(shadow_persist_dir)
+                    logger.info(f"已清理失败的影子集合：{shadow_persist_dir}")
+                except Exception:
+                    pass
             return JSONResponse(status_code=500, content={"detail": str(e)})
         finally:
             _kb_update_status["updating"] = False
             _kb_update_status["started_at"] = None
+
+
+@app.post("/api/admin/kb/rollback")
+async def kb_rollback(request: Request):
+    """紧急回滚到上一个活跃集合（需管理员认证）
+
+    场景：新集合上线后发现数据问题，需要秒级回滚到旧版本。
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    try:
+        from app.rag.vector_store import get_dual_collection_manager
+        dcm = get_dual_collection_manager()
+        success = dcm.rollback_to_previous()
+
+        if success:
+            # 清除缓存
+            try:
+                cache = get_cache()
+                cache.clear()
+                semantic_cache = get_semantic_cache()
+                semantic_cache.clear()
+            except Exception:
+                pass
+
+            # 重置 BM25
+            config = get_config()
+            bm25_cache = config.BM25_CACHE_PATH
+            if bm25_cache.exists():
+                bm25_cache.unlink()
+            try:
+                from app.rag.hybrid_retriever import reset_hybrid_retriever
+                reset_hybrid_retriever()
+            except Exception:
+                pass
+
+            return {"rolled_back": True, "active_collection": dcm.get_active_collection_name()}
+        else:
+            return JSONResponse(status_code=500, content={"detail": "回滚失败：无可用旧集合"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+@app.get("/api/admin/kb/collection-info")
+async def kb_collection_info(request: Request):
+    """查询当前集合信息（活跃集合 + 上一集合 + 切换历史）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+
+    try:
+        from app.rag.vector_store import get_dual_collection_manager
+        dcm = get_dual_collection_manager()
+        config = dcm.get_active_config()
+
+        # 补充向量数信息
+        try:
+            from app.rag.vector_store import get_vector_store, get_kb_version
+            vs = get_vector_store()
+            if hasattr(vs, '_collection') and vs._collection:
+                config["active_vector_count"] = vs._collection.count()
+            config["kb_version"] = get_kb_version()
+        except Exception:
+            pass
+
+        return config
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
 # 启动入口

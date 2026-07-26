@@ -339,3 +339,348 @@ def clear_vector_store(persist_directory: str = None) -> None:
     """
     manager = get_vector_store_manager(persist_directory=persist_directory)
     manager.delete_collection()
+
+
+# ===== 双集合管理器（Dual-Collection + 别名指针） =====
+# 全库重建零停机：影子集合构建 → 校验 → 原子切换 → 延迟清理旧集合
+
+import json
+import shutil
+import threading
+from datetime import datetime
+
+_KB_ACTIVE_CONFIG_PATH = Path(config.DATA_DIR) / "kb_active.json"
+_DEFAULT_COLLECTION_NAME = "medical_kb_default"
+
+
+class DualCollectionManager:
+    """双集合管理器：影子集合构建 + 别名指针切换
+
+    核心机制：
+        - 线上检索始终走 active_collection（通过别名指针配置）
+        - 重建时创建影子集合，全程对线上不可见
+        - 影子集合校验通过后，原子切换指针
+        - 5 分钟后延迟清理旧集合
+    """
+
+    def __init__(self):
+        self.chroma_base_dir = Path(config.DATA_DIR) / "chroma_db"
+        self.config_path = _KB_ACTIVE_CONFIG_PATH
+
+    # ===== 别名指针读写 =====
+
+    def get_active_collection_name(self) -> str:
+        """读取当前活跃集合名（O(1)，毫秒级）"""
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                return data.get("active_collection", _DEFAULT_COLLECTION_NAME)
+        except Exception as e:
+            logger.warning(f"读取 kb_active.json 失败：{e}")
+        return _DEFAULT_COLLECTION_NAME
+
+    def get_active_config(self) -> dict:
+        """读取完整别名指针配置"""
+        try:
+            if self.config_path.exists():
+                return json.loads(self.config_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {"active_collection": _DEFAULT_COLLECTION_NAME}
+
+    def _write_config_atomic(self, data: dict):
+        """原子写入配置（先写临时文件 → rename，防止半写）"""
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.config_path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.rename(self.config_path)  # 原子操作
+
+    # ===== 影子集合创建 =====
+
+    def create_shadow_collection(self) -> tuple:
+        """创建影子集合（带时间戳的独立目录）
+
+        Returns:
+            (shadow_name, shadow_persist_dir): 影子集合名和持久化目录
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        shadow_name = f"medical_kb_v{timestamp}"
+        shadow_persist_dir = self.chroma_base_dir / shadow_name
+        shadow_persist_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"创建影子集合：{shadow_name}，目录：{shadow_persist_dir}")
+        return shadow_name, shadow_persist_dir
+
+    def build_shadow_collection(
+        self,
+        documents: List[Document],
+        shadow_name: str,
+        shadow_persist_dir: Path,
+        progress_callback=None,
+    ) -> Chroma:
+        """将文档写入影子集合（对线上完全不可见）
+
+        Args:
+            documents: 切分后的文档列表
+            shadow_name: 影子集合名
+            shadow_persist_dir: 影子集合持久化目录
+            progress_callback: 进度回调函数
+
+        Returns:
+            Chroma: 影子集合的向量库实例
+        """
+        embeddings = get_embeddings()
+
+        # 分批写入，避免 Embedding API 单次请求限制
+        batch_size = 60
+        shadow_vs = None
+
+        for i in range(0, len(documents), batch_size):
+            batch = documents[i:i + batch_size]
+            if i == 0:
+                shadow_vs = Chroma.from_documents(
+                    documents=batch,
+                    embedding=embeddings,
+                    collection_name=shadow_name,
+                    persist_directory=str(shadow_persist_dir),
+                    collection_metadata={"hnsw:space": "cosine"},
+                )
+            else:
+                shadow_vs.add_documents(batch)
+
+            if progress_callback:
+                progress_callback(i + len(batch), len(documents))
+
+            logger.info(f"影子集合写入：{min(i + batch_size, len(documents))}/{len(documents)}")
+
+        # 持久化
+        if shadow_vs:
+            shadow_vs.persist()
+
+        return shadow_vs
+
+    # ===== 校验 =====
+
+    def validate_shadow_collection(
+        self,
+        shadow_vs: Chroma,
+        expected_chunk_count: int,
+        sample_queries: List[str] = None,
+    ) -> dict:
+        """校验影子集合健康度
+
+        Returns:
+            dict: {"valid": bool, "errors": [str], "warnings": [str]}
+        """
+        errors = []
+        warnings = []
+
+        if shadow_vs is None:
+            return {"valid": False, "errors": ["影子集合实例为空"], "warnings": []}
+
+        col = shadow_vs._collection
+        actual_count = col.count()
+
+        # 1. chunk 数量校验（容忍 10% 偏差）
+        if actual_count == 0:
+            errors.append(f"影子集合为空（actual=0, expected={expected_chunk_count}）")
+        elif actual_count < expected_chunk_count * 0.9:
+            warnings.append(
+                f"chunk 数量偏差较大：actual={actual_count}, expected={expected_chunk_count} "
+                f"(偏差>{10}%)"
+            )
+
+        # 2. 抽样召回率校验
+        if sample_queries is None:
+            sample_queries = ["感冒", "布洛芬", "高血压", "便秘", "发热", "头痛", "止咳"]
+
+        failed_queries = []
+        for q in sample_queries:
+            try:
+                results = shadow_vs.similarity_search(q, k=3)
+                if not results:
+                    failed_queries.append(q)
+            except Exception as e:
+                failed_queries.append(f"{q}(异常:{e})")
+
+        if len(failed_queries) > len(sample_queries) * 0.5:
+            errors.append(f"抽样召回率过低：{len(failed_queries)}/{len(sample_queries)} 查询无结果：{failed_queries}")
+        elif failed_queries:
+            warnings.append(f"部分查询无召回：{failed_queries}")
+
+        # 3. Embedding 模型一致性校验
+        try:
+            from app.rag.kb_updater import get_embedding_model_info
+            current_model = get_embedding_model_info()
+            meta_results = col.get(limit=1, include=["metadatas"])
+            if meta_results and meta_results["metadatas"]:
+                stored_model = meta_results["metadatas"][0].get("embedding_model", "")
+                if stored_model and stored_model != current_model.get("embedding_model", ""):
+                    errors.append(
+                        f"Embedding 模型不一致：stored={stored_model}, "
+                        f"current={current_model.get('embedding_model', '')}"
+                    )
+        except Exception as e:
+            warnings.append(f"模型一致性校验跳过：{e}")
+
+        # 4. status 元数据校验（全量重建后所有 chunk 应为 active）
+        try:
+            pending_results = col.get(where={"status": "pending"}, include=[])
+            if pending_results and pending_results["ids"]:
+                warnings.append(f"存在 {len(pending_results['ids'])} 个 pending chunk，将自动激活")
+        except Exception:
+            pass
+
+        valid = len(errors) == 0
+        return {"valid": valid, "errors": errors, "warnings": warnings}
+
+    # ===== 原子切换 =====
+
+    def switch_active_collection(self, new_collection_name: str, new_persist_dir: str):
+        """原子切换活跃集合指针
+
+        步骤：
+            1. 更新别名指针配置（原子写文件）
+            2. 刷新全局 VectorStoreManager 实例（下次 get_vector_store 加载新集合）
+            3. 失效 kb_version 缓存
+
+        Args:
+            new_collection_name: 新集合名
+            new_persist_dir: 新集合持久化目录
+        """
+        old_config = self.get_active_config()
+        old_collection = old_config.get("active_collection", _DEFAULT_COLLECTION_NAME)
+
+        # 1. 原子写入新配置
+        new_config = {
+            "active_collection": new_collection_name,
+            "active_persist_dir": str(new_persist_dir),
+            "previous_collection": old_collection,
+            "previous_persist_dir": old_config.get("active_persist_dir", str(self.chroma_base_dir)),
+            "switched_at": datetime.utcnow().isoformat() + "Z",
+        }
+        self._write_config_atomic(new_config)
+
+        # 2. 刷新全局实例
+        global _vector_store_manager
+        _vector_store_manager = None  # 下次 get_vector_store() 会重新加载
+
+        # 3. 失效 kb_version
+        invalidate_kb_version()
+
+        logger.info(
+            f"集合切换完成：{old_collection} → {new_collection_name} "
+            f"(persist_dir={new_persist_dir})"
+        )
+
+    # ===== 延迟清理旧集合 =====
+
+    def schedule_cleanup_old_collection(self, delay_seconds: int = 300):
+        """延迟清理旧集合（5 分钟后执行）
+
+        确保所有进行中的查询完成后再删除，避免长尾请求报错。
+        """
+        old_config = self.get_active_config()
+        old_dir = old_config.get("previous_persist_dir")
+        old_name = old_config.get("previous_collection")
+
+        if not old_dir or not old_name:
+            logger.info("无旧集合需要清理")
+            return
+
+        # 当前活跃集合不清理
+        if old_name == old_config.get("active_collection"):
+            return
+
+        def _cleanup():
+            try:
+                import time
+                logger.info(f"旧集合清理：{delay_seconds}s 后清理 {old_name}")
+                time.sleep(delay_seconds)
+
+                old_path = Path(old_dir)
+                if old_path.exists() and old_path.is_dir():
+                    # 安全检查：不删除活跃集合
+                    active_name = self.get_active_collection_name()
+                    if old_name == active_name:
+                        logger.warning(f"旧集合 {old_name} 已是活跃集合，跳过清理")
+                        return
+
+                    shutil.rmtree(old_path)
+                    logger.info(f"旧集合已清理：{old_name}（目录：{old_dir}）")
+                else:
+                    logger.info(f"旧集合目录不存在，跳过清理：{old_dir}")
+            except Exception as e:
+                logger.error(f"旧集合清理失败：{e}")
+
+        cleanup_thread = threading.Thread(target=_cleanup, daemon=True)
+        cleanup_thread.start()
+
+    # ===== 回滚 =====
+
+    def rollback_to_previous(self) -> bool:
+        """紧急回滚到上一个活跃集合
+
+        Returns:
+            bool: 是否回滚成功
+        """
+        config = self.get_active_config()
+        prev_name = config.get("previous_collection")
+        prev_dir = config.get("previous_persist_dir")
+
+        if not prev_name or not prev_dir:
+            logger.error("无上一个集合可回滚")
+            return False
+
+        if not Path(prev_dir).exists():
+            logger.error(f"上一个集合目录不存在：{prev_dir}")
+            return False
+
+        # 交换 active 和 previous
+        self.switch_active_collection(prev_name, prev_dir)
+        logger.warning(f"紧急回滚完成：{config.get('active_collection')} → {prev_name}")
+        return True
+
+    # ===== 激活影子集合中的 pending chunk =====
+
+    def activate_pending_chunks(self, shadow_vs: Chroma) -> int:
+        """将影子集合中所有 pending chunk 批量激活为 active
+
+        全量重建后，所有 chunk 默认为 active。
+        但如果是从增量更新流程来的，可能有 pending chunk。
+
+        Returns:
+            激活的 chunk 数量
+        """
+        try:
+            col = shadow_vs._collection
+            results = col.get(where={"status": "pending"}, include=["metadatas"])
+            if not results or not results["ids"]:
+                return 0
+
+            chunk_ids = results["ids"]
+            metas = results["metadatas"]
+            now = datetime.utcnow().isoformat()
+
+            for meta in metas:
+                meta["status"] = "active"
+                meta["activated_at"] = now
+
+            col.update(ids=chunk_ids, metadatas=metas)
+            logger.info(f"影子集合 pending→active：{len(chunk_ids)} 个 chunk")
+            return len(chunk_ids)
+        except Exception as e:
+            logger.error(f"激活 pending chunk 失败：{e}")
+            return 0
+
+
+# 全局双集合管理器实例
+_dual_collection_manager: Optional[DualCollectionManager] = None
+
+
+def get_dual_collection_manager() -> DualCollectionManager:
+    """获取双集合管理器实例（单例）"""
+    global _dual_collection_manager
+    if _dual_collection_manager is None:
+        _dual_collection_manager = DualCollectionManager()
+    return _dual_collection_manager
