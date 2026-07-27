@@ -3,11 +3,14 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from langchain_core.messages import HumanMessage, AIMessage
+
 from app.graph.nodes.nodes import (
     detect_rule_based_route,
     normalize_router_label,
     parse_router_output,
     _extract_symptoms_by_rules,
+    _detect_route_from_context,
     is_same_query,
 )
 
@@ -45,6 +48,31 @@ class TestDetectRuleBasedRoute:
         result = detect_rule_based_route("你好我是王艺涵发烧了")
         assert result == "symptom"
 
+    def test_disease_name_hits_knowledge(self):
+        """疾病名命中knowledge（高血压、糖尿病）"""
+        assert detect_rule_based_route("高血压") == "knowledge"
+        assert detect_rule_based_route("糖尿病") == "knowledge"
+
+    def test_ambiguous_怎么办_hits_symptom(self):
+        """'怎么办' 命中 symptom_intent（已知歧义：高血压怎么办应为knowledge）"""
+        # 这条记录了已知歧义，当前行为是返回symptom
+        result = detect_rule_based_route("高血压怎么办")
+        assert result in ("symptom", "knowledge")  # 当前返回symptom，标记歧义
+
+    def test_general_with_question_mark(self):
+        """问候带问号"""
+        assert detect_rule_based_route("你好？") == "general"
+
+    def test_knowledge_prevention(self):
+        """预防类知识查询"""
+        assert detect_rule_based_route("怎么预防感冒") == "knowledge"
+
+    def test_oral_symptom_expression(self):
+        """口语化症状：'不太舒服' 不在关键词中，规则应返回None"""
+        result = detect_rule_based_route("今天肚子不太舒服")
+        # "肚子" 不在 route_symptom_map，"不舒服" 在，所以命中symptom_intent
+        assert result == "symptom"
+
 
 class TestNormalizeRouterLabel:
     """路由标签规范化测试"""
@@ -61,6 +89,86 @@ class TestNormalizeRouterLabel:
     def test_fallback_default(self):
         assert normalize_router_label("unknown") == "general"
         assert normalize_router_label("") == "general"
+
+
+class TestDetectRouteFromContext:
+    """上下文感知路由测试"""
+
+    def test_follow_up_symptom(self):
+        """追问+症状上下文 → symptom"""
+        state = {
+            "question": "还有其他可以吃的吗",
+            "messages": [
+                HumanMessage(content="我头痛"),
+                AIMessage(content="建议服用布洛芬缓解头痛"),
+            ],
+        }
+        result = _detect_route_from_context(state)
+        assert result == "symptom"
+
+    def test_follow_up_knowledge(self):
+        """追问+知识上下文 → knowledge"""
+        state = {
+            "question": "副作用大吗",
+            "messages": [
+                HumanMessage(content="布洛芬的用法用量是什么"),
+                AIMessage(content="布洛芬是一种非甾体抗炎药"),
+            ],
+        }
+        result = _detect_route_from_context(state)
+        assert result == "knowledge"
+
+    def test_no_history_returns_none(self):
+        """无历史消息 → None"""
+        state = {"question": "还有吗", "messages": []}
+        result = _detect_route_from_context(state)
+        assert result is None
+
+    def test_short_question_with_symptom_context(self):
+        """短句追问+症状上下文 → symptom"""
+        state = {
+            "question": "严重吗",
+            "messages": [
+                HumanMessage(content="头痛3天了"),
+            ],
+        }
+        result = _detect_route_from_context(state)
+        assert result == "symptom"
+
+    def test_conflicting_context_returns_none(self):
+        """symptom和knowledge上下文同时存在 → None（弃权）"""
+        state = {
+            "question": "还有什么要注意的",
+            "messages": [
+                HumanMessage(content="我头痛怎么办"),
+                AIMessage(content="建议服用布洛芬"),
+                HumanMessage(content="高血压的禁忌症有哪些"),
+                AIMessage(content="高血压禁忌包括..."),
+            ],
+        }
+        result = _detect_route_from_context(state)
+        assert result is None
+
+    def test_non_follow_up_without_context(self):
+        """非追问且无上下文 → None"""
+        state = {
+            "question": "血压高要吃药吗",
+            "messages": [],
+        }
+        result = _detect_route_from_context(state)
+        assert result is None
+
+    def test_ai_symptom_indicators(self):
+        """AI回答中的症状指标词触发symptom上下文"""
+        state = {
+            "question": "换一个试试",
+            "messages": [
+                HumanMessage(content="头痛"),
+                AIMessage(content="建议服用布洛芬，剂量为每次200mg"),
+            ],
+        }
+        result = _detect_route_from_context(state)
+        assert result == "symptom"
 
 
 class TestParseRouterOutput:

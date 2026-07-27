@@ -7,6 +7,8 @@
     2. run_single(): 对单条测试用例重放查询，对比当前输出与期望输出
     3. run_batch(): 批量运行回归测试
     4. generate_report(): 生成统计报告（通过率、失败用例分布、改进趋势）
+    5. run_single_route(): 路由回归——重放route_node，对比路由结果与golden_label
+    6. run_batch_route(): 批量路由回归测试
 """
 
 import json
@@ -19,7 +21,14 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.core.app_logging import get_logger
-from app.graph.nodes.nodes import query_rewrite_node
+from app.graph.nodes.nodes import (
+    query_rewrite_node,
+    detect_rule_based_route,
+    _detect_route_from_context,
+    _llm_route,
+    normalize_router_label,
+    route_node,
+)
 
 logger = get_logger(__name__)
 
@@ -380,6 +389,121 @@ class BadCaseRegressionRunner:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
         logger.info(f"回归测试报告已保存：{file_path}")
+
+    # ===================================================================
+    # 路由回归测试
+    # ===================================================================
+
+    def run_single_route(self, test_case: Dict, use_llm: bool = False) -> Dict:
+        """路由回归：重放route_node，对比路由结果与golden_label
+
+        Args:
+            test_case: 测试用例，需包含 query、golden_label 字段
+            use_llm: 是否启用LLM层兜底（默认False，仅规则+上下文）
+
+        Returns:
+            {pass, actual, expected, route_layer, ...}
+        """
+        case_id = test_case.get("id", test_case.get("case_id", "unknown"))
+        query = test_case.get("query", test_case.get("original_query", ""))
+        golden_label = test_case.get("golden_label", "")
+        history_summary = test_case.get("history_summary", "")
+
+        if not golden_label:
+            logger.warning(f"跳过未标注用例 {case_id}：golden_label 为空")
+            return {
+                "pass": None, "actual": "", "expected": "",
+                "route_layer": "", "case_id": case_id, "skipped": True,
+            }
+
+        # 构建最小化 state
+        messages = _build_messages_from_history(history_summary)
+        state = {
+            "question": query,
+            "messages": messages,
+            "user_id": test_case.get("user_id", "route_regression"),
+            "thread_id": test_case.get("thread_id", f"regression_{uuid.uuid4().hex[:8]}"),
+            "image_base64": None,
+        }
+
+        # 分层执行路由，记录命中的层
+        actual_label = None
+        route_layer = ""
+
+        # 1. 规则层
+        rule_result = detect_rule_based_route(query)
+        if rule_result:
+            actual_label = normalize_router_label(rule_result)
+            route_layer = "rule"
+        else:
+            # 2. 上下文层
+            context_result = _detect_route_from_context(state)
+            if context_result:
+                actual_label = normalize_router_label(context_result)
+                route_layer = "context"
+            elif use_llm:
+                # 3. LLM层
+                try:
+                    llm_result = _llm_route(query)
+                    actual_label = normalize_router_label(llm_result)
+                    route_layer = "llm"
+                except Exception as e:
+                    actual_label = "general"
+                    route_layer = "llm_fallback"
+                    logger.warning(f"LLM路由失败 {case_id}：{e}")
+            else:
+                actual_label = "unknown"
+                route_layer = "miss"
+
+        passed = actual_label == golden_label
+
+        result = {
+            "pass": passed,
+            "actual": actual_label,
+            "expected": golden_label,
+            "route_layer": route_layer,
+            "case_id": case_id,
+            "query": query,
+            "skipped": False,
+        }
+
+        status = "PASS" if passed else "FAIL"
+        logger.info(f"[{status}] {case_id} | golden={golden_label} pred={actual_label} layer={route_layer} | {query[:30]}")
+
+        return result
+
+    def run_batch_route(self, test_cases: List[Dict] = None, use_llm: bool = False) -> List[Dict]:
+        """批量路由回归测试
+
+        Args:
+            test_cases: 测试用例列表，默认使用已加载的测试集
+            use_llm: 是否启用LLM层兜底
+
+        Returns:
+            所有测试用例的结果列表
+        """
+        cases = test_cases or self._test_cases
+
+        if not cases:
+            logger.warning("无测试用例可执行，请先 load_test_set()")
+            return []
+
+        logger.info(f"开始路由回归测试，共 {len(cases)} 条用例")
+        results = []
+
+        for i, case in enumerate(cases, 1):
+            logger.info(f"执行用例 {i}/{len(cases)}：{case.get('id', case.get('case_id', 'unknown'))}")
+            result = self.run_single_route(case, use_llm=use_llm)
+            results.append(result)
+
+        total = len(results)
+        passed = sum(1 for r in results if r.get("pass") is True)
+        failed = sum(1 for r in results if r.get("pass") is False)
+        skipped = sum(1 for r in results if r.get("skipped"))
+
+        logger.info(f"路由回归测试完成：总计 {total}，通过 {passed}，失败 {failed}，跳过 {skipped}")
+
+        return results
 
 
 def _describe_diff(actual: str, expected: str) -> str:

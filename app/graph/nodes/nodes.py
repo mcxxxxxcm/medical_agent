@@ -471,6 +471,7 @@ def router_node(state: MedicalAssistantState) -> Command:
 
     # ===== 第一层：规则优先（0ms） =====
     rule_based_route = detect_rule_based_route(question)
+    route_layer = "rule"  # 记录命中的路由层
     if rule_based_route:
         logger.info(f"规则路由命中：question_type={rule_based_route}")
         question_type = rule_based_route
@@ -480,12 +481,18 @@ def router_node(state: MedicalAssistantState) -> Command:
         if context_route:
             logger.info(f"上下文感知路由命中：question_type={context_route}")
             question_type = context_route
+            route_layer = "context"
         else:
             # ===== 第三层：主模型分类（~1-2s） =====
             question_type = _llm_route(question)
+            route_layer = "llm"
 
     question_type = normalize_router_label(question_type)
-    logger.info(f"问题类型：{question_type}")
+    logger.info(f"问题类型：{question_type}（路由层：{route_layer}）")
+
+    # 记录路由结果到 state（供后续节点和 metrics 使用）
+    # 注意：Command 返回不支持直接更新 state，通过 logger + metrics 记录
+    _record_route_metrics(state, question, question_type, route_layer)
 
     # 常规类型general就直接使用llm进行回复，不用调用RAG
     if question_type == "symptom":
@@ -494,6 +501,46 @@ def router_node(state: MedicalAssistantState) -> Command:
         return Command(goto="query_rewrite")
     else:
         return Command(goto="direct_answer")
+
+
+def _record_route_metrics(state: dict, question: str, question_type: str, route_layer: str):
+    """记录路由分层指标到 MetricsCollector
+
+    指标用途：
+        - 分层命中率：rule/context/llm 各处理了多少比例
+        - 路由分布：symptom/knowledge/general 占比
+        - 关联 feedback：👎 时可反查路由层和类型
+
+    不影响主流程，异常时静默降级。
+    """
+    try:
+        from app.core.metrics import get_metrics_collector
+        collector = get_metrics_collector()
+        request_id = state.get("request_id", "")
+        if not request_id:
+            import uuid
+            request_id = str(uuid.uuid4())[:8]
+        thread_id = ""
+        messages = state.get("messages", [])
+        if messages:
+            from langchain_core.messages import BaseMessage
+            # 从 messages 中提取 thread_id 不可用，使用 user_id 替代
+        user_id = state.get("user_id", "")
+
+        collector.record_node(
+            request_id=request_id,
+            node_name="router",
+            duration_ms=0,  # 路由耗时已由 timing_decorator 记录，这里只记录元数据
+            route_type=question_type,
+            thread_id=thread_id,
+            metadata={
+                "route_layer": route_layer,
+                "question_preview": question[:100],
+                "user_id": user_id,
+            },
+        )
+    except Exception as e:
+        logger.debug(f"路由指标记录失败（不影响主流程）：{e}")
 
 
 def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:

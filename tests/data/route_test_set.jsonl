@@ -1,0 +1,85 @@
+{"id": "route_001", "query": "布洛芬的禁忌症有哪些？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_002", "query": "孕妇感冒了能吃布洛芬吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_003", "query": "儿童发烧能用阿司匹林退烧吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_004", "query": "布洛芬和对乙酰氨基酚可以一起吃吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_005", "query": "对乙酰氨基酚成人每天最多吃多少？", "golden_label": "knowledge", "golden_layer": "rule", "category": "剂量查询", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_006", "query": "布洛芬每天最大剂量是多少？", "golden_label": "knowledge", "golden_layer": "rule", "category": "剂量查询", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_007", "query": "6个月宝宝发烧吃什么药？剂量怎么算？", "golden_label": "symptom", "golden_layer": "rule", "category": "剂量查询", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_008", "query": "3个月以下婴儿发烧怎么办？", "golden_label": "symptom", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_009", "query": "奥司他韦什么时候用效果最好？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_010", "query": "头痛什么情况下需要立即就医？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_011", "query": "偏头痛发作应该吃什么药？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_012", "query": "高血压急症怎么识别？", "golden_label": "knowledge", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_013", "query": "低血糖怎么紧急处理？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_014", "query": "脑卒中怎么快速识别？", "golden_label": "knowledge", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_015", "query": "感冒和流感怎么区分？", "golden_label": "knowledge", "golden_layer": "rule", "category": "症状分诊", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_016", "query": "发烧多少度需要吃退烧药？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_017", "query": "胸痛可能是什么严重疾病？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_018", "query": "急性腹痛能吃止痛药吗？", "golden_label": "symptom", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_019", "query": "荨麻疹什么情况下需要急诊？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_020", "query": "扭伤后应该冷敷还是热敷？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_021", "query": "烧烫伤怎么急救处理？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_022", "query": "热性惊厥怎么处理？", "golden_label": "symptom", "golden_layer": "rule", "category": "急救处理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_023", "query": "被狗咬伤了怎么处理？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_024", "query": "一氧化碳中毒怎么急救？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_025", "query": "高血压患者日常应该注意什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_026", "query": "2型糖尿病一线用药是什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_027", "query": "冠心病患者日常怎么管理？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_028", "query": "痛风急性发作怎么治疗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_029", "query": "痛风患者饮食要注意什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_030", "query": "感冒需要吃抗生素吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_031", "query": "6岁以下儿童能用复方感冒药吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_032", "query": "便秘怎么治疗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_033", "query": "腹泻最重要的是什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_034", "query": "呕吐伴剧烈头痛可能是什么病？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_035", "query": "颈椎病有哪些分型？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_036", "query": "带状疱疹什么时候开始抗病毒治疗最好？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_037", "query": "哮喘急性发作怎么处理？", "golden_label": "symptom", "golden_layer": "rule", "category": "急救处理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_038", "query": "布洛芬和阿司匹林能一起吃吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_039", "query": "发烧伴皮疹可能是什么病？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_040", "query": "对乙酰氨基酚和布洛芬哪个好？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_041", "query": "面部湿疹能用什么药膏？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_042", "query": "胃食管反流病怎么治疗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_043", "query": "骨质疏松怎么诊断？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_044", "query": "呕血或黑便应该怎么办？", "golden_label": "symptom", "golden_layer": "rule", "category": "急救处理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_045", "query": "过敏性休克怎么处理？", "golden_label": "symptom", "golden_layer": "rule", "category": "急救处理", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_046", "query": "腰椎间盘突出怎么保守治疗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_047", "query": "糖尿病足怎么护理？", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_048", "query": "物理降温有哪些错误做法？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_049", "query": "鼻出血正确的止血方法是什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_050", "query": "孩子腹泻脱水怎么判断？", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_051", "query": "氨氯地平的用法用量是什么？", "golden_label": "knowledge", "golden_layer": "rule", "category": "剂量查询", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_052", "query": "什么情况需要立即拨打120？", "golden_label": "knowledge", "golden_layer": "rule", "category": "急救处理", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_053", "query": "流鼻血怎么处理？", "golden_label": "symptom", "golden_layer": "rule", "category": "急救处理", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}
+{"id": "route_054", "query": "复方感冒药能同时吃两种吗？", "golden_label": "knowledge", "golden_layer": "rule", "category": "用药安全", "difficulty": "hard", "is_boundary": false, "source": "golden_set"}
+{"id": "route_055", "query": "你好", "golden_label": "general", "golden_layer": "rule", "category": "问候", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_056", "query": "你是谁", "golden_label": "general", "golden_layer": "rule", "category": "问候", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_057", "query": "谢谢", "golden_label": "general", "golden_layer": "rule", "category": "问候", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_058", "query": "我头痛怎么办", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_059", "query": "发烧了吃什么药", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_060", "query": "肚子疼", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_061", "query": "高血压是什么原因", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "easy", "is_boundary": false, "source": "golden_set"}
+{"id": "route_062", "query": "今天天气不错", "golden_label": "general", "golden_layer": "llm", "category": "闲聊", "difficulty": "easy", "is_boundary": false, "source": "boundary"}
+{"id": "route_063", "query": "高血压", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "单词无问句，规则命中knowledge_disease"}
+{"id": "route_064", "query": "你好我想问一下", "golden_label": "general", "golden_layer": "llm", "category": "问候", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "问候+模糊意图，规则可能误判"}
+{"id": "route_065", "query": "我妈妈头疼", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "含称呼+症状"}
+{"id": "route_066", "query": "还有其他可以吃的吗", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "纯追问无关键词，需上下文", "history_summary": "用户头痛，建议布洛芬"}
+{"id": "route_067", "query": "这个药能和阿司匹林一起吃吗", "golden_label": "knowledge", "golden_layer": "context", "category": "用药安全", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "指代词+知识查询，需上下文或LLM", "history_summary": "用户问布洛芬用法"}
+{"id": "route_068", "query": "头疼两天了要不要去医院", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "含分诊判断"}
+{"id": "route_069", "query": "今天肚子不太舒服", "golden_label": "symptom", "golden_layer": "llm", "category": "症状分诊", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "口语化，不舒服不在symptom关键词中"}
+{"id": "route_070", "query": "血压高要吃药吗", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "短句≤15字但非追问"}
+{"id": "route_071", "query": "痛风", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "单疾病名，规则命中knowledge_disease"}
+{"id": "route_072", "query": "能不能不吃了", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "hard", "is_boundary": true, "source": "boundary", "boundary_reason": "省略指代，完全依赖上下文", "history_summary": "用户发烧在吃布洛芬"}
+{"id": "route_073", "query": "换个药试试", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "hard", "is_boundary": true, "source": "boundary", "boundary_reason": "无任何医学关键词，纯意图追问", "history_summary": "用户头痛吃布洛芬无效"}
+{"id": "route_074", "query": "副作用大吗", "golden_label": "knowledge", "golden_layer": "context", "category": "用药安全", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "副作用在knowledge关键词，但需上下文确定是哪个药", "history_summary": "用户问布洛芬用法"}
+{"id": "route_075", "query": "那孩子呢", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "hard", "is_boundary": true, "source": "boundary", "boundary_reason": "纯代词追问，无医学实体", "history_summary": "用户问成人头痛用药"}
+{"id": "route_076", "query": "除了吃药还有什么办法", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "追问模式+除了，需上下文", "history_summary": "用户头痛问用药"}
+{"id": "route_077", "query": "怎么预防感冒", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "预防在knowledge关键词中"}
+{"id": "route_078", "query": "严重吗", "golden_label": "symptom", "golden_layer": "context", "category": "症状分诊", "difficulty": "hard", "is_boundary": true, "source": "boundary", "boundary_reason": "两字追问，完全依赖上下文", "history_summary": "用户说头痛3天了"}
+{"id": "route_079", "query": "我不想吃药", "golden_label": "general", "golden_layer": "llm", "category": "闲聊", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "非医学意图，但含吃药字样可能触发误判"}
+{"id": "route_080", "query": "帮我查一下糖尿病的饮食", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "easy", "is_boundary": false, "source": "boundary"}
+{"id": "route_081", "query": "我最近老头晕", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "口语化症状描述"}
+{"id": "route_082", "query": "什么药止疼效果最好", "golden_label": "knowledge", "golden_layer": "llm", "category": "用药安全", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "止疼可能触发symptom_intent，但实际是知识查询"}
+{"id": "route_083", "query": "你好我是王艺涵发烧了", "golden_label": "symptom", "golden_layer": "rule", "category": "症状分诊", "difficulty": "easy", "is_boundary": true, "source": "boundary", "boundary_reason": "问候+症状，symptom优先级应高于general"}
+{"id": "route_084", "query": "高血压怎么办", "golden_label": "knowledge", "golden_layer": "rule", "category": "慢性病管理", "difficulty": "medium", "is_boundary": true, "source": "boundary", "boundary_reason": "怎么办触发symptom_intent但应为knowledge"}
+{"id": "route_085", "query": "糖尿病的并发症有哪些", "golden_label": "knowledge", "golden_layer": "rule", "category": "知识问答", "difficulty": "medium", "is_boundary": false, "source": "golden_set"}

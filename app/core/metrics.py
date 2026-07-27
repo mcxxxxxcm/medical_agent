@@ -283,6 +283,75 @@ class MetricsCollector:
             logger.warning(f"Metrics 请求统计查询失败：{e}")
             return []
 
+    def get_route_stats(self, hours: int = 24) -> Dict:
+        """查询路由分层统计
+
+        Returns:
+            {
+                "by_route_type": {"symptom": count, "knowledge": count, "general": count},
+                "by_route_layer": {"rule": count, "context": count, "llm": count},
+                "route_layer_rate": {"rule": 0.85, "context": 0.10, "llm": 0.05},
+                "total": int,
+            }
+        """
+        cutoff = time.time() - hours * 3600
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            try:
+                # 按 route_type 统计
+                type_rows = conn.execute(
+                    """
+                    SELECT route_type, COUNT(*) as cnt
+                    FROM node_metrics
+                    WHERE timestamp > ? AND node_name = 'router' AND route_type != ''
+                    GROUP BY route_type
+                    ORDER BY cnt DESC
+                    """,
+                    (cutoff,),
+                ).fetchall()
+
+                by_route_type = {r[0]: r[1] for r in type_rows}
+
+                # 按 route_layer 统计（从 metadata JSON 提取）
+                layer_rows = conn.execute(
+                    """
+                    SELECT metadata, COUNT(*) as cnt
+                    FROM node_metrics
+                    WHERE timestamp > ? AND node_name = 'router' AND route_type != ''
+                    GROUP BY metadata
+                    """,
+                    (cutoff,),
+                ).fetchall()
+
+                by_route_layer = {"rule": 0, "context": 0, "llm": 0, "other": 0}
+                for metadata_str, cnt in layer_rows:
+                    try:
+                        meta = json.loads(metadata_str) if metadata_str else {}
+                        layer = meta.get("route_layer", "other")
+                        if layer in by_route_layer:
+                            by_route_layer[layer] += cnt
+                        else:
+                            by_route_layer["other"] += cnt
+                    except (json.JSONDecodeError, TypeError):
+                        by_route_layer["other"] += cnt
+
+                total = sum(by_route_type.values())
+                route_layer_rate = {
+                    k: round(v / total, 4) for k, v in by_route_layer.items() if total > 0
+                }
+
+                return {
+                    "by_route_type": by_route_type,
+                    "by_route_layer": by_route_layer,
+                    "route_layer_rate": route_layer_rate,
+                    "total": total,
+                }
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"路由统计查询失败：{e}")
+            return {"by_route_type": {}, "by_route_layer": {}, "route_layer_rate": {}, "total": 0}
+
     # ===================================================================
     # Token 用量
     # ===================================================================

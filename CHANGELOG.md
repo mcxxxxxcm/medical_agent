@@ -1,5 +1,71 @@
 # 系统优化更新日志
 
+## v9.12 - 路由评估体系：意图识别可量化、可归因、可迭代
+
+### 核心改进：评估基础设施 + 分层归因 + Bad Case 反哺闭环
+
+**问题**：意图识别（route_node）的三层路由（规则→上下文→LLM）没有准确率度量，无法判断：
+- 规则层关键词是否够全
+- 上下文层是否有误判
+- LLM层兜底的比例和准确率
+- Bad Case 如何反哺测试集防止回归
+
+**方案**：构建路由评估闭环
+
+```
+评估脚本 → 测试集(route_test_set.jsonl) → 分层归因报告
+                                              ↓
+                          Bad Case采集(👎+route_misclassification) → 人工审核 → 补入测试集
+                                              ↓
+                          BadCaseRegressionRunner.run_batch_route() → 回归验证
+```
+
+### 新增文件
+
+| 文件 | 功能 |
+|------|------|
+| `tests/data/route_test_set.jsonl` | 路由评估测试集（85条：54条golden + 31条边界case） |
+| `scripts/evaluate_router.py` | 路由评估脚本（规则/上下文/LLM三层评估+指标+对比基线） |
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/graph/nodes/nodes.py` | route_node 增加 route_layer 记录 + _record_route_metrics 指标采集 |
+| `app/evaluation/bad_case_runner.py` | 新增 run_single_route / run_batch_route 路由回归测试 |
+| `app/core/metrics.py` | 新增 get_route_stats() 路由分层统计查询 |
+| `tests/test_nodes.py` | 新增 TestDetectRouteFromContext 7个测试 + 规则层6个扩展测试 |
+
+### 评估脚本用法
+
+```bash
+# 仅评估规则层（无需LLM，快速）
+python scripts/evaluate_router.py --layer rule
+
+# 评估规则+上下文层
+python scripts/evaluate_router.py --layer context
+
+# 全量评估（含LLM，需Ollama）
+python scripts/evaluate_router.py --layer all
+
+# 保存基线
+python scripts/evaluate_router.py --layer rule --save-baseline data/evaluation/router_baseline.json
+
+# 与基线对比
+python scripts/evaluate_router.py --layer rule --compare data/evaluation/router_baseline.json
+```
+
+### 输出指标
+
+- 整体准确率 + 宏平均/加权平均 F1
+- 分类别 Precision / Recall / F1（symptom / knowledge / general）
+- 分层命中率（rule / context / llm / miss）
+- 分类别/分难度准确率
+- 边界case专项准确率
+- 错误用例明细（含boundary_reason归因）
+
+---
+
 ## v9.11 - 双集合零停机：全库重建窗口期消除
 
 ### 核心改进：影子集合 + 别名指针 + 原子切换
