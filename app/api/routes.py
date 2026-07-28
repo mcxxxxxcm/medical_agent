@@ -795,9 +795,29 @@ async def kb_upload(request: Request):
                 file_path = docs_dir / file_info["name"]
                 start_time = time.time()
                 try:
-                    # 加载 + 添加元数据
+                    # 加载 + 添加元数据（含多源自动提取）
                     docs = load_single_file(file_path)
-                    add_metadata(docs, file_path)
+                    meta_report = add_metadata(docs, file_path)
+
+                    # 将元数据提取结果附加到上传响应
+                    if meta_report:
+                        file_info["meta_report"] = {
+                            "overall_confidence": meta_report.get("overall_confidence", "unknown"),
+                            "needs_manual_review": meta_report.get("needs_manual_review", False),
+                            "extracted": {
+                                k: v for k, v in meta_report.items()
+                                if not k.endswith("_confidence")
+                                and not k.endswith("_source")
+                                and k not in ("pending_review", "needs_manual_review",
+                                              "overall_confidence", "metadata_source")
+                                and v and v != "unknown"
+                            },
+                            "pending_review": [
+                                {"field": p["field"], "value": p["value"],
+                                 "confidence": p["confidence"], "reason": p["reason"]}
+                                for p in meta_report.get("pending_review", [])
+                            ],
+                        }
 
                     # 切分
                     chunks = split_documents(docs)

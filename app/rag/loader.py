@@ -581,7 +581,11 @@ def load_single_file(file_path: Path) -> List[Document]:
     return LOADERS[suffix](file_path)
 
 
-def add_metadata(docs: List[Document], file_path: Path) -> None:
+def add_metadata(
+    docs: List[Document],
+    file_path: Path,
+    extract_doc_meta: bool = True,
+) -> Optional[Dict[str, Any]]:
     """为文档列表添加来源等元数据（溯源必备）。
 
     溯源元数据清单（参考日志1：入库时除正文外还要保存的元数据）：
@@ -590,6 +594,15 @@ def add_metadata(docs: List[Document], file_path: Path) -> None:
         - file_type: 文档类型（txt/pdf/docx/xlsx/csv/md/image）
         - file_size: 文件大小（字节）
         - doc_hash: 文档内容 MD5 前 8 位（防篡改校验）
+        - doc_version / doc_effective_date / doc_authority_level 等（多源交叉校验自动提取）
+
+    Args:
+        docs: 文档列表
+        file_path: 文件路径
+        extract_doc_meta: 是否执行多源元数据自动提取（默认True）
+
+    Returns:
+        提取的元数据报告（含置信度和待审核字段），或None
     """
     file_type = file_path.suffix.lstrip(".").lower()
     file_size = file_path.stat().st_size if file_path.exists() else 0
@@ -608,6 +621,26 @@ def add_metadata(docs: List[Document], file_path: Path) -> None:
         doc.metadata["file_type"] = file_type
         doc.metadata["file_size"] = file_size
         doc.metadata["doc_hash"] = doc_hash
+
+    # 多源元数据自动提取（版本/日期/权威等级等）
+    meta_report = None
+    if extract_doc_meta and docs:
+        try:
+            from app.rag.metadata_extractor import (
+                extract_document_metadata,
+                apply_metadata_to_documents,
+            )
+            meta_report = extract_document_metadata(file_path, documents=docs)
+            apply_metadata_to_documents(docs, meta_report)
+            logger.info(
+                f"文档元数据自动提取：{file_path.name}, "
+                f"overall_confidence={meta_report.get('overall_confidence')}, "
+                f"needs_review={meta_report.get('needs_manual_review')}"
+            )
+        except Exception as e:
+            logger.warning(f"文档元数据自动提取失败（不影响入库）：{e}")
+
+    return meta_report
 
 
 def load_medical_documents(docs_dir: str | Path = "docs/medical") -> List[Document]:

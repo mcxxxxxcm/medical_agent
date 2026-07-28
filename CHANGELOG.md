@@ -1,5 +1,71 @@
 # 系统优化更新日志
 
+## v9.14 - 文档元数据自动提取：四源交叉校验
+
+### 核心改进：入库时自动提取版本/日期/权威等级等元数据，支持后续文档冲突裁决
+
+**问题**：
+- 文档入库时缺少版本号、生效日期、权威等级等元数据
+- 检索到多份文档时无法做版本冲突裁决（如新旧版指南矛盾）
+- 无法区分文档的适用范围（人群/地区/医学体系）
+
+**方案**：四源提取 + 交叉校验引擎
+
+```
+入库时自动执行：
+
+源1: 文件名解析
+    命名规范：{文档名}_v{版本号}_{日期}_{权威等级}.{ext}
+    示例：发热诊断指南_v2_20250301_national.pdf
+    → 提取 version / effective_date / authority_level
+    → 最可靠（人工命名，有意识填写）
+
+源2: PDF/DOCX内嵌属性
+    PDF: fitz.metadata → creationDate / modDate / author / title
+    DOCX: core_properties → created / modified / author / title
+    → 部分可靠（可能为空或默认值）
+
+源3: LLM正文提取（仅当源1/2不足时触发）
+    取文档前500字 → 3B模型结构化提取
+    → 兜底方案（可能遗漏但不会编造）
+
+源4: 文件系统时间
+    mtime / ctime → 低置信度回退
+    → 最不可靠（可能是复制/下载时间）
+
+交叉校验：
+    全部一致 → confidence=high（自动确认）
+    多数一致 → confidence=mid（取多数值，标记待人工确认）
+    来源冲突 → confidence=mid（取优先级最高的来源，标记待确认）
+    仅单一来源 → confidence=low
+    全部缺失 → confidence=none
+
+写入规则：
+    confidence=high/mid → 写入 doc_version / doc_effective_date 等
+    confidence=low → 写入 doc_{field}_pending（不参与检索过滤）
+    needs_manual_review=True → 标记待管理员审核
+```
+
+### 新增文件
+- `app/rag/metadata_extractor.py`：四源提取 + 交叉校验引擎
+
+### 修改文件
+- `app/rag/loader.py`：`add_metadata()` 新增 `extract_doc_meta` 参数，自动调用提取
+- `app/api/routes.py`：上传接口响应中附加 `meta_report`（含置信度和待审核字段）
+
+### 元数据字段体系
+| 字段 | 用途 | 来源 |
+|------|------|------|
+| doc_version | 版本冲突裁决 | 文件名/PDF属性/LLM |
+| doc_effective_date | 时效性校验 | 文件名/PDF属性/LLM |
+| doc_authority_level | 权威优先级 | 文件名/PDF属性/LLM |
+| doc_issuing_body | 发布机构 | PDF属性/LLM |
+| doc_medical_system | 医学体系区分 | 文件名/LLM |
+| doc_applicable_population | 适用人群 | 文件名/LLM |
+| doc_expire_date | 自动计算（生效+3年） | 派生 |
+| doc_meta_confidence | 整体置信度 | 交叉校验 |
+| doc_needs_meta_review | 需人工审核 | 交叉校验 |
+
 ## v9.13 - 图片问诊方案C：VLM结构化提取 + OCR校准 + RAG生成
 
 ### 核心改进：图片问诊从"VLM直接回答"升级为"VLM提取→OCR校准→RAG生成"
