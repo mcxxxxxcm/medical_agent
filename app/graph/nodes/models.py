@@ -204,3 +204,61 @@ class QuestionDecomposeOutput(BaseModel):
         if isinstance(v, str):
             return [v]
         return v
+
+
+class VisionAnalysisOutput(BaseModel):
+    """VLM 图片分析结构化输出（vision_analysis_node）
+
+    强制 VLM 输出标准化 JSON，避免自由文本中的数值错误和幻觉。
+    用于方案C：VLM结构化提取 → OCR校准 → 不确定性追问 → RAG生成。
+    """
+    image_type: Literal["lab_report", "prescription", "medication_label", "skin_appearance",
+                         "wound", "medical_image", "other"] = Field(
+        description="图片类型：lab_report=化验/体检报告, prescription=处方笺, "
+                    "medication_label=药盒/说明书, skin_appearance=皮肤外观, "
+                    "wound=伤口, medical_image=医学影像, other=其他"
+    )
+    objective_description: str = Field(
+        description="客观描述：仅描述图片中可见的内容，不加推断。"
+                    "如'一张血常规报告，包含白细胞、红细胞等指标及数值'"
+    )
+    extracted_data: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="结构化提取数据（仅报告/处方/药盒类需要）。"
+                    "每项为 {name: 指标名/药名, value: 数值/剂量, unit: 单位, reference: 参考范围}。"
+                    "外观类填 null"
+    )
+    possible_directions: List[str] = Field(
+        default_factory=list,
+        description="可能的医学方向（用于构造RAG检索查询）。"
+                    "如 ['白细胞偏低 感染', '血红蛋白偏低 贫血']"
+    )
+    confidence: Literal["high", "medium", "low"] = Field(
+        description="整体置信度：high=清晰可辨, medium=部分模糊/遮挡, low=模糊不清/不确定"
+    )
+    needs_followup: bool = Field(
+        description="是否需要追问用户。True=图片模糊/信息不足/类型不确定"
+    )
+    followup_question: Optional[str] = Field(
+        default=None,
+        description="追问内容（needs_followup=True时必填）。"
+                    "如'请问这是哪份检查的报告？'、'能否重新拍一张更清晰的照片？'"
+    )
+
+    @field_validator("extracted_data", mode="before")
+    @classmethod
+    def coerce_extracted_data(cls, v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            return [{"raw": v}]
+        return v
+
+    @field_validator("possible_directions", mode="before")
+    @classmethod
+    def ensure_list(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return v

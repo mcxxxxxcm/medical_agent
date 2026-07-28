@@ -1,5 +1,51 @@
 # 系统优化更新日志
 
+## v9.13 - 图片问诊方案C：VLM结构化提取 + OCR校准 + RAG生成
+
+### 核心改进：图片问诊从"VLM直接回答"升级为"VLM提取→OCR校准→RAG生成"
+
+**问题**：
+- VLM对数字识别准确率低（如"115g/L"可能识别为"118g/L"）
+- VLM纯生成回答无可溯源依据，幻觉风险高
+- 图片问诊不走RAG，无法引用知识库文档佐证
+
+**方案C流程**：
+```
+图片 + 问题
+    ↓
+Step 1: VLM结构化提取（强制输出JSON）
+    → image_type / objective_description / extracted_data / possible_directions / confidence / needs_followup
+    ↓
+Step 2: OCR校准（仅数据类图片：报告/处方/药盒）
+    → PaddleOCR精确提取数值 → 覆盖VLM猜测 → 标记ocr_verified/vlm_only
+    ↓
+Step 3: 不确定性处理
+    → confidence=low 或 needs_followup=True → 追问用户（直接返回）
+    ↓
+Step 4: 构造RAG查询 → 路由到 knowledge_retrieval
+    → VLM不再是"回答者"，而是"信息提取器"
+    → 医学回答由RAG管线基于知识库文档生成
+```
+
+### 安全机制
+
+1. **VLM输出标准化**：`VisionAnalysisOutput` 强制7个字段，Pydantic校验
+2. **禁止诊断**：Prompt约束"只提取信息，不做诊断"
+3. **OCR优先**：数据类图片数值以OCR为准，VLM仅语义理解
+4. **不确定性追问**：`needs_followup=True` → 直接追问用户
+5. **低置信度拦截**：`confidence=low` → 建议重拍或文字描述
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/graph/nodes/models.py` | 新增 `VisionAnalysisOutput` Pydantic模型（7字段+2校验器） |
+| `app/graph/nodes/prompts.py` | 新增 `VISION_STRUCTURED_EXTRACT_PROMPT` + `VISION_OCR_INJECTED_PROMPT` |
+| `app/graph/nodes/nodes.py` | 重构 `vision_analysis_node`（4步流程+Command路由）；新增5个辅助函数；重构 `stream_vision_answer`（图片摘要+流式RAG） |
+| `app/graph/graph.py` | `vision_analysis` 从固定边改为 Command 动态路由（→knowledge_retrieval 或 →safety_check） |
+
+---
+
 ## v9.12 - 路由评估体系：意图识别可量化、可归因、可迭代
 
 ### 核心改进：评估基础设施 + 分层归因 + Bad Case 反哺闭环

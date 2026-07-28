@@ -213,6 +213,79 @@ HYDE_PROMPT = ChatPromptTemplate.from_messages([
 # 视觉分析
 # ===========================================================================
 
+# VLM 结构化提取 Prompt（方案C：VLM提取 → OCR校准 → RAG生成）
+VISION_STRUCTURED_EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """你是一位专业的AI医疗图片分析助手。你的任务是**客观提取**图片中的信息，**不做诊断**。
+
+核心原则：
+1. 客观描述：只描述图片中可见的内容，不加推测
+2. 数值精确：数字必须与图片中完全一致，不要近似或猜测
+3. 不确定就追问：如果图片模糊、遮挡、不完整，标记 needs_followup=True
+4. 禁止诊断：不要给出确诊结论，只列可能方向供后续检索"""),
+    ("human", [
+        {"type": "text", "text": """请分析这张医疗相关图片，按以下 JSON 格式输出：
+
+{{
+  "image_type": "图片类型（lab_report/prescription/medication_label/skin_appearance/wound/medical_image/other）",
+  "objective_description": "客观描述图片中可见内容，不加推断",
+  "extracted_data": [
+    {{"name": "指标名/药名", "value": "数值/剂量", "unit": "单位", "reference": "参考范围"}}
+  ],
+  "possible_directions": ["可能的医学方向1", "方向2"],
+  "confidence": "high/medium/low",
+  "needs_followup": false,
+  "followup_question": null
+}}
+
+字段说明：
+- image_type: lab_report=化验/体检报告, prescription=处方笺, medication_label=药盒/说明书, skin_appearance=皮肤外观, wound=伤口, medical_image=医学影像(X光/CT等), other=其他
+- objective_description: 纯客观描述。如"一张血常规报告，包含WBC、RBC、HGB等指标"，不要写"患者贫血"
+- extracted_data: 仅报告/处方/药盒类需要填写。外观类(wound/skin_appearance/medical_image)填 null
+- possible_directions: 用于构造检索查询。如白细胞偏低→["白细胞减少 感染风险", "白细胞正常值偏低"]；皮肤红疹→["红疹 过敏", "皮疹 湿疹"]
+- confidence: high=图片清晰信息完整, medium=部分模糊但主要信息可辨, low=模糊不清无法确认
+- needs_followup: 图片模糊/不完整/类型不确定时设为 true
+- followup_question: 需要追问用户的具体问题
+
+用户问题：{question}"""),
+        {"type": "image_url", "image_url": "{image_url}"},
+    ]),
+])
+
+# OCR 数据注入 Prompt（VLM 基于 OCR 结果解读，而非自己猜数值）
+VISION_OCR_INJECTED_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """你是一位专业的AI医疗图片分析助手。你已获得OCR精确提取的数据。
+
+核心原则：
+1. OCR数据优先：数值必须以OCR提取结果为准，不要用你视觉识别的数字替换
+2. 如果OCR数值看起来异常（缺失、乱码），在 objective_description 中标注"OCR识别可能有误，请以原件为准"
+3. 不要编造OCR中没有的数据
+4. 禁止诊断：不要给出确诊结论"""),
+    ("human", [
+        {"type": "text", "text": """请分析这张医疗相关图片，OCR已精确提取以下数据：
+
+【OCR精确提取结果】
+{ocr_text}
+
+请结合OCR数据和图片内容，按以下 JSON 格式输出：
+
+{{
+  "image_type": "图片类型",
+  "objective_description": "客观描述（数值以OCR为准）",
+  "extracted_data": [
+    {{"name": "指标名/药名", "value": "数值（OCR值）", "unit": "单位", "reference": "参考范围"}}
+  ],
+  "possible_directions": ["可能的医学方向1", "方向2"],
+  "confidence": "high/medium/low",
+  "needs_followup": false,
+  "followup_question": null
+}}
+
+用户问题：{question}"""),
+        {"type": "image_url", "image_url": "{image_url}"},
+    ]),
+])
+
+# 旧版 Prompt（保留兼容，不再使用）
 VISION_ANALYSIS_PROMPT = ChatPromptTemplate.from_messages([
     ("system", "你是一位专业的AI医疗助手，正在为用户解读医疗相关图片。"),
     ("human", [

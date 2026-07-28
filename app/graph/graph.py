@@ -111,7 +111,10 @@ def build_graph() -> StateGraph:
     if getattr(config, 'ENABLE_SAFETY_CHECK', True):
         # 启用 safety_check
         builder.add_edge("direct_answer", "safety_check")
-        builder.add_edge("vision_analysis", "safety_check")
+        # vision_analysis 使用 Command 动态路由：
+        #   - 需要追问/置信度低 → safety_check
+        #   - RAG查询构造成功 → knowledge_retrieval
+        # 不再需要固定边，Command 会处理
         builder.add_edge("answer_generation", "safety_check")
 
         builder.add_conditional_edges(
@@ -132,14 +135,7 @@ def build_graph() -> StateGraph:
                 END: END
             }
         )
-        builder.add_conditional_edges(
-            "vision_analysis",
-            should_update_snapshot,
-            {
-                "update_snapshot": "update_snapshot",
-                END: END
-            }
-        )
+        # vision_analysis 使用 Command 动态路由，无需固定边
         builder.add_conditional_edges(
             "answer_generation",
             should_update_snapshot,

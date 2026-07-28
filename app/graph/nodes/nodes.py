@@ -62,6 +62,7 @@ from .models import (
     RouterOutput,
     SafetyCheckOutput,
     SymptomAnalysisOutput,
+    VisionAnalysisOutput,
 )
 
 
@@ -2043,129 +2044,400 @@ def _is_simple_greeting(question: str) -> Optional[str]:
 
 @timing_decorator("图片问诊")
 def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """图片问诊节点（参考蚂蚁阿福的多模态问诊）
+    """图片问诊节点（方案C：VLM结构化提取 → OCR校准 → 不确定性追问 → RAG生成）
 
-    处理用户上传的图片（体检报告、皮肤、药盒、处方等），
-    使用多模态VLM直接理解图片内容并生成回答。
+    流程：
+        1. VLM结构化提取：强制输出标准化JSON（image_type/description/data/directions/confidence）
+        2. OCR校准（仅数据类图片）：报告/处方/药盒 → PaddleOCR精确提取数值 → 覆盖VLM猜测
+        3. 不确定性处理：confidence=low 或 needs_followup=True → 直接追问用户
+        4. 构造RAG查询：将VLM+OCR提取结果转为检索查询 → 路由到RAG管线
 
-    技术路线：
-        - 皮肤/外观类：纯VLM直接识别
-        - 报告/处方类：VLM理解 + 结构化提取
-        - 药盒类：VLM识别 + 知识库校验
+    VLM只负责"提取图片信息"，不负责"生成医学回答"。
+    医学回答由RAG管线基于知识库文档生成。
     """
-    logger.info("图片问诊节点开始执行")
+    logger.info("图片问诊节点开始执行（方案C：VLM提取+RAG生成）")
 
     question = state.get("question", "")
     image_base64 = state.get("image_base64", "")
-    user_profile = state.get("user_profile")
 
     if not image_base64:
-        logger.warning("图片问诊节点未收到图片，降级为直接回答")
+        logger.warning("图片问诊节点未收到图片")
         return {"final_answer": "抱歉，未能接收到您的图片，请重新上传。"}
 
     try:
-        llm = get_vision_llm()
+        # ===== Step 1: VLM 结构化提取 =====
+        vision_result = _vlm_structured_extract(image_base64, question)
+        logger.info(
+            f"VLM结构化提取完成：type={vision_result.image_type}, "
+            f"confidence={vision_result.confidence}, "
+            f"directions={vision_result.possible_directions}"
+        )
 
-        # 构建用户上下文（冻结层）
-        context_prompt = get_user_context_prompt(user_profile)
-        user_info = f"\n【用户档案（冻结层，永不压缩）】\n{context_prompt}\n" if context_prompt else ""
+        # ===== Step 2: OCR 校准（仅数据类图片） =====
+        data_image_types = {"lab_report", "prescription", "medication_label"}
+        if vision_result.image_type in data_image_types and vision_result.extracted_data:
+            ocr_data = _ocr_extract_from_base64(image_base64)
+            if ocr_data:
+                vision_result = _merge_ocr_into_vision(vision_result, ocr_data)
+                logger.info(f"OCR校准完成，覆盖 {len(ocr_data)} 个数值")
 
-        # 构建多模态消息（LangChain标准格式）
-        from langchain_core.messages import HumanMessage
+        # ===== Step 3: 不确定性处理 =====
+        if vision_result.needs_followup and vision_result.followup_question:
+            logger.info(f"图片分析不确定，追问用户：{vision_result.followup_question}")
+            return Command(
+                update={
+                    "final_answer": vision_result.followup_question,
+                    "warnings": ["⚠️ 图片信息不足，请补充后再试"],
+                },
+                goto="safety_check",
+            )
 
-        text_content = f"""你是一位专业的AI医疗助手，正在为用户解读医疗相关图片。
+        if vision_result.confidence == "low":
+            return Command(
+                update={
+                    "final_answer": "图片较为模糊，难以准确识别。建议您重新拍摄一张更清晰的照片，"
+                                    "或者用文字描述您的症状和问题。",
+                    "warnings": ["⚠️ 图片识别置信度低，结果不可靠"],
+                },
+                goto="safety_check",
+            )
 
-【重要提醒】
-1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
-2. 如果发现紧急或严重情况，请立即建议用户就医
-3. 基于图片内容如实描述，不要编造信息
+        # ===== Step 4: 构造 RAG 查询，路由到 RAG 管线 =====
+        rag_query = _build_rag_query_from_vision(vision_result, question)
+        logger.info(f"图片问诊构造RAG查询：{rag_query}")
 
-{user_info}【用户问题】
-{question if question else "请帮我解读这张图片"}
-
-【回答要求】
-1. 首先描述图片内容（如：这是一份血常规报告/皮肤照片/药盒等）
-2. 提取关键信息（如：异常指标及数值、皮疹特征、药品名称等）
-3. 用通俗易懂的语言解释含义
-4. 给出初步建议和注意事项
-5. 结尾加上安全提醒："⚠️ 以上解读仅供参考，如有疑问请及时就医"
-6. 如果图片不是医疗相关内容，请礼貌说明并引导用户上传正确的图片"""
-
-        message = HumanMessage(content=[
-            {"type": "text", "text": text_content},
-            {"type": "image", "base64": image_base64, "mime_type": "image/jpeg"},
-        ])
-
-        response = llm.invoke([message])
-        answer = response.content.strip() if hasattr(response, "content") else str(response)
-
-        logger.info(f"图片问诊完成，回答长度：{len(answer)}字符")
-
-        return {
-            "final_answer": answer,
-            "warnings": ["⚠️ AI图片解读仅供参考，不能替代专业医生的诊断"],
-        }
+        # 将结构化提取结果和RAG查询写入 state，交给后续 RAG 管线
+        return Command(
+            update={
+                "question": rag_query,
+                "image_base64": None,  # 清除图片，避免RAG管线再次触发vision分支
+                "final_question": rag_query,
+                "warnings": ["⚠️ AI图片解读仅供参考，不能替代专业医生的诊断"],
+            },
+            goto="knowledge_retrieval",
+        )
 
     except Exception as e:
         logger.error(f"图片问诊失败：{str(e)}")
-        return {"final_answer": "抱歉，图片解读遇到了问题，请稍后重试或尝试文字描述您的症状。"}
+        return Command(
+            update={"final_answer": "抱歉，图片解读遇到了问题，请稍后重试或尝试文字描述您的症状。"},
+            goto="safety_check",
+        )
+
+
+def _vlm_structured_extract(image_base64: str, question: str) -> VisionAnalysisOutput:
+    """使用 VLM 进行结构化图片分析
+
+    调用 glm-4v-plus，强制输出 VisionAnalysisOutput 结构化 JSON。
+    """
+    from langchain_core.messages import HumanMessage
+
+    llm = get_vision_llm()
+    image_url = f"data:image/jpeg;base64,{image_base64}"
+
+    # 使用 Prompt + structured output
+    from app.graph.nodes.prompts import VISION_STRUCTURED_EXTRACT_PROMPT
+    prompt = VISION_STRUCTURED_EXTRACT_PROMPT
+    messages = prompt.format_messages(question=question or "请帮我解读这张图片", image_url=image_url)
+
+    # 构建多模态消息（替换 prompt 格式化的纯文本为多模态格式）
+    text_part = messages[-1].content if isinstance(messages[-1].content, str) else str(messages[-1].content)
+    multimodal_message = HumanMessage(content=[
+        {"type": "text", "text": text_part},
+        {"type": "image_url", "image_url": {"url": image_url}},
+    ])
+
+    result: VisionAnalysisOutput = invoke_structured_with_fallback(
+        llm, [multimodal_message], VisionAnalysisOutput, max_attempts=2,
+    )
+    return result
+
+
+def _ocr_extract_from_base64(image_base64: str) -> List[Dict[str, str]]:
+    """对 base64 图片执行 OCR，提取结构化数值数据
+
+    使用 PaddleOCR PP-Structure 进行版面分析+表格识别。
+    返回格式：[{"name": "指标名", "value": "数值", "unit": "单位", "reference": "参考范围"}]
+    """
+    import base64
+    import tempfile
+
+    try:
+        from app.rag.loader import _ocr_image_to_markdown
+    except ImportError:
+        logger.warning("PaddleOCR 未安装，跳过OCR校准")
+        return []
+
+    try:
+        # base64 → 临时文件 → OCR
+        image_bytes = base64.b64decode(image_base64)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(image_bytes)
+            tmp_path = tmp.name
+
+        try:
+            md_content = _ocr_image_to_markdown(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
+        if not md_content.strip():
+            return []
+
+        # 从 Markdown 表格中解析结构化数据
+        return _parse_ocr_markdown_table(md_content)
+
+    except Exception as e:
+        logger.warning(f"OCR提取失败（不影响主流程）：{e}")
+        return []
+
+
+def _parse_ocr_markdown_table(md_content: str) -> List[Dict[str, str]]:
+    """从 OCR 输出的 Markdown 表格中解析结构化数据
+
+    尝试识别 | 指标名 | 结果 | 单位 | 参考范围 | 格式的表格。
+    如果不是表格格式，返回空列表（让VLM数据保留）。
+    """
+    lines = md_content.strip().split("\n")
+    table_lines = [l for l in lines if l.strip().startswith("|")]
+
+    if len(table_lines) < 3:
+        return []  # 不足3行不是有效表格
+
+    # 解析表头
+    headers = [h.strip() for h in table_lines[0].split("|") if h.strip()]
+    if len(headers) < 2:
+        return []
+
+    # 映射列名到字段
+    name_idx = _find_column_index(headers, ["指标", "项目", "名称", "药物", "药品", "检查"])
+    value_idx = _find_column_index(headers, ["结果", "数值", "测定值", "含量", "剂量"])
+    unit_idx = _find_column_index(headers, ["单位"])
+    ref_idx = _find_column_index(headers, ["参考", "范围", "正常值", "参考区间"])
+
+    if name_idx is None:
+        return []  # 无法识别指标名列
+
+    # 解析数据行（跳过分隔行）
+    data = []
+    for line in table_lines[2:]:
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if len(cells) <= name_idx:
+            continue
+
+        entry = {"name": cells[name_idx]}
+        if value_idx is not None and value_idx < len(cells):
+            entry["value"] = cells[value_idx]
+        if unit_idx is not None and unit_idx < len(cells):
+            entry["unit"] = cells[unit_idx]
+        if ref_idx is not None and ref_idx < len(cells):
+            entry["reference"] = cells[ref_idx]
+
+        data.append(entry)
+
+    return data
+
+
+def _find_column_index(headers: List[str], keywords: List[str]) -> Optional[int]:
+    """在表头中查找包含关键词的列索引"""
+    for i, h in enumerate(headers):
+        for kw in keywords:
+            if kw in h:
+                return i
+    return None
+
+
+def _merge_ocr_into_vision(vision_result: VisionAnalysisOutput,
+                            ocr_data: List[Dict[str, str]]) -> VisionAnalysisOutput:
+    """用 OCR 数据校准 VLM 的 extracted_data
+
+    策略：OCR 数值覆盖 VLM 猜测（OCR 对数字更可靠）。
+    VLM 中有但 OCR 没有的数据保留（VLM 可能识别了 OCR 遗漏的指标）。
+    """
+    if not vision_result.extracted_data or not ocr_data:
+        return vision_result
+
+    # 建立 OCR name → entry 映射
+    ocr_map = {}
+    for entry in ocr_data:
+        name = entry.get("name", "").strip()
+        if name:
+            ocr_map[name] = entry
+
+    # 覆盖 VLM 数据中的数值
+    merged_data = []
+    for v_entry in vision_result.extracted_data:
+        v_name = v_entry.get("name", "").strip()
+        ocr_entry = ocr_map.get(v_name)
+
+        if ocr_entry:
+            # OCR 有该指标 → 覆盖数值
+            merged = {**v_entry}  # 保留VLM的所有字段
+            if "value" in ocr_entry:
+                merged["value"] = ocr_entry["value"]
+            if "unit" in ocr_entry:
+                merged["unit"] = ocr_entry["unit"]
+            if "reference" in ocr_entry:
+                merged["reference"] = ocr_entry["reference"]
+            merged["source"] = "ocr_verified"  # 标记已校准
+            merged_data.append(merged)
+        else:
+            # VLM 有但 OCR 没有 → 保留，但标记为未校准
+            merged = {**v_entry}
+            merged["source"] = "vlm_only"
+            merged_data.append(merged)
+
+    # OCR 中有但 VLM 没有的指标 → 追加
+    vlm_names = {e.get("name", "").strip() for e in vision_result.extracted_data}
+    for ocr_entry in ocr_data:
+        ocr_name = ocr_entry.get("name", "").strip()
+        if ocr_name and ocr_name not in vlm_names:
+            ocr_entry_copy = {**ocr_entry, "source": "ocr_only"}
+            merged_data.append(ocr_entry_copy)
+
+    # 更新 vision_result
+    vision_result.extracted_data = merged_data
+    return vision_result
+
+
+def _build_rag_query_from_vision(vision_result: VisionAnalysisOutput,
+                                  user_question: str) -> str:
+    """将 VLM+OCR 提取结果构造为 RAG 检索查询
+
+    策略：
+        - 数据类（报告/处方/药盒）：用 extracted_data 中的异常项构造查询
+        - 外观类（皮肤/伤口）：用 objective_description + possible_directions 构造查询
+        - 用户原始问题始终保留
+    """
+    parts = []
+
+    # 用户原始问题
+    if user_question and user_question.strip():
+        parts.append(user_question.strip())
+
+    # VLM 客观描述
+    desc = vision_result.objective_description.strip()
+    if desc:
+        parts.append(f"（图片内容：{desc}）")
+
+    # 数据类：提取异常指标
+    data_types = {"lab_report", "prescription", "medication_label"}
+    if vision_result.image_type in data_types and vision_result.extracted_data:
+        abnormal_items = []
+        for entry in vision_result.extracted_data:
+            name = entry.get("name", "")
+            value = entry.get("value", "")
+            reference = entry.get("reference", "")
+            if name and value:
+                item_str = f"{name}{value}"
+                if reference:
+                    item_str += f"（参考{reference}）"
+                abnormal_items.append(item_str)
+        if abnormal_items:
+            parts.append("异常指标：" + "、".join(abnormal_items[:5]))
+
+    # 可能方向
+    if vision_result.possible_directions:
+        parts.append("可能方向：" + " ".join(vision_result.possible_directions[:3]))
+
+    return " ".join(parts)
 
 
 async def stream_vision_answer(state: MedicalAssistantState):
-    """流式图片问诊（异步生成器）"""
-    logger.info("流式图片问诊节点开始执行")
+    """流式图片问诊（异步生成器）
+
+    方案C下的流式模式：
+    - 非流式节点 vision_analysis_node 已完成结构化提取 + RAG查询构造
+    - 流式模式下，VLM提取仍然是非流式的（需要完整JSON）
+    - RAG生成部分复用主RAG管线的流式输出
+    """
+    logger.info("流式图片问诊节点开始执行（方案C）")
 
     question = state.get("question", "")
     image_base64 = state.get("image_base64", "")
-    user_profile = state.get("user_profile")
 
     if not image_base64:
         yield "抱歉，未能接收到您的图片，请重新上传。"
         return
 
     try:
-        llm = get_vision_llm(streaming=True)
+        # Step 1: VLM结构化提取（非流式，需要完整JSON）
+        vision_result = _vlm_structured_extract(image_base64, question)
 
-        # L1 永久层
-        profile_text = get_user_context_prompt(user_profile)
-        profile_section = f"【L1 用户档案】\n{profile_text}\n" if profile_text else ""
+        # Step 2: OCR校准
+        data_types = {"lab_report", "prescription", "medication_label"}
+        if vision_result.image_type in data_types and vision_result.extracted_data:
+            ocr_data = _ocr_extract_from_base64(image_base64)
+            if ocr_data:
+                vision_result = _merge_ocr_into_vision(vision_result, ocr_data)
 
-        # L2 会话层
-        checkpoint = state.get("clinical_checkpoint")
-        checkpoint_text = format_clinical_checkpoint(checkpoint) if checkpoint else ""
-        checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
+        # Step 3: 不确定性 → 直接追问
+        if vision_result.needs_followup and vision_result.followup_question:
+            yield vision_result.followup_question
+            return
 
-        # L3 短期窗口
-        history_text = get_conversation_history_text(state, max_rounds=2)
-        history_section = f"【L3 对话历史】\n{history_text}\n" if history_text else ""
+        if vision_result.confidence == "low":
+            yield "图片较为模糊，难以准确识别。建议您重新拍摄一张更清晰的照片，或者用文字描述您的症状和问题。"
+            return
 
-        from langchain_core.messages import HumanMessage
+        # Step 4: 构造RAG查询 → 流式调用RAG管线
+        rag_query = _build_rag_query_from_vision(vision_result, question)
+        logger.info(f"流式图片问诊构造RAG查询：{rag_query}")
 
-        text_content = f"""你是一位专业的AI医疗助手，正在为用户解读医疗相关图片。
+        # 流式输出图片分析摘要
+        summary_parts = []
+        if vision_result.objective_description:
+            summary_parts.append(f"📷 图片识别：{vision_result.objective_description}")
+        if vision_result.extracted_data:
+            data_lines = []
+            for entry in vision_result.extracted_data[:8]:
+                name = entry.get("name", "")
+                value = entry.get("value", "")
+                unit = entry.get("unit", "")
+                reference = entry.get("reference", "")
+                src = entry.get("source", "")
+                tag = "✓" if src == "ocr_verified" else ""
+                line = f"  • {name}: {value}{unit}"
+                if reference:
+                    line += f"（参考{reference}）"
+                line += tag
+                data_lines.append(line)
+            summary_parts.append("📋 提取数据：\n" + "\n".join(data_lines))
+        if vision_result.possible_directions:
+            summary_parts.append("🔍 分析方向：" + "、".join(vision_result.possible_directions[:3]))
 
-【重要提醒】
-1. 你的回答仅供参考，不能替代专业医生的诊断和治疗建议
-2. 如果发现紧急或严重情况，请立即建议用户就医
-3. 基于图片内容如实描述，不要编造信息
+        yield "\n\n".join(summary_parts) + "\n\n---\n\n"
 
-{profile_section}{checkpoint_section}{history_section}【用户问题】
-{question if question else "请帮我解读这张图片"}
+        # Step 5: 流式 RAG 生成（复用检索+生成管线）
+        from app.rag.hybrid_retriever import get_hybrid_retriever
+        from app.graph.nodes.prompts import RAG_ANSWER_PROMPT
 
-【回答要求】
-1. 首先描述图片内容（如：这是一份血常规报告/皮肤照片/药盒等）
-2. 提取关键信息（如：异常指标及数值、皮疹特征、药品名称等）
-3. 用通俗易懂的语言解释含义
-4. 给出初步建议和注意事项
-5. 结尾加上安全提醒："⚠️ 以上解读仅供参考，如有疑问请及时就医"
-6. 如果图片不是医疗相关内容，请礼貌说明并引导用户上传正确的图片
-7. 如果对话历史中有相关症状或用药信息，结合这些信息给出更有针对性的解读"""
+        retriever = get_hybrid_retriever(k=5, alpha=0.5, use_reranker=True, rerank_top_k=8)
+        docs = retriever.invoke(rag_query)
 
-        message = HumanMessage(content=[
-            {"type": "text", "text": text_content},
-            {"type": "image", "base64": image_base64, "mime_type": "image/jpeg"},
-        ])
+        if not docs:
+            yield "抱歉，未能从知识库中找到与图片内容相关的参考信息。"
+            return
 
-        async for chunk in llm.astream([message]):
+        # 构建上下文
+        context_parts = []
+        for i, doc in enumerate(docs, 1):
+            source = doc.metadata.get("source", "未知来源")
+            context_parts.append(f"[文档{i}]（来源：{source}）\n{doc.page_content}")
+        context = "\n\n".join(context_parts)
+
+        # 使用 RAG Prompt 流式生成
+        llm = get_llm(streaming=True)
+        prompt = RAG_ANSWER_PROMPT.format_messages(
+            frozen_profile_section="",
+            context=context,
+            time_facts_section="",
+            checkpoint_section="",
+            history_section="",
+            question=rag_query,
+            followup_section="",
+        )
+
+        async for chunk in llm.astream(prompt):
             if hasattr(chunk, "content") and chunk.content:
                 yield chunk.content
 
