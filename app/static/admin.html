@@ -108,6 +108,30 @@
         .toast-success { background: #52c41a; }
         .toast-error { background: #ff4d4f; }
         .toast-info { background: #667eea; }
+
+        .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+        .filter-bar input[type="text"] {
+            flex: 1; min-width: 180px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 13px; outline: none; transition: border-color 0.2s;
+        }
+        .filter-bar input[type="text"]:focus { border-color: #667eea; }
+        .filter-bar select {
+            padding: 7px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px;
+            outline: none; background: white; cursor: pointer;
+        }
+        .filter-bar .filter-count { font-size: 12px; color: #999; white-space: nowrap; }
+
+        .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13px; color: #666; }
+        .pagination .page-info { color: #999; font-size: 12px; }
+        .pagination .page-btns { display: flex; gap: 4px; }
+        .pagination .page-btns button {
+            padding: 4px 10px; border: 1px solid #ddd; border-radius: 6px; background: white;
+            font-size: 13px; cursor: pointer; transition: all 0.15s; color: #333;
+        }
+        .pagination .page-btns button:hover:not(:disabled) { border-color: #667eea; color: #667eea; }
+        .pagination .page-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pagination .page-btns button.active { background: #667eea; color: white; border-color: #667eea; }
+        .pagination .page-btns button.ellipsis { border: none; cursor: default; color: #999; }
     </style>
 </head>
 <body>
@@ -155,10 +179,28 @@
             <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
             <div class="progress-text" id="progressText">上传中...</div>
         </div>
+        <div class="filter-bar">
+            <input type="text" id="searchInput" placeholder="搜索文件名..." oninput="applyFilter()">
+            <select id="typeFilter" onchange="applyFilter()">
+                <option value="">全部类型</option>
+                <option value="pdf">PDF</option>
+                <option value="docx">DOCX</option>
+                <option value="xlsx">XLSX</option>
+                <option value="txt">TXT</option>
+                <option value="md">Markdown</option>
+                <option value="image">图片</option>
+                <option value="other">其他</option>
+            </select>
+            <span class="filter-count" id="filterCount"></span>
+        </div>
         <table class="file-table">
             <thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
             <tbody id="fileTableBody"><tr><td colspan="5" style="text-align:center;color:#999">加载中...</td></tr></tbody>
         </table>
+        <div class="pagination" id="pagination" style="display:none">
+            <span class="page-info" id="pageInfo"></span>
+            <div class="page-btns" id="pageBtns"></div>
+        </div>
     </div>
 
     <!-- 审计日志 -->
@@ -187,6 +229,12 @@
 const API = window.location.origin;
 let _confirmAction = null;
 
+// 文档列表状态
+let _allFiles = [];
+let _filteredFiles = [];
+let _currentPage = 1;
+const PAGE_SIZE = 10;
+
 // ===== 初始化 =====
 document.addEventListener('DOMContentLoaded', () => {
     refreshStatus();
@@ -214,7 +262,8 @@ async function refreshStatus() {
         }
 
         // 渲染文件列表
-        renderFileTable(data.files || []);
+        _allFiles = data.files || [];
+        applyFilter();
 
         // 渲染一致性校验结果
         if (data.reconciliation && Object.keys(data.reconciliation).length > 0) {
@@ -225,13 +274,55 @@ async function refreshStatus() {
     }
 }
 
-function renderFileTable(files) {
+function applyFilter() {
+    const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
+    const typeFilter = document.getElementById('typeFilter').value;
+
+    _filteredFiles = _allFiles.filter(f => {
+        // 关键词搜索
+        if (keyword && !f.name.toLowerCase().includes(keyword)) return false;
+        // 类型筛选
+        if (typeFilter) {
+            const tc = getTypeClass(f.type);
+            if (typeFilter === 'image') {
+                if (!['png','jpg','jpeg','tiff','bmp','webp'].includes(f.type)) return false;
+            } else if (typeFilter === 'other') {
+                if (['txt','pdf','docx','xlsx','xls','csv','md','png','jpg','jpeg','tiff','bmp','webp'].includes(f.type)) return false;
+            } else {
+                if (tc !== typeFilter) return false;
+            }
+        }
+        return true;
+    });
+
+    // 显示筛选计数
+    const countEl = document.getElementById('filterCount');
+    if (keyword || typeFilter) {
+        countEl.textContent = `${_filteredFiles.length} / ${_allFiles.length} 个文件`;
+    } else {
+        countEl.textContent = _allFiles.length > 0 ? `共 ${_allFiles.length} 个文件` : '';
+    }
+
+    _currentPage = 1;
+    renderPage();
+}
+
+function renderPage() {
+    const total = _filteredFiles.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (_currentPage > totalPages) _currentPage = totalPages;
+
+    const start = (_currentPage - 1) * PAGE_SIZE;
+    const pageFiles = _filteredFiles.slice(start, start + PAGE_SIZE);
+
     const tbody = document.getElementById('fileTableBody');
-    if (!files.length) {
+    if (!total) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999">暂无文档</td></tr>';
+        document.getElementById('pagination').style.display = 'none';
         return;
     }
-    tbody.innerHTML = files.map(f => `
+
+    tbody.innerHTML = pageFiles.map(f => `
         <tr>
             <td>${f.name}</td>
             <td><span class="file-type-badge type-${getTypeClass(f.type)}">${f.type.toUpperCase()}</span></td>
@@ -240,6 +331,55 @@ function renderFileTable(files) {
             <td><button class="btn btn-danger" style="padding:4px 12px;font-size:12px" onclick="confirmDelete('${f.name}')">删除</button></td>
         </tr>
     `).join('');
+
+    // 分页
+    const pagEl = document.getElementById('pagination');
+    if (total <= PAGE_SIZE) {
+        pagEl.style.display = 'none';
+        return;
+    }
+    pagEl.style.display = 'flex';
+
+    document.getElementById('pageInfo').textContent = `第 ${start + 1}-${Math.min(start + PAGE_SIZE, total)} 条，共 ${total} 条`;
+
+    const btnsEl = document.getElementById('pageBtns');
+    let btns = '';
+    // 上一页
+    btns += `<button ${_currentPage <= 1 ? 'disabled' : ''} onclick="goPage(${_currentPage - 1})">上一页</button>`;
+    // 页码
+    const pages = getPageNumbers(_currentPage, totalPages);
+    for (const p of pages) {
+        if (p === '...') {
+            btns += `<button class="ellipsis" disabled>...</button>`;
+        } else {
+            btns += `<button class="${p === _currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`;
+        }
+    }
+    // 下一页
+    btns += `<button ${_currentPage >= totalPages ? 'disabled' : ''} onclick="goPage(${_currentPage + 1})">下一页</button>`;
+    btnsEl.innerHTML = btns;
+}
+
+function getPageNumbers(current, total) {
+    if (total <= 7) return Array.from({length: total}, (_, i) => i + 1);
+    const pages = [];
+    if (current <= 4) {
+        for (let i = 1; i <= 5; i++) pages.push(i);
+        pages.push('...', total);
+    } else if (current >= total - 3) {
+        pages.push(1, '...');
+        for (let i = total - 4; i <= total; i++) pages.push(i);
+    } else {
+        pages.push(1, '...', current - 1, current, current + 1, '...', total);
+    }
+    return pages;
+}
+
+function goPage(page) {
+    _currentPage = page;
+    renderPage();
+    // 滚动到文档列表顶部
+    document.querySelector('.file-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function getTypeClass(type) {
