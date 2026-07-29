@@ -962,3 +962,148 @@ Traceback (most recent call last):
     "chunk_strategy": updater.CHUNK_STRATEGY_VERSION,
                       ^^^^^^^
 NameError: name 'updater' is not defined
+2026-07-29 23:21:56 - __main__ - ERROR - 测试集为空或不存在: tests/data/rag_eval_test_set.jsonl
+2026-07-29 23:24:04 - __main__ - ERROR - 测试集为空或不存在: tests/data/golden_test_set.jsonl
+2026-07-29 23:25:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:25:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:25:53 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:02 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:02 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:02 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.00ms，错误：name 'question' is not defined
+2026-07-29 23:26:02 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:03 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:04 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:05 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:06 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:06 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.15ms，错误：name 'question' is not defined
+2026-07-29 23:26:06 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:09 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:10 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:10 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:10 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：0.50ms，错误：name 'question' is not defined
+2026-07-29 23:26:10 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:11 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:12 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:12 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:14 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:14 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.00ms，错误：name 'question' is not defined
+2026-07-29 23:26:14 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:16 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:18 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:18 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:18 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.02ms，错误：name 'question' is not defined
+2026-07-29 23:26:18 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:19 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:20 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:20 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:22 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:22 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:22 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.03ms，错误：name 'question' is not defined
+2026-07-29 23:26:22 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:23 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:24 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:26 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:26 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.52ms，错误：name 'question' is not defined
+2026-07-29 23:26:26 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:27 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:27 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:29 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:29 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:29 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.01ms，错误：name 'question' is not defined
+2026-07-29 23:26:29 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:30 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:31 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:31 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:33 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:33 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:33 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.50ms，错误：name 'question' is not defined
+2026-07-29 23:26:33 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:34 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:34 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:35 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:36 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:36 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:36 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.01ms，错误：name 'question' is not defined
+2026-07-29 23:26:36 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:37 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:38 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:38 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:40 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:40 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:40 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.51ms，错误：name 'question' is not defined
+2026-07-29 23:26:40 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:41 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:41 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:42 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:44 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:44 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:44 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.03ms，错误：name 'question' is not defined
+2026-07-29 23:26:44 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:45 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:45 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:46 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:48 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:48 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:48 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：0.00ms，错误：name 'question' is not defined
+2026-07-29 23:26:48 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:48 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:49 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:49 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:51 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:51 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:51 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.51ms，错误：name 'question' is not defined
+2026-07-29 23:26:51 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:52 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:53 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:55 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:55 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.52ms，错误：name 'question' is not defined
+2026-07-29 23:26:55 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:56 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:57 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:26:59 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:26:59 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.51ms，错误：name 'question' is not defined
+2026-07-29 23:26:59 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:26:59 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:00 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:00 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:02 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:02 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:27:02 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.00ms，错误：name 'question' is not defined
+2026-07-29 23:27:02 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:27:03 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:04 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:04 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:06 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:06 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:27:06 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：1.53ms，错误：name 'question' is not defined
+2026-07-29 23:27:06 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:27:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:07 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:08 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:10 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:10 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:27:10 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：0.00ms，错误：name 'question' is not defined
+2026-07-29 23:27:10 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:27:10 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:11 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:12 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:14 - app.graph.nodes.nodes - ERROR - 答案生成失败：closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+2026-07-29 23:27:14 - app.graph.nodes.helpers - ERROR - [答案生成] 执行失败，耗时：2.64ms，错误：name 'question' is not defined
+2026-07-29 23:27:14 - app.rag.evaluation - ERROR - 生成答案失败: name 'question' is not defined
+2026-07-29 23:27:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:27:16 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}

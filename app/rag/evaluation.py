@@ -376,6 +376,7 @@ class RAGEvaluator:
         self,
         test_data: List[Dict],
         incremental: bool = True,
+        delay_seconds: float = 2.0,
     ) -> Dict:
         """批量评估
 
@@ -418,6 +419,9 @@ class RAGEvaluator:
                 result = self.evaluate_single(sample)
                 per_sample.append(result)
                 evaluated += 1
+                # 请求间隔，避免API频率限制（429 Too Many Requests）
+                if delay_seconds > 0 and i < len(test_data) - 1:
+                    time.sleep(delay_seconds)
             except Exception as e:
                 logger.error(f"评估样本失败 [{i + 1}]: {e}")
                 per_sample.append({

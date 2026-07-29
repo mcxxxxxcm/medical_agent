@@ -28,7 +28,8 @@ from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_TEST_SET = "tests/data/rag_eval_test_set.jsonl"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TEST_SET = str(PROJECT_ROOT / "tests/data/golden_test_set.jsonl")
 
 
 def main():
@@ -43,7 +44,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="data/evaluation",
+        default=str(PROJECT_ROOT / "data/evaluation"),
         help="评估结果输出目录（默认: data/evaluation）",
     )
     parser.add_argument(
