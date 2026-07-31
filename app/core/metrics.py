@@ -1,10 +1,11 @@
 """请求级可观测性模块（SQLite Metrics）
 
 轻量级结构化指标采集，无需部署 Prometheus/Grafana。
-包含三张表：
+包含四张表：
     1. node_metrics: 节点级耗时（P50/P95/P99 分析）
     2. token_usage: LLM Token 用量（成本估算 + 阈值告警）
     3. feedback: 用户反馈闭环（👍/👎 → 差评分析 → 黄金测试集候选）
+    4. refusal_logs: 拒答日志（三层拒答机制的可观测性支撑）
 
 用法：
     from app.core.metrics import get_metrics_collector
@@ -131,6 +132,42 @@ class MetricsCollector:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_timestamp ON feedback(timestamp)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback(rating)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_request_id ON feedback(request_id)")
+
+                # 表4：拒答日志
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS refusal_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp REAL NOT NULL,
+                        refusal_type TEXT NOT NULL,
+                        question TEXT NOT NULL,
+                        question_type TEXT NOT NULL DEFAULT '',
+                        reason TEXT NOT NULL DEFAULT '',
+                        confidence REAL NOT NULL DEFAULT 0.0,
+                        max_rerank_score REAL NOT NULL DEFAULT 0.0,
+                        retrieved_doc_count INTEGER NOT NULL DEFAULT 0,
+                        relevant_doc_count INTEGER NOT NULL DEFAULT 0,
+                        metadata TEXT NOT NULL DEFAULT '{}',
+                        thread_id TEXT NOT NULL DEFAULT '',
+                        request_id TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_refusal_timestamp ON refusal_logs(timestamp)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_refusal_type ON refusal_logs(refusal_type)")
+
+                # 拒答日志聚合视图
+                conn.execute("""
+                    CREATE VIEW IF NOT EXISTS v_refusal_daily AS
+                    SELECT
+                        DATE(timestamp, 'unixepoch', 'localtime') AS date,
+                        refusal_type,
+                        question_type,
+                        COUNT(*) AS count,
+                        AVG(confidence) AS avg_confidence,
+                        AVG(max_rerank_score) AS avg_rerank_score
+                    FROM refusal_logs
+                    GROUP BY DATE(timestamp, 'unixepoch', 'localtime'), refusal_type, question_type
+                    ORDER BY date DESC
+                """)
 
                 conn.commit()
             finally:
@@ -770,12 +807,217 @@ class MetricsCollector:
             return []
 
     # ===================================================================
+    # 拒答日志
+    # ===================================================================
+
+    def record_refusal(
+        self,
+        refusal_type: str,
+        question: str,
+        question_type: str = "",
+        reason: str = "",
+        confidence: float = 0.0,
+        max_rerank_score: float = 0.0,
+        retrieved_doc_count: int = 0,
+        relevant_doc_count: int = 0,
+        metadata: Optional[Dict[str, Any]] = None,
+        thread_id: str = "",
+        request_id: str = "",
+    ):
+        """记录一次拒答事件"""
+        with self._lock:
+            try:
+                conn = sqlite3.connect(str(self._db_path))
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO refusal_logs
+                        (timestamp, refusal_type, question, question_type, reason,
+                         confidence, max_rerank_score, retrieved_doc_count,
+                         relevant_doc_count, metadata, thread_id, request_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            time.time(),
+                            refusal_type,
+                            question[:500] if question else "",
+                            question_type,
+                            reason[:500] if reason else "",
+                            confidence,
+                            max_rerank_score,
+                            retrieved_doc_count,
+                            relevant_doc_count,
+                            json.dumps(metadata or {}, ensure_ascii=False),
+                            thread_id,
+                            request_id,
+                        ),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.warning(f"Refusal log 写入失败：{e}")
+
+    def get_refusal_stats(self, days: int = 7) -> Dict:
+        """查询近 N 天的拒答分布统计
+
+        Returns:
+            {
+                "total": int,
+                "by_type": [{refusal_type, count}],
+                "by_question_type": [{question_type, count}],
+                "daily": [{date, refusal_type, question_type, count, avg_confidence, avg_rerank_score}],
+                "top_questions": [{question, count}],
+            }
+        """
+        cutoff = time.time() - days * 86400
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            try:
+                # 总计
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM refusal_logs WHERE timestamp > ?",
+                    (cutoff,),
+                ).fetchone()[0]
+
+                # 按拒答类型分组
+                type_rows = conn.execute(
+                    """
+                    SELECT refusal_type, COUNT(*) as count
+                    FROM refusal_logs WHERE timestamp > ?
+                    GROUP BY refusal_type ORDER BY count DESC
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                by_type = [{"refusal_type": r[0], "count": r[1]} for r in type_rows]
+
+                # 按问题类型分组
+                qtype_rows = conn.execute(
+                    """
+                    SELECT question_type, COUNT(*) as count
+                    FROM refusal_logs WHERE timestamp > ?
+                    GROUP BY question_type ORDER BY count DESC
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                by_question_type = [{"question_type": r[0], "count": r[1]} for r in qtype_rows]
+
+                # 每日趋势（使用视图）
+                try:
+                    daily_rows = conn.execute(
+                        """
+                        SELECT date, refusal_type, question_type, count, avg_confidence, avg_rerank_score
+                        FROM v_refusal_daily
+                        WHERE date >= DATE(?, 'unixepoch', 'localtime')
+                        ORDER BY date DESC
+                        LIMIT 200
+                        """,
+                        (cutoff,),
+                    ).fetchall()
+                except Exception:
+                    daily_rows = conn.execute(
+                        """
+                        SELECT DATE(timestamp, 'unixepoch', 'localtime') AS date,
+                               refusal_type, question_type,
+                               COUNT(*) as count,
+                               AVG(confidence) as avg_confidence,
+                               AVG(max_rerank_score) as avg_rerank_score
+                        FROM refusal_logs WHERE timestamp > ?
+                        GROUP BY DATE(timestamp, 'unixepoch', 'localtime'), refusal_type, question_type
+                        ORDER BY date DESC
+                        LIMIT 200
+                        """,
+                        (cutoff,),
+                    ).fetchall()
+                daily = [
+                    {
+                        "date": r[0],
+                        "refusal_type": r[1],
+                        "question_type": r[2],
+                        "count": r[3],
+                        "avg_confidence": round(r[4] or 0, 4),
+                        "avg_rerank_score": round(r[5] or 0, 4),
+                    }
+                    for r in daily_rows
+                ]
+
+                # 高频拒答问题 Top 20
+                top_rows = conn.execute(
+                    """
+                    SELECT question, COUNT(*) as count
+                    FROM refusal_logs WHERE timestamp > ?
+                    GROUP BY question ORDER BY count DESC LIMIT 20
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                top_questions = [{"question": r[0], "count": r[1]} for r in top_rows]
+
+                return {
+                    "total": total,
+                    "by_type": by_type,
+                    "by_question_type": by_question_type,
+                    "daily": daily,
+                    "top_questions": top_questions,
+                    "days": days,
+                }
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"拒答统计查询失败：{e}")
+            return {"total": 0, "by_type": [], "by_question_type": [], "daily": [], "top_questions": [], "days": days}
+
+    def export_refusal_logs(self, days: int = 7) -> List[Dict]:
+        """导出近 N 天的拒答日志明细"""
+        cutoff = time.time() - days * 86400
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, timestamp, refusal_type, question, question_type, reason,
+                           confidence, max_rerank_score, retrieved_doc_count,
+                           relevant_doc_count, metadata, thread_id, request_id
+                    FROM refusal_logs WHERE timestamp > ?
+                    ORDER BY timestamp DESC
+                    LIMIT 10000
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                return [
+                    {
+                        "id": r[0],
+                        "timestamp": r[1],
+                        "refusal_type": r[2],
+                        "question": r[3],
+                        "question_type": r[4],
+                        "reason": r[5],
+                        "confidence": r[6],
+                        "max_rerank_score": r[7],
+                        "retrieved_doc_count": r[8],
+                        "relevant_doc_count": r[9],
+                        "metadata": r[10],
+                        "thread_id": r[11],
+                        "request_id": r[12],
+                    }
+                    for r in rows
+                ]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"拒答日志导出失败：{e}")
+            return []
+
+    # ===================================================================
     # 通用
     # ===================================================================
 
     def cleanup(self, days: int = _RETENTION_DAYS):
-        """清理超过 N 天的旧数据"""
+        """清理超过 N 天的旧数据
+
+        拒答日志(refusal_logs)保留90天，其他表保留30天。
+        """
         cutoff = time.time() - days * 86400
+        refusal_cutoff = time.time() - 90 * 86400
         with self._lock:
             try:
                 conn = sqlite3.connect(str(self._db_path))
@@ -786,6 +1028,12 @@ class MetricsCollector:
                         ).rowcount
                         if deleted > 0:
                             logger.info(f"Metrics 清理：{table} 删除 {deleted} 条超过 {days} 天的旧数据")
+                    # 拒答日志保留90天
+                    deleted = conn.execute(
+                        "DELETE FROM refusal_logs WHERE timestamp < ?", (refusal_cutoff,)
+                    ).rowcount
+                    if deleted > 0:
+                        logger.info(f"Metrics 清理：refusal_logs 删除 {deleted} 条超过 90 天的旧数据")
                     conn.commit()
                 finally:
                     conn.close()

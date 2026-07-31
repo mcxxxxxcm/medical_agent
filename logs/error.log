@@ -1107,3 +1107,16 @@ NameError: name 'updater' is not defined
 2026-07-29 23:27:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
 2026-07-29 23:27:15 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
 2026-07-29 23:27:16 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-07-29 23:45:23 - app.graph.streaming - ERROR - 流式处理失败：request_id=dbda5549-ca1b-42e8-b6df-7a760f62162c, error=closing parenthesis ')' does not match opening parenthesis '{' on line 226 (prompts.py, line 249)
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\graph\streaming.py", line 642, in run
+    async for token in stream_direct_answer(self._state):
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\nodes.py", line 3451, in stream_direct_answer
+    prompt = build_direct_answer_prompt(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\nodes.py", line 1670, in build_direct_answer_prompt
+    from app.graph.nodes.prompts import DIRECT_ANSWER_PROMPT
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\prompts.py", line 249
+    用户问题：{question}"""),
+                      ^
+SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on line 226

@@ -642,6 +642,24 @@ async def feedback_golden_candidates(limit: int = 50):
     return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
 
 
+@app.get("/api/admin/refusal/stats")
+async def get_refusal_stats(request: Request, days: int = 7):
+    """拒答日志统计"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    stats = collector.get_refusal_stats(days=days)
+    return JSONResponse(content=stats)
+
+
+@app.get("/api/admin/refusal/export")
+async def export_refusal_logs(request: Request, days: int = 7):
+    """导出拒答日志明细"""
+    from app.core.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    records = collector.export_refusal_logs(days=days)
+    return JSONResponse(content={"total": len(records), "records": records})
+
+
 # ===== 知识库管理 API =====
 
 # 知识库更新写锁（防止并发更新导致数据不一致）

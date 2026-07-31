@@ -16,9 +16,11 @@
     AgentError、LLMError：自定义异常类
 """
 import json
+import jieba
 import re
 import time
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional
 
@@ -425,11 +427,45 @@ def is_same_query(left: Optional[str], right: Optional[str]) -> bool:
 
 
 def build_no_results_answer(question: str) -> str:
-    """构建无检索结果时的兜底回复"""
+    """构建完全无匹配时的拒答回复（v9.15）"""
     return (
-        f"暂时没有在知识库中检索到与“{question}”直接相关的可靠资料。"
-        "建议补充更具体的信息，例如症状持续时间、伴随表现、既往病史或想了解的疾病名称。"
-        "如症状明显加重、持续不缓解或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
+        f"抱歉，当前知识库未收录与\u201c{question}\u201d直接相关的可靠资料。\n"
+        "建议您：\n"
+        "1. 补充更具体的信息（如症状持续时间、伴随表现、既往病史）；\n"
+        "2. 提供更准确的疾病名称或药品名称；\n"
+        "3. 如症状明显加重或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
+    )
+
+
+def build_incomplete_answer(partial_info: str, missing_items: list) -> str:
+    """构建信息不完整时的部分回答 + 缺失声明"""
+    missing_text = "\u3001".join(missing_items)
+    return (
+        f"{partial_info}\n\n"
+        f"\u26a0\ufe0f 关于{missing_text}\uff0c当前资料未提及\uff0c请务必咨询医生确认\u3002\n"
+        "\n\u26a0\ufe0f 以上建议仅供参考，如有疑问请及时就医"
+    )
+
+
+def build_conflict_answer(question: str, conflicts: list) -> str:
+    """构建多源冲突回答：展示分歧 + 建议核实"""
+    conflict_lines = []
+    for c in conflicts:
+        conflict_lines.append(f"- {c.get('source', '\u672a\u77e5\u6765\u6e90')}\uff1a{c.get('content', '')}")
+    conflict_text = "\n".join(conflict_lines)
+    return (
+        f"\u5173\u4e8e\u201c{question}\u201d\uff0c\u4e0d\u540c\u53c2\u8003\u6765\u6e90\u5b58\u5728\u5dee\u5f02\uff1a\n{conflict_text}\n\n"
+        "\u5efa\u8bae\u4ee5\u60a8\u5c31\u8bca\u533b\u9662\u7684\u76f8\u5173\u79d1\u5ba4\u610f\u89c1\u4e3a\u51c6\u3002\u5982\u6709\u7591\u95ee\u8bf7\u54a8\u8be2\u4e13\u4e1a\u533b\u751f\u3002\n"
+        "\n\u26a0\ufe0f \u4ee5\u4e0a\u5efa\u8bae\u4ec5\u4f9b\u53c2\u8003\uff0c\u5982\u6709\u7591\u95ee\u8bf7\u53ca\u65f6\u5c31\u533b"
+    )
+
+
+def build_out_of_scope_answer(question: str) -> str:
+    """构建超出能力边界的拒答回复"""
+    return (
+        f"\u62b1\u6b49\uff0c\u201c{question}\u201d\u6d89\u53ca\u8bca\u65ad\u6216\u5904\u65b9\u5efa\u8bae\uff0c\u8d85\u51fa\u6211\u7684\u80fd\u529b\u8303\u56f4\u3002"
+        "\u6211\u65e0\u6cd5\u63d0\u4f9b\u8bca\u65ad\u610f\u89c1\u6216\u5904\u65b9\u5efa\u8bae\uff0c\u60a8\u7684\u75c7\u72b6\u53ef\u80fd\u4e0e\u591a\u79cd\u60c5\u51b5\u76f8\u5173\uff0c"
+        "\u5efa\u8bae\u5c3d\u5feb\u524d\u5f80\u76f8\u5173\u79d1\u5ba4\u9762\u8bca\uff0c\u7531\u4e13\u4e1a\u533b\u751f\u8fdb\u884c\u8bc4\u4f30\u3002"
     )
 
 
@@ -492,16 +528,16 @@ def router_node(state: MedicalAssistantState) -> Command:
     logger.info(f"问题类型：{question_type}（路由层：{route_layer}）")
 
     # 记录路由结果到 state（供后续节点和 metrics 使用）
-    # 注意：Command 返回不支持直接更新 state，通过 logger + metrics 记录
     _record_route_metrics(state, question, question_type, route_layer)
 
     # 常规类型general就直接使用llm进行回复，不用调用RAG
+    # v9.15: 通过 update 将 question_type 传递给后续节点
     if question_type == "symptom":
-        return Command(goto="symptom_analysis")
+        return Command(goto="symptom_analysis", update={"question_type": question_type})
     elif question_type == "knowledge":
-        return Command(goto="query_rewrite")
+        return Command(goto="query_rewrite", update={"question_type": question_type})
     else:
-        return Command(goto="direct_answer")
+        return Command(goto="direct_answer", update={"question_type": question_type})
 
 
 def _record_route_metrics(state: dict, question: str, question_type: str, route_layer: str):
@@ -1122,6 +1158,122 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         }
 
 
+# ===== v9.15: 三层拒答 — 检索层辅助函数 =====
+
+def _timeliness_modifier(doc_metadata: dict) -> float:
+    """基于文档元数据的时效衰减因子（0~1.0）"""
+    # 过期文档
+    expire_date = doc_metadata.get("doc_expire_date")
+    if expire_date and expire_date != "unknown":
+        try:
+            if datetime.fromisoformat(str(expire_date)) < datetime.now():
+                return 0.0
+        except (ValueError, TypeError):
+            pass
+    # 基于生效日期衰减
+    effective_date = doc_metadata.get("doc_effective_date")
+    if effective_date and effective_date != "unknown":
+        try:
+            eff = datetime.fromisoformat(str(effective_date))
+            age_days = (datetime.now() - eff).days
+            if age_days > 1095:  return 0.6
+            elif age_days > 730: return 0.75
+            elif age_days > 365: return 0.85
+            else:                return 1.0
+        except (ValueError, TypeError):
+            pass
+    # 回退：文件修改时间
+    file_modified = doc_metadata.get("file_modified") or doc_metadata.get("last_modified")
+    if file_modified:
+        try:
+            mod_ts = float(file_modified)
+            age_days = (time.time() - mod_ts) / 86400
+            if age_days > 1095:  return 0.6
+            elif age_days > 730: return 0.75
+            elif age_days > 365: return 0.85
+            else:                return 1.0
+        except (ValueError, TypeError):
+            pass
+    return 0.8  # 无时间元数据，保守降权
+
+
+AUTHORITY_MODIFIER = {
+    "national_guideline": 1.0,
+    "society_consensus": 0.95,
+    "textbook": 0.90,
+    "institutional_protocol": 0.85,
+    "expert_opinion": 0.75,
+    "training_material": 0.65,
+    "faq": 0.55,
+    "unknown": 0.60,
+}
+
+
+def _authority_modifier(doc_metadata: dict) -> float:
+    level = doc_metadata.get("doc_authority_level", "unknown") or "unknown"
+    return AUTHORITY_MODIFIER.get(level, 0.60)
+
+
+def _compute_retrieval_confidence(
+    max_rerank_score: float,
+    score_gap: float,
+    relevant_count: int,
+    query_overlap_ratio: float,
+    timeliness_mod: float,
+    authority_mod: float,
+) -> float:
+    """四维加权 × 时效衰减 × 权威权重"""
+    # 维度1: Reranker最高分 (0.3)
+    if max_rerank_score >= 0.10:  s1 = 0.30
+    elif max_rerank_score >= 0.03: s1 = 0.20
+    elif max_rerank_score >= 0.01: s1 = 0.10
+    else:                           s1 = 0.00
+    # 维度2: 得分差距 (0.2)
+    if score_gap >= 0.05:  s2 = 0.20
+    elif score_gap >= 0.02: s2 = 0.10
+    else:                    s2 = 0.00
+    # 维度3: 相关文档数 (0.3)
+    if relevant_count >= 3:  s3 = 0.30
+    elif relevant_count >= 2: s3 = 0.20
+    elif relevant_count >= 1: s3 = 0.10
+    else:                      s3 = 0.00
+    # 维度4: 关键词重叠 (0.2)
+    if query_overlap_ratio >= 0.8:  s4 = 0.20
+    elif query_overlap_ratio >= 0.5: s4 = 0.10
+    else:                             s4 = 0.00
+
+    base = s1 + s2 + s3 + s4
+    return round(base * timeliness_mod * authority_mod, 4)
+
+
+def _dedup_by_version(docs: list) -> list:
+    """同源多版本文档去重：保留最新版，旧版标记 _superseded"""
+    by_source = defaultdict(list)
+    for doc in docs:
+        source = doc.metadata.get("source", "") or doc.metadata.get("file_path", "unknown")
+        # 提取基础名称（去掉版本号）
+        base = source.rsplit("_v", 1)[0] if "_v" in source else source
+        by_source[base].append(doc)
+
+    result = []
+    for base, versions in by_source.items():
+        if len(versions) > 1:
+            # 按effective_date或version降序排序
+            def _sort_key(d):
+                v = d.metadata.get("doc_version", "0")
+                ed = d.metadata.get("doc_effective_date", "")
+                return (ed, v)
+            versions.sort(key=_sort_key, reverse=True)
+            # 保留最新版
+            result.append(versions[0])
+            for old in versions[1:]:
+                old.metadata["_superseded"] = True
+                logger.info(f"旧版文档已标记废弃：{old.metadata.get('source', '')} (version={old.metadata.get('doc_version', '')})")
+        else:
+            result.append(versions[0])
+    return result
+
+
 @timing_decorator("文档评分")
 def grade_documents_node(state: MedicalAssistantState) -> Command:
     """文档相关性评分节点（轻量启发式版）
@@ -1136,6 +1288,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
     retrieved_docs = state.get("retrieved_docs", [])
     retrieval_attempts = int(state.get("retrieval_attempts") or 0)
     rewritten_query = state.get("rewritten_query") or question
+    question_type = state.get("question_type", "general")
 
     # 振荡检测：比较重试前后的 Reranker 分数，无显著提升则跳过重试
     OSCILLATION_SCORE_DELTA = 0.05  # Reranker top-1 分数提升低于此值视为无改善
@@ -1162,39 +1315,108 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
             update={"_prev_max_score": 0, "_prev_relevant_count": 0},
         )
 
+    # ===== v9.15: 三层拒答 — 检索层 =====
+    # Step 1: 时效过滤（过期文档直接剔除）
+    timely_docs = []
+    for doc in retrieved_docs:
+        tm = _timeliness_modifier(doc.metadata)
+        doc.metadata["_timeliness_modifier"] = tm
+        doc.metadata["_authority_modifier"] = _authority_modifier(doc.metadata)
+        if tm > 0.0:
+            timely_docs.append(doc)
+        else:
+            logger.info(f"过期文档已剔除：{doc.metadata.get('source', '')} (expire_date={doc.metadata.get('doc_expire_date', '')})")
+
+    if len(timely_docs) < len(retrieved_docs):
+        logger.warning(f"时效过滤：{len(retrieved_docs)} → {len(timely_docs)}（剔除 {len(retrieved_docs) - len(timely_docs)} 篇过期文档）")
+        retrieved_docs = timely_docs
+
+    # Step 2: 版本去重（同源多版本保留最新）
+    retrieved_docs = _dedup_by_version(retrieved_docs)
+
     # Reranker 低分检测：最高分极低说明知识库无相关文档
     max_rerank_score = max(
         (doc.metadata.get("rerank_score", 0) for doc in retrieved_docs),
         default=0,
     )
     # v9.0 知识库无覆盖早退：Reranker 最高分 < 0.01 说明完全不在知识库范围
-    # 不应重试查询重写（浪费时间 1~2s），直接走 direct_answer
+    # v9.15: symptom/knowledge 类型不再走 direct_answer，改为拒答
     RERANK_NO_COVERAGE_THRESHOLD = 0.01
     if max_rerank_score < RERANK_NO_COVERAGE_THRESHOLD and max_rerank_score > 0:
         logger.warning(
             f"Reranker 最高分仅 {max_rerank_score:.4f}（< {RERANK_NO_COVERAGE_THRESHOLD}），"
-            f"知识库完全无覆盖，跳过自纠正直接回答"
+            f"知识库完全无覆盖"
         )
-        return Command(
-            goto="direct_answer",
-            update={
-                "retrieved_docs": [],
-                "warnings": ["知识库无覆盖范围，以下回答基于通用医学知识"],
-            },
-        )
+        if question_type in ("symptom", "knowledge"):
+            # v9.15: 医疗问题 + 知识库无覆盖 = 拒答，不让LLM自由编造
+            from app.core.metrics import get_metrics_collector
+            get_metrics_collector().record_refusal(
+                refusal_type="no_match",
+                question=question,
+                question_type=question_type,
+                reason=f"Reranker最高分仅{max_rerank_score:.4f}，知识库无覆盖",
+                confidence=0.0,
+                max_rerank_score=max_rerank_score,
+                retrieved_doc_count=len(retrieved_docs),
+                relevant_doc_count=0,
+                thread_id=state.get("thread_id", ""),
+                request_id=state.get("request_id", ""),
+            )
+            return Command(
+                goto="answer_generation",
+                update={
+                    "retrieved_docs": [],
+                    "final_answer": build_no_results_answer(question),
+                    "warnings": ["知识库暂无相关文档，无法提供可靠回答"],
+                },
+            )
+        else:
+            # general类型 → 直接回答（问候等）
+            return Command(
+                goto="direct_answer",
+                update={
+                    "retrieved_docs": [],
+                    "warnings": ["知识库无覆盖范围，以下回答基于通用知识"],
+                },
+            )
     RERANK_IRRELEVANT_THRESHOLD = 0.02
     if max_rerank_score < RERANK_IRRELEVANT_THRESHOLD and max_rerank_score > 0:
         logger.warning(
             f"Reranker 最高分仅 {max_rerank_score:.4f}（阈值 {RERANK_IRRELEVANT_THRESHOLD}），"
-            f"知识库无相关文档，跳过 RAG 走直接回答"
+            f"知识库无相关文档"
         )
-        return Command(
-            goto="direct_answer",
-            update={
-                "retrieved_docs": [],
-                "warnings": ["知识库暂无相关文档，以下回答基于通用医学知识"],
-            },
-        )
+        if question_type in ("symptom", "knowledge"):
+            # v9.15: 医疗问题 + 知识库无覆盖 = 拒答，不让LLM自由编造
+            from app.core.metrics import get_metrics_collector
+            get_metrics_collector().record_refusal(
+                refusal_type="no_match",
+                question=question,
+                question_type=question_type,
+                reason=f"Reranker最高分仅{max_rerank_score:.4f}，知识库无覆盖",
+                confidence=0.0,
+                max_rerank_score=max_rerank_score,
+                retrieved_doc_count=len(retrieved_docs),
+                relevant_doc_count=0,
+                thread_id=state.get("thread_id", ""),
+                request_id=state.get("request_id", ""),
+            )
+            return Command(
+                goto="answer_generation",
+                update={
+                    "retrieved_docs": [],
+                    "final_answer": build_no_results_answer(question),
+                    "warnings": ["知识库暂无相关文档，无法提供可靠回答"],
+                },
+            )
+        else:
+            # general类型 → 直接回答（问候等）
+            return Command(
+                goto="direct_answer",
+                update={
+                    "retrieved_docs": [],
+                    "warnings": ["知识库无覆盖范围，以下回答基于通用知识"],
+                },
+            )
 
     relevant_docs = filter_relevant_docs(question, retrieved_docs)
     relevant_count = len(relevant_docs)
@@ -1248,9 +1470,61 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                 f"不再重试，使用当前结果"
             )
 
+    # ===== v9.15: 计算检索置信度 =====
+    if relevant_docs:
+        top1_score = relevant_docs[0].metadata.get("rerank_score", 0)
+        top2_score = relevant_docs[1].metadata.get("rerank_score", 0) if len(relevant_docs) > 1 else 0
+        score_gap = top1_score - top2_score
+
+        # 计算关键词重叠率
+        query_terms = set(jieba.cut(question))
+        overlap_count = 0
+        for doc in relevant_docs[:3]:
+            for term in query_terms:
+                if term in doc.page_content:
+                    overlap_count += 1
+                    break
+        overlap_ratio = overlap_count / max(len(relevant_docs[:3]), 1)
+
+        # 取相关文档中最高时效/权威modifier
+        best_timeliness = max((d.metadata.get("_timeliness_modifier", 0.8) for d in relevant_docs), default=0.8)
+        best_authority = max((d.metadata.get("_authority_modifier", 0.6) for d in relevant_docs), default=0.6)
+
+        confidence = _compute_retrieval_confidence(
+            max_rerank_score=top1_score,
+            score_gap=score_gap,
+            relevant_count=len(relevant_docs),
+            query_overlap_ratio=overlap_ratio,
+            timeliness_mod=best_timeliness,
+            authority_mod=best_authority,
+        )
+
+        logger.info(f"检索置信度：{confidence:.4f} (rerank={top1_score:.4f}, gap={score_gap:.4f}, docs={len(relevant_docs)}, overlap={overlap_ratio:.2f}, timeliness={best_timeliness:.2f}, authority={best_authority:.2f})")
+
+        # 低置信度记录拒答日志
+        if confidence < 0.4 and question_type in ("symptom", "knowledge"):
+            from app.core.metrics import get_metrics_collector
+            get_metrics_collector().record_refusal(
+                refusal_type="low_confidence",
+                question=question,
+                question_type=question_type,
+                reason=f"检索置信度{confidence:.4f}<0.4，相关信息不足",
+                confidence=confidence,
+                max_rerank_score=top1_score,
+                retrieved_doc_count=len(retrieved_docs),
+                relevant_doc_count=len(relevant_docs),
+                thread_id=state.get("thread_id", ""),
+                request_id=state.get("request_id", ""),
+            )
+    else:
+        confidence = 0.0
+
     return Command(
         goto="answer_generation",
-        update={"retrieved_docs": relevant_docs}
+        update={
+            "retrieved_docs": relevant_docs,
+            "retrieval_confidence": confidence,
+        }
     )
 
 

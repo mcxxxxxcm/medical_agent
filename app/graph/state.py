@@ -69,6 +69,7 @@ class MedicalAssistantState(TypedDict):
     retrieved_docs: Optional[List[Document]]
     all_retrieved_docs: Optional[List[Document]]  # 过滤前的完整检索文档（供幻觉检测等使用）
     symptoms: Optional[Dict[str, Any]]
+    question_type: Optional[str]  # v9.15: 问题类型（symptom/knowledge/general），由router_node设置
 
     # ===== 错误处理 =====
     error: Optional[str]
@@ -85,6 +86,10 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 临床状态快照（结构化JSON）=====
     clinical_checkpoint: Optional[Dict[str, Any]]
+
+    # ===== v9.15: 三层拒答机制 =====
+    retrieval_confidence: Optional[float]  # v9.15: 检索置信度（0~1.0）
+    refusal_type: Optional[str]            # v9.15: 拒答类型（no_match/incomplete/conflict/out_of_scope/low_confidence/None）
 
 
 class InputSchema(TypedDict):
@@ -114,6 +119,7 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "retrieved_docs": None,
         "all_retrieved_docs": None,
         "symptoms": None,
+        "question_type": None,
         "error": None,
         "user_profile": None,
         "rewritten_query": None,
@@ -122,6 +128,8 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "sub_questions": None,
         "retrieval_attempts": 0,
         "clinical_checkpoint": None,
+        "retrieval_confidence": None,
+        "refusal_type": None,
     }
 
 
