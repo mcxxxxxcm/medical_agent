@@ -55,10 +55,17 @@ class Settings(BaseSettings):
     DEFAULT_K: int = 3  # v9.0: 5→3，减少送入 LLM 的文档数，缩短 Prompt token，降低 TTFT
     DEFAULT_SEARCH_TYPE: str = "similarity"
     RERANKER_TOP_K: int = 8  # RRF 融合后送入 Reranker 的候选数（三阶段：先截 top8 再精排）
-    RERANKER_THRESHOLD: float = 0.02  # sigmoid归一化后的阈值，仅过滤极低分文档（<0.02≈完全不相关）
+    RERANKER_THRESHOLD: float = 0.005  # v9.16: 0.02→0.005，原阈值过高导致合理文档被过滤后降级兜底
     # v8.2：0.1 → 0.02。旧值 0.1 过于严格，导致"头痛怎么办"只有1篇通过（0.26），
     # 其余神经系统文档（0.031）被过滤，parent 不含布洛芬 → 幻觉检测误报
+    # v9.16：0.02 → 0.005。运行日志显示最高分才0.0192，阈值0.02导致所有文档被过滤降级兜底。
+    # 0.005 让大部分合理文档通过，同时仍过滤极低分噪声
     # Reranker 的核心价值是排序，不是过滤；过滤交给下游 grade_documents_node
+
+    # v9.16: 动态K值配置（按问题类型调整检索候选数量）
+    RETRIEVAL_K_SYMPTOM: int = 8     # symptom类型检索K值（多跳推理需要更多候选）
+    RETRIEVAL_K_KNOWLEDGE: int = 5   # knowledge类型检索K值（单事实查询5个足够）
+    RETRIEVAL_K_DEFAULT: int = 5     # 默认K值
 
     # ===== 邻域扩展配置 =====
     SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节

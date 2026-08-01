@@ -39,7 +39,7 @@ from app.core.llm import (
 )
 from app.graph.state import MedicalAssistantState
 from app.memory import get_long_term_memory
-from app.rag.hybrid_retriever import get_hybrid_retriever
+from app.rag.hybrid_retriever import get_hybrid_retriever, get_cached_hybrid_retriever
 from app.skills import run_rule_based_review, get_block_template
 
 logger = get_logger(__name__)
@@ -1038,6 +1038,28 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "拉血": "便血", "大便出血": "便血",
             "吐血": "咯血", "咳血": "咯血",
             "尿血": "血尿",
+            # v9.16: 口语化同义词扩充（+35条，覆盖7大类）
+            # 消化系统
+            "肚子疼": "腹痛", "胃疼": "胃痛", "反酸": "胃酸反流",
+            "烧心": "胃灼热", "吐了": "呕吐", "恶心想吐": "恶心呕吐",
+            "拉不出": "便秘", "胀气": "腹胀",
+            # 呼吸系统
+            "流鼻涕": "鼻分泌物增多", "嗓子疼": "咽痛", "喉咙疼": "咽痛",
+            "喘不上气": "呼吸困难", "气短": "呼吸困难",
+            # 神经系统
+            "偏头疼": "偏头痛", "脑袋嗡嗡响": "耳鸣", "睡不着": "失眠",
+            "老犯困": "嗜睡",
+            # 妇科
+            "不来月经": "闭经",
+            # 皮肤
+            "起红点": "皮疹", "起疹子": "皮疹", "痒": "瘙痒", "脱皮": "脱屑",
+            # 全身
+            "起不来": "乏力", "没劲": "乏力", "没力气": "乏力",
+            "发低烧": "低热", "发高烧": "高热", "打冷战": "畏寒",
+            "出冷汗": "冷汗", "抽筋": "肌肉痉挛",
+            # 用药相关
+            "退烧药": "解热镇痛药", "消炎药": "抗感染药",
+            "感冒药": "感冒用药", "止痛药": "镇痛药", "拉肚子药": "止泻药",
         }
         for colloquial, standard in _SYNONYMS.items():
             q = q.replace(colloquial, standard)
@@ -1069,8 +1091,16 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             search_query = preprocessed
 
     try:
-        # v9.4: k=3→5，配合来源多样性过滤(max_per_source=2)，确保至少 3 个不同文档源
-        retriever = get_hybrid_retriever(k=5, alpha=0.5, use_reranker=True, rerank_top_k=10)
+        # v9.16: 根据 question_type 动态选择 K 值
+        # symptom 类型需要更多候选（多跳推理），knowledge 类型5个足够
+        question_type = state.get("question_type", "general")
+        if question_type == "symptom":
+            k = config.RETRIEVAL_K_SYMPTOM
+        elif question_type == "knowledge":
+            k = config.RETRIEVAL_K_KNOWLEDGE
+        else:
+            k = config.RETRIEVAL_K_DEFAULT
+        retriever = get_cached_hybrid_retriever(k=k, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
         # v9.6: 多子问题并行检索
         sub_questions = state.get("sub_questions") or [search_query]

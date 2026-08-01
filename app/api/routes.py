@@ -121,6 +121,12 @@ async def lifespan(app: FastAPI):
     get_reranker()  # 触发模型加载
     logger.info("Reranker 模型预加载完成")
 
+    # v9.16: Reranker 预热推理（消除首次请求 ~4s 冷启动延迟）
+    logger.info("预热 Reranker 推理...")
+    from app.rag.reranker import warmup_reranker
+    warmup_reranker()
+    logger.info("Reranker 预热完成")
+
     # 3. 预热向量库和 BM25
     logger.info("预热混合检索器...")
     get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)

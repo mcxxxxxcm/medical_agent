@@ -451,6 +451,9 @@ class HybridRetriever(BaseRetriever):
                     embedding_start = time.time()
                     query_embedding = semantic_cache.get_embedding(cache_query)
                     query_embedding_ms = (time.time() - embedding_start) * 1000
+                    # v9.16: 同步到 HybridRetriever 的 LRU 缓存，避免同一 query 重复计算
+                    if query_embedding is not None:
+                        _embedding_cache.put(cache_query, query_embedding)
 
                     semantic_lookup_start = time.time()
                     semantic_result = semantic_cache.get(cache_query, query_embedding=query_embedding)
@@ -496,6 +499,9 @@ class HybridRetriever(BaseRetriever):
                         # 写入 LRU 缓存
                         if query_embedding is not None:
                             _embedding_cache.put(dense_query, query_embedding)
+                            # v9.16: 同步写入语义缓存的本地embedding缓存，避免重复计算
+                            if semantic_cache is not None:
+                                semantic_cache._embedding_cache[dense_query] = query_embedding
                         emb_cb.record_success()
                     except Exception as e:
                         logger.warning(f"查询向量预计算失败，将回退到文本检索：{e}")
@@ -639,20 +645,25 @@ def get_hybrid_retriever(
 
 
 # 全局检索器实例（支持双集合切换时重置）
-_hybrid_retriever_instance: Optional[HybridRetriever] = None
+# v9.16: 按 k 值缓存，不同 K 值使用不同实例
+_hybrid_retriever_instances: Dict[int, HybridRetriever] = {}
 
 
-def get_cached_hybrid_retriever(**kwargs) -> HybridRetriever:
-    """获取缓存的检索器实例（单例）"""
-    global _hybrid_retriever_instance
-    if _hybrid_retriever_instance is None:
-        _hybrid_retriever_instance = get_hybrid_retriever(**kwargs)
-    return _hybrid_retriever_instance
+def get_cached_hybrid_retriever(k: int = 5, **kwargs) -> HybridRetriever:
+    """获取缓存的检索器实例（按 k 值缓存）
+
+    v9.16: 不同 K 值需要不同的 HybridRetriever 实例，
+    symptom 类型 K=8（多跳推理需更多候选），knowledge 类型 K=5。
+    """
+    global _hybrid_retriever_instances
+    if k not in _hybrid_retriever_instances:
+        _hybrid_retriever_instances[k] = get_hybrid_retriever(k=k, **kwargs)
+    return _hybrid_retriever_instances[k]
 
 
 def reset_hybrid_retriever():
     """重置检索器实例（双集合切换后调用，触发 BM25 重建）"""
-    global _hybrid_retriever_instance
-    _hybrid_retriever_instance = None
+    global _hybrid_retriever_instances
+    _hybrid_retriever_instances.clear()
     _embedding_cache.clear()
     logger.info("HybridRetriever 已重置，下次检索将重建 BM25 索引")

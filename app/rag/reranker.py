@@ -243,3 +243,19 @@ def get_reranker(model_name: str = DEFAULT_MODEL) -> Reranker:
     if _reranker_instance is None:
         _reranker_instance = Reranker(model_name=model_name)
     return _reranker_instance
+
+
+def warmup_reranker():
+    """预热Reranker模型（首次推理较慢，提前触发避免冷启动）
+
+    v9.16: 在应用启动时调用，消除首请求 ~4s 的冷启动延迟。
+    仅触发一次推理，后续请求复用已加载的模型。
+    """
+    try:
+        reranker = get_reranker()
+        # 用一条dummy query触发首次推理
+        dummy_doc = Document(page_content="预热测试文档", metadata={"source": "warmup"})
+        reranker.rerank(query="预热测试查询", documents=[dummy_doc], top_k=1, score_threshold=0.0)
+        logger.info("Reranker 预热完成")
+    except Exception as e:
+        logger.warning(f"Reranker 预热失败（不影响后续使用）：{e}")

@@ -39,6 +39,7 @@ RAG_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
 
 格式要求：
 - 引用药物/剂量时，必须与文档原文一致
+- 当引用具体事实（如药物名称、剂量、禁忌症、适应症）时，在事实末尾标注来源文档名，格式：[来源:文档名]
 - 回复结尾加"⚠️ 以上建议仅供参考，如有疑问请及时就医"{followup_section}"""),
 ])
 
