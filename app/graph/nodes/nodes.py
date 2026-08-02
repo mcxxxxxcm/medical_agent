@@ -1646,13 +1646,13 @@ def strip_rag_documents_from_history(history_text: str) -> str:
     return result
 
 
-def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 3,
+def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int = 0,
                                    compress_ai_answers: bool = False,
                                    enable_context_compression: bool = True) -> str:
     """构建对话历史文本（含四层上下文压缩），不含临床快照
 
     临床快照由 build_rag_prompt 单独注入，避免重复
-    max_rounds: 最多注入最近N轮对话（1轮=1条Human+1条AI），控制prompt大小
+    max_rounds: 最多注入最近N轮对话（1轮=1条Human+1条AI），0=动态计算（v9.17）
     compress_ai_answers: RAG场景下压缩AI回答为首句摘要，防止复制旧答案
     enable_context_compression: v9.5 新增——启用四层上下文压缩（L1→L3→L2→L4）
     """
@@ -1660,6 +1660,17 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
 
     if not messages:
         return ""
+
+    # v9.17: 动态max_rounds（基于token占用率，而非固定轮数）
+    if max_rounds <= 0:
+        from app.core.config import get_config
+        _config = get_config()
+        from app.graph.nodes.context_manager import get_adaptive_max_rounds
+        max_rounds = get_adaptive_max_rounds(
+            messages,
+            context_window=getattr(_config, 'LLM_CONTEXT_WINDOW_TOKENS', 8192),
+            compression_ratio=getattr(_config, 'CONTEXT_COMPRESSION_RATIO', 0.7),
+        )
 
     # 只取最近 max_rounds 轮（2*max_rounds 条消息）
     max_msgs = max_rounds * 2
@@ -3407,8 +3418,17 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
     messages = state.get("messages", [])
     existing_checkpoint = state.get("clinical_checkpoint")
 
-    if len(messages) <= keep_recent_messages:
-        logger.info(f"消息数量{len(messages)}未超过保留数量，跳过快照")
+    # v9.17: 动态触发判断（基于token占用率，而非固定消息数量）
+    from app.graph.nodes.context_manager import should_compress_by_token_ratio
+    from app.core.config import get_config as _get_config
+    _config = _get_config()
+
+    if not should_compress_by_token_ratio(
+        messages,
+        context_window=getattr(_config, 'LLM_CONTEXT_WINDOW_TOKENS', 8192),
+        compression_ratio=getattr(_config, 'CONTEXT_COMPRESSION_RATIO', 0.7),
+    ):
+        logger.info(f"上下文占用率未达压缩阈值，跳过快照")
         return {}
 
     # 获取需要提取的消息（早于keep_recent_messages的消息）
@@ -3416,6 +3436,14 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
 
     if not messages_to_extract:
         return {}
+
+    # v9.17: 原文存档（压缩前保存，不丢弃）
+    from app.graph.nodes.context_manager import archive_messages_to_disk
+    archive_id = archive_messages_to_disk(
+        messages_to_extract,
+        user_id=state.get("user_id", ""),
+        thread_id=state.get("thread_id", ""),
+    )
 
     logger.info(f"从{len(messages_to_extract)}条早期消息中提取临床状态快照")
 
@@ -3460,6 +3488,11 @@ def update_clinical_snapshot_node(state: MedicalAssistantState) -> Dict[str, Any
         # 核心安全约束：confirmed_facts 只增不减，chief_complaint 不变性，
         # medication_history 追加去重，red_flags 追加去重
         new_checkpoint = _apply_checkpoint_merge(existing_checkpoint, new_checkpoint)
+
+        # v9.17: 记录原文存档ID，便于回溯
+        if archive_id:
+            new_checkpoint["archive_ids"] = (existing_checkpoint or {}).get("archive_ids", []) + [archive_id]
+
         merge_log_parts = []
         if existing_checkpoint:
             for field in ("chief_complaint", "medication_history", "red_flags", "confirmed_facts", "ruled_out"):

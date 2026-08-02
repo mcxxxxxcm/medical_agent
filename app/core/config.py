@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     KEEP_RECENT_MESSAGES: int = 6  # 保留最近的消息数量（3轮=6条）
     SNAPSHOT_TRIGGER: int = 8      # 触发快照更新的消息数量阈值（4轮=8条）
 
+    # ===== 动态压缩阈值（v9.17） =====
+    CONTEXT_COMPRESSION_RATIO: float = 0.7   # 上下文占用超过窗口70%时触发压缩
+    LLM_CONTEXT_WINDOW_TOKENS: int = 8192    # LLM上下文窗口大小（glm-4-flash）
+    TOKEN_ESTIMATE_RATIO: float = 1.5       # 1个中文字≈1.5token的估算系数
+
     # ===== 性能优化 =====
     ENABLE_SAFETY_CHECK: bool = False  # 是否启用安全检查（关闭可节省1次LLM调用）
     MERGE_ROUTER_REWRITE: bool = True  # 是否合并router和query_rewrite

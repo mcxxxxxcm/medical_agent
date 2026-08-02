@@ -30,6 +30,176 @@ PERSIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fil
 
 
 # ============================================================
+# v9.17: 动态压缩阈值（P1）
+# ============================================================
+
+def estimate_message_tokens(messages: List[BaseMessage]) -> int:
+    """估算消息列表的token占用
+
+    简易估算：中文字符×1.5 + 英文单词×1.3
+    不需要精确，只需在70%阈值附近做出判断
+    """
+    total_chars = sum(len(str(m.content)) for m in messages)
+    # 粗估：混合中英文平均1字符≈1.5token
+    return int(total_chars * 1.5)
+
+
+def should_compress_by_token_ratio(
+    messages: List[BaseMessage],
+    context_window: int = 8192,
+    compression_ratio: float = 0.7,
+) -> bool:
+    """判断是否需要基于token占用率触发压缩
+
+    Args:
+        messages: 当前消息列表
+        context_window: LLM上下文窗口大小（token数）
+        compression_ratio: 触发压缩的占用比例（0.7=70%）
+
+    Returns:
+        True = 应该压缩
+    """
+    if not messages:
+        return False
+    estimated_tokens = estimate_message_tokens(messages)
+    threshold = int(context_window * compression_ratio)
+    should = estimated_tokens > threshold
+    if should:
+        logger.info(
+            f"上下文占用率触发压缩：估算{estimated_tokens} tokens > {threshold} "
+            f"({compression_ratio*100:.0f}% × {context_window})"
+        )
+    return should
+
+
+def get_adaptive_max_rounds(
+    messages: List[BaseMessage],
+    context_window: int = 8192,
+    compression_ratio: float = 0.7,
+    min_rounds: int = 1,
+    max_rounds: int = 10,
+) -> int:
+    """自适应计算最多保留几轮对话
+
+    从最近的对话开始，逐步向前扩展，直到累计token接近70%阈值。
+    这样短对话可以保留更多轮，长对话自动缩减。
+
+    Args:
+        messages: 当前消息列表
+        context_window: LLM上下文窗口大小
+        compression_ratio: 压缩触发比例
+        min_rounds: 最少保留轮数
+        max_rounds: 最多保留轮数
+
+    Returns:
+        应保留的对话轮数
+    """
+    if not messages:
+        return min_rounds
+
+    threshold = int(context_window * compression_ratio)
+
+    # 从最后一条消息向前扫描
+    accumulated_tokens = 0
+    rounds_found = 0
+    human_count = 0
+
+    for msg in reversed(messages):
+        msg_tokens = int(len(str(msg.content)) * 1.5)
+        accumulated_tokens += msg_tokens
+
+        if isinstance(msg, HumanMessage):
+            human_count += 1
+            if human_count >= 2:  # 一轮 = 1条Human + 1条AI
+                rounds_found = human_count // 1  # 简化：每2条Human=1轮
+                if accumulated_tokens > threshold:
+                    break
+
+    # 限制在 min_rounds ~ max_rounds 之间
+    result = max(min_rounds, min(rounds_found, max_rounds))
+
+    # 如果扫描完了所有消息都没超阈值，返回全部轮数
+    if accumulated_tokens <= threshold:
+        total_human = sum(1 for m in messages if isinstance(m, HumanMessage))
+        result = max(min_rounds, min(total_human, max_rounds))
+
+    return result
+
+
+# ============================================================
+# v9.17: 原文存档（P2）
+# ============================================================
+
+def archive_messages_to_disk(
+    messages: List[BaseMessage],
+    user_id: str = "",
+    thread_id: str = "",
+) -> str:
+    """将消息原文存档到磁盘（压缩时不丢弃，可回溯）
+
+    存储路径：data/persisted_outputs/archives/{archive_id}.json
+
+    Returns:
+        archive_id（用于后续回溯）
+    """
+    os.makedirs(os.path.join(PERSIST_DIR, "archives"), exist_ok=True)
+
+    archive_id = f"archive_{uuid.uuid4().hex[:8]}_{int(time.time())}"
+    archive_path = os.path.join(PERSIST_DIR, "archives", f"{archive_id}.json")
+
+    archive_data = {
+        "id": archive_id,
+        "type": "conversation_archive",
+        "user_id": user_id,
+        "thread_id": thread_id,
+        "message_count": len(messages),
+        "messages": [
+            {
+                "role": m.__class__.__name__,
+                "content": str(m.content)[:10000],  # 单条消息上限10K字符
+            }
+            for m in messages
+        ],
+        "total_chars": sum(len(str(m.content)) for m in messages),
+        "created_at": time.time(),
+        "created_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+    try:
+        with open(archive_path, 'w', encoding='utf-8') as f:
+            json.dump(archive_data, f, ensure_ascii=False, indent=2)
+        logger.info(
+            f"原文存档完成：{len(messages)} 条消息 → {archive_id} "
+            f"({archive_data['total_chars']} 字符)"
+        )
+        return archive_id
+    except Exception as e:
+        logger.warning(f"原文存档失败：{e}")
+        return ""
+
+
+def load_archive(archive_id: str) -> Optional[Dict[str, Any]]:
+    """从磁盘加载存档的原文
+
+    Args:
+        archive_id: 存档ID
+
+    Returns:
+        存档数据（含messages列表），不存在时返回None
+    """
+    archive_path = os.path.join(PERSIST_DIR, "archives", f"{archive_id}.json")
+    if not os.path.exists(archive_path):
+        logger.warning(f"存档不存在：{archive_id}")
+        return None
+    try:
+        with open(archive_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"加载存档失败：{e}")
+        return None
+
+
+# ============================================================
 # L1：中间输出清除
 # ============================================================
 
