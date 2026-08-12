@@ -1,20 +1,20 @@
 """流式回答编排器
 
-将流式接口的节点编排逻辑从 routes.py 中独立出来，
-作为 Graph 定义的唯一流式消费者，消除双维护问题。
+将流式接口的编排逻辑从 routes.py 中独立出来，
+作为 Graph 定义唯一的流式消费者。
+
+v9.18 (P0-1)：迁移到原生 LangGraph 流式（graph.astream），
+不再手动逐个调用节点，消除了与 graph.py 的双维护问题。
 
 设计原则：
-    1. 编排器是 routes.py 和 graph.py 之间的桥梁
-    2. 节点调用顺序与 graph.py 的边定义保持一致
-    3. 缓存策略（L0/L2）在编排器内部处理，不污染 Graph 定义
-    4. 启动时 validate_streaming_sync() 自动检测节点不一致
+    1. 编排器只负责：缓存检查（L0/L2）、驱动 graph.astream、SSE 事件包装、bad-case 记录
+    2. 节点编排完全交给 graph.py（单一事实来源）
+    3. 缓存命中（L0/L2）时短路，不进入 graph
 """
 
 import asyncio
 import json
 import time
-
-from langchain_core.messages import AIMessage, HumanMessage
 
 from app.cache.redis_cache import get_cache
 from app.cache.semantic_cache import get_semantic_cache
@@ -22,19 +22,10 @@ from app.core.app_logging import get_logger
 from app.core.config import get_config
 from app.graph.graph import get_graph
 from app.graph.nodes import (
-    grade_documents_node,
-    knowledge_retrieval_node,
     memory_load_node,
-    profile_extraction_node,
-    query_rewrite_node,
     router_node,
     safety_check_node,
-    should_update_snapshot,
     stream_answer_generation,
-    stream_direct_answer,
-    stream_vision_answer,
-    symptom_analysis_node,
-    update_clinical_snapshot_node,
 )
 
 logger = get_logger(__name__)
@@ -63,10 +54,10 @@ class StreamingOrchestrator:
     """流式回答编排器
 
     负责：
-        - 节点调用编排（与 graph.py 边定义一致）
         - 缓存检查（L0 答案缓存 + L2 语义缓存）
-        - 对话历史保存
-        - 后台快照更新
+        - 驱动 graph.astream 原生流式（messages + updates + custom）
+        - 后置安全审查（仅当 graph 未内置 safety_check 时）
+        - bad-case 记录（幻觉 / 检索 miss / 路由异常）
     """
 
     def __init__(
@@ -77,7 +68,6 @@ class StreamingOrchestrator:
         image_base64: str | None,
         request_id: str,
         request_start_time: float,
-        snapshot_lock: asyncio.Lock,
     ):
         self.question = question
         self.user_id = user_id
@@ -85,10 +75,10 @@ class StreamingOrchestrator:
         self.image_base64 = image_base64
         self.request_id = request_id
         self.request_start_time = request_start_time
-        self._snapshot_lock = snapshot_lock
 
         self._first_token_sent = False
         self._full_answer = ""
+        self._has_profile = False
         self._state: dict = {
             "question": question,
             "user_id": user_id,
@@ -99,15 +89,6 @@ class StreamingOrchestrator:
             "sources": [],
             "retrieval_attempts": 0,
         }
-
-    async def _emit_progress(self, stage: str, message: str) -> str:
-        """生成 SSE progress 事件，用于渐进式反馈"""
-        payload = {
-            "type": "progress",
-            "stage": stage,
-            "message": message,
-        }
-        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
     async def _emit(self, payload) -> str:
         """生成 SSE data 行，记录首 token 延迟"""
@@ -159,7 +140,7 @@ class StreamingOrchestrator:
         return True, None
 
     async def _load_initial_state(self):
-        """加载用户档案和对话历史"""
+        """加载用户档案和对话历史（用于缓存决策与后置审查）"""
         memory_state = memory_load_node(self._state)
         if memory_state:
             self._state.update(memory_state)
@@ -265,54 +246,6 @@ class StreamingOrchestrator:
         if sources:
             return f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
         return ""
-
-    def _build_clarification_answer(self) -> str:
-        """构建澄清追问回复（替代低分时的自由生成，消除幻觉出口）
-
-        当检索文档评分极低或为空时，不进入 LLM 自由生成，
-        而是返回结构化的澄清追问，引导用户补充信息。
-        """
-        question = self.question
-        final_question = self._state.get("final_question") or question
-        rewritten = self._state.get("rewritten_query") or question
-
-        # 构建上下文提示：如果重写后的问题与原问题不同，说明依赖了对话历史
-        context_hint = ""
-        if final_question != question:
-            context_hint = f"您提到的「{question}」，我理解为「{final_question}」。"
-
-        return (
-            f"{context_hint}"
-            f"暂时没有在知识库中找到与您的问题直接相关的可靠资料。\n\n"
-            f"为了更准确地帮助您，请补充以下信息：\n"
-            f"1. 具体的症状表现（如头痛、发烧等）\n"
-            f"2. 症状持续时间\n"
-            f"3. 是否有已确诊的疾病\n"
-            f"4. 想了解的具体方面（如治疗方法、用药建议、注意事项等）\n\n"
-            f"如症状明显加重、持续不缓解或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
-        )
-
-    def _record_low_score_bad_case(self):
-        """记录低分 bad case（检索低分但未触发澄清 → 幻觉出口）"""
-        try:
-            from app.memory import get_long_term_memory
-            memory = get_long_term_memory()
-            user_id = self._state.get("user_id") or "anonymous"
-            memory.append_bad_case(
-                case_type="low_score_no_clarify",
-                original_query=self.question,
-                rewritten_query=self._state.get("rewritten_query") or self.question,
-                final_question=self._state.get("final_question") or self.question,
-                route="rag_low_score",
-                user_id=user_id,
-                thread_id=self.thread_id,
-                metadata={
-                    "grade_next": "direct_answer",
-                    "retrieved_docs_count": len(self._state.get("retrieved_docs") or []),
-                },
-            )
-        except Exception as e:
-            logger.warning(f"低分 bad case 记录失败：{e}")
 
     def _check_hallucination(self, answer: str):
         """检测答案中的医疗实体是否来自检索文档（忠实度检测）
@@ -430,180 +363,124 @@ class StreamingOrchestrator:
         except Exception as e:
             logger.warning(f"路由异常 bad case 记录失败：{e}")
 
-    async def _run_rag_pipeline(self, route_node: str):
-        """执行 RAG 流水线：症状解析 → 重写 → 检索 → 评分（含自纠正）
+    async def _run_native_graph(self, route_type: str):
+        """驱动原生 graph.astream，yield SSE 事件
 
-        使用 async generator 逐步 yield SSE progress 事件，
-        让前端在 2~3s 等待期间看到"正在分析...""正在检索..."等提示。
-        结果通过 self._rag_grade_next 属性传递。
+        stream_mode 组合：
+            - messages：LLM token（仅 answer_generation / direct_answer 会流式）
+            - updates：节点状态更新（用于捕获知识检索后的 sources）
+            - custom：get_stream_writer 事件（图片分析摘要）
+
+        快照更新由 graph 内 should_update_snapshot -> update_snapshot 原生处理，
+        对话历史由 checkpointer 自动持久化（节点返回 messages）。
         """
-        # 阶段1：症状解析
-        if route_node == "symptom_analysis":
-            yield await self._emit_progress("analyzing", "正在分析您的症状...")
-            symptom_state = symptom_analysis_node(self._state)
-            if symptom_state:
-                self._state.update(symptom_state)
+        graph = await get_graph()
 
-        # 阶段2：查询重写
-        rewrite_state = query_rewrite_node(self._state)
-        if rewrite_state:
-            self._state.update(rewrite_state)
-
-        # 阶段2.5：长问题拆解（v9.6 新增）
-        from app.graph.nodes.nodes import question_decompose_node
-        decompose_state = question_decompose_node(self._state)
-        if decompose_state:
-            self._state.update(decompose_state)
-
-        # 阶段3：知识检索
-        yield await self._emit_progress("searching", "正在检索医学知识库...")
-        retrieval_state = knowledge_retrieval_node(self._state)
-        if retrieval_state:
-            self._state.update(retrieval_state)
-
-        # 阶段4：文档评分
-        grade_command = grade_documents_node(self._state)
-        grade_update = getattr(grade_command, "update", None) or {}
-        if grade_update:
-            self._state.update(grade_update)
-
-        grade_next = getattr(grade_command, "goto", "answer_generation")
-        logger.info(
-            f"文档评分完成：request_id={self.request_id}, thread_id={self.thread_id}, "
-            f"next_node={grade_next}, docs={len(self._state.get('retrieved_docs') or [])}"
-        )
-
-        # 自纠正：文档不相关时重写重试一次（含振荡检测）
-        if grade_next == "query_rewrite":
-            self._state["retrieval_attempts"] = self._state.get("retrieval_attempts", 0) + 1
-
-            yield await self._emit_progress("rewriting", "正在优化查询，重新检索...")
-            rewrite_state = query_rewrite_node(self._state)
-            if rewrite_state:
-                self._state.update(rewrite_state)
-
-            yield await self._emit_progress("searching", "正在重新检索医学知识库...")
-            retrieval_state = knowledge_retrieval_node(self._state)
-            if retrieval_state:
-                self._state.update(retrieval_state)
-
-            grade_command = grade_documents_node(self._state)
-            grade_update = getattr(grade_command, "update", None) or {}
-            if grade_update:
-                self._state.update(grade_update)
-            grade_next = getattr(grade_command, "goto", "answer_generation")
-
-        # 阶段5：即将生成答案
-        yield await self._emit_progress("generating", "正在为您生成建议...")
-
-        # 传递结果
-        self._rag_grade_next = grade_next
-
-    async def _save_history(self):
-        """保存对话历史到 checkpointer，触发后台快照更新"""
-        try:
-            graph = await get_graph()
-            checkpoint_config = {"configurable": {"thread_id": self.thread_id}}
-
-            # 追加用户消息
-            await graph.aupdate_state(
-                checkpoint_config,
-                {"messages": [HumanMessage(content=self.question)]},
-                as_node="memory_load",
-            )
-
-            # 追加 AI 回答
-            if self._full_answer:
-                await graph.aupdate_state(
-                    checkpoint_config,
-                    {"messages": [AIMessage(content=self._full_answer)]},
-                    as_node="answer_generation",
-                )
-
-            # 后台快照更新（不阻塞响应）
-            asyncio.create_task(self._background_snapshot_update(graph, checkpoint_config))
-            logger.info("对话历史已保存")
-        except Exception as e:
-            logger.warning(f"保存对话历史失败（不影响当前回答）：{e}")
-
-    async def _background_snapshot_update(self, graph, checkpoint_config):
-        """后台异步更新临床快照"""
-        try:
-            await asyncio.wait_for(self._snapshot_lock.acquire(), timeout=0.01)
-        except asyncio.TimeoutError:
-            logger.info(f"快照更新已在进行中，跳过本次（thread_id={self.thread_id}）")
-            return
-
-        try:
-            state_snapshot = await graph.aget_state(checkpoint_config)
-            if not state_snapshot or not state_snapshot.values:
-                return
-
-            bg_state = {
-                "messages": state_snapshot.values.get("messages", []),
-                "clinical_checkpoint": state_snapshot.values.get("clinical_checkpoint"),
+        config = {
+            "configurable": {
+                "thread_id": self.thread_id,
+                "user_id": self.user_id,
             }
+        }
+        input_state = {
+            "question": self.question,
+            "user_id": self.user_id,
+            "image_base64": self.image_base64,
+            "thread_id": self.thread_id,
+            "request_id": self.request_id,
+        }
 
-            snapshot_decision = should_update_snapshot(bg_state)
-            if snapshot_decision != "update_snapshot":
-                logger.info("快照已由前次任务处理，无需重复更新")
-                return
+        self._full_answer = ""
+        sources_emitted = False
 
-            logger.info("后台触发临床状态快照更新")
-            snapshot_result = update_clinical_snapshot_node(bg_state)
-            if snapshot_result:
-                await graph.aupdate_state(
-                    checkpoint_config,
-                    snapshot_result,
-                    as_node="update_snapshot",
-                )
-                removed = len(snapshot_result.get("messages", []))
-                logger.info(f"临床状态快照已更新，删除 {removed} 条早期消息")
-        except Exception as e:
-            logger.warning(f"后台快照更新失败（不影响后续对话）：{e}")
-        finally:
-            self._snapshot_lock.release()
+        async for mode, data in graph.astream(
+            input_state,
+            config,
+            stream_mode=["messages", "updates", "custom"],
+        ):
+            if mode == "messages":
+                # data = (message_chunk, metadata)
+                chunk, _metadata = data
+                token = chunk.content if isinstance(chunk.content, str) else ""
+                if token:
+                    self._full_answer += token
+                    yield await self._emit(token)
+
+            elif mode == "custom":
+                # data = get_stream_writer 传入的值（图片分析摘要等）
+                if isinstance(data, str) and data:
+                    yield await self._emit(data)
+
+            elif mode == "updates":
+                # data = {node_name: state_update}
+                for node_name, update in (data or {}).items():
+                    if node_name == "knowledge_retrieval" and not sources_emitted:
+                        docs = update.get("retrieved_docs")
+                        if docs:
+                            sources_event = self._emit_sources_event(docs)
+                            if sources_event:
+                                yield sources_event
+                                sources_emitted = True
+
+        # 流式结束后，读取最终状态（处理无 token 流出的场景：问候/澄清/拒答/无文档）
+        final_state = await graph.aget_state(config)
+        if final_state and final_state.values:
+            self._state.update(final_state.values)
+
+        final_answer = self._state.get("final_answer")
+
+        # 无 token 流出时（快速问候 / 澄清追问 / 拒答 / 无检索文档），直接发送最终答案
+        if not self._full_answer and final_answer:
+            self._full_answer = final_answer
+            yield await self._emit(final_answer)
+
+        # 后置安全审查：仅当 graph 未内置 safety_check（ENABLE_SAFETY_CHECK=False）时执行
+        cfg = get_config()
+        if not getattr(cfg, "ENABLE_SAFETY_CHECK", True) and self._full_answer:
+            can_cache, revision_sse = await self._run_safety_review()
+            if revision_sse:
+                yield revision_sse
+            if can_cache and not self._has_profile:
+                _save_answer_cache(self.question, self._full_answer)
+            self._check_hallucination(self._full_answer)
+
+        # 检索类路径且无文档召回 → 记录 bad case
+        if route_type in ("symptom_analysis", "query_rewrite") and not self._state.get("retrieved_docs"):
+            self._record_retrieval_miss()
 
     async def run(self):
         """主入口：执行完整的流式编排，yield SSE 事件字符串"""
         try:
-            # 阶段 1：加载初始状态
+            # 阶段 1：加载初始状态（档案 + 历史）
             await self._load_initial_state()
+            self._has_profile = bool(self._state.get("user_profile"))
 
-            has_profile = bool(self._state.get("user_profile"))
-
-            # 阶段 2：路由优先 → 按路由类型决定缓存策略
-            route_command = None
+            # 阶段 2：路由 + 缓存检查（决定是否走 graph）
             cached_docs = None
             cached_answer = None
 
             if self.image_base64:
-                route_command = router_node(self._state)
+                # 图片问诊：跳过缓存，直接走 graph（vision 路径无缓存语义）
+                route_type = "vision_analysis"
             else:
-                cache_check_start = time.time()
-
-                # 先跑路由（规则+上下文 0ms，LLM 1-2s）
                 route_command = await self._run_route_sync()
                 route_type = getattr(route_command, "goto", "direct_answer") if route_command else "direct_answer"
 
-                # 按路由类型决定缓存深度，避免无意义的 embedding API 调用
-                # symptom/direct_answer：追问高度个性化，语义缓存几乎不可能命中 → 仅 L0
-                # knowledge：知识查询常重复 → L0 + L2 语义缓存
-                if route_type == "knowledge":
-                    cached_docs, cached_answer = await self._check_cache(has_profile)
-                elif not has_profile:
+                if route_type == "query_rewrite":
+                    # knowledge：知识查询常重复 → L0 + L2 语义缓存
+                    cached_docs, cached_answer = await self._check_cache(self._has_profile)
+                elif not self._has_profile:
                     # symptom/general: 只查 L0 答案缓存（无需 embedding API）
                     cached_answer = await self._check_l0_cache()
 
-                cache_check_ms = (time.time() - cache_check_start) * 1000
-                logger.info(f"路由+缓存耗时：{cache_check_ms:.2f}ms（route={route_type}）")
-
             # 阶段 3：按缓存/路由结果分发处理
             if cached_answer:
+                # L0 答案缓存命中
                 self._full_answer = cached_answer
                 yield await self._emit(cached_answer)
 
             elif cached_docs:
+                # L2 语义缓存命中：复用检索文档，直接流式生成
                 self._state["retrieved_docs"] = cached_docs
                 self._state["rewritten_query"] = self.question
                 logger.info(
@@ -621,97 +498,19 @@ class StreamingOrchestrator:
                     can_cache, revision_sse = await self._run_safety_review()
                     if revision_sse:
                         yield revision_sse
-                    if can_cache and not has_profile:
+                    if can_cache and not self._has_profile:
                         _save_answer_cache(self.question, self._full_answer)
                     self._check_hallucination(self._full_answer)
 
             else:
-                next_node = (
-                    getattr(route_command, "goto", "direct_answer")
-                    if route_command
-                    else "direct_answer"
-                )
+                # 缓存 miss：驱动原生 graph.astream
+                self._check_route_misclassification(route_type)
                 logger.info(
                     f"流式请求路由完成：request_id={self.request_id}, "
-                    f"thread_id={self.thread_id}, next_node={next_node}"
+                    f"thread_id={self.thread_id}, route={route_type}"
                 )
-
-                if next_node == "direct_answer":
-                    self._check_route_misclassification(next_node)
-                    self._full_answer = ""
-                    async for token in stream_direct_answer(self._state):
-                        self._full_answer += token
-                        yield await self._emit(token)
-                    if self._full_answer:
-                        can_cache, revision_sse = await self._run_safety_review()
-                        if revision_sse:
-                            yield revision_sse
-                        if can_cache and not has_profile:
-                            _save_answer_cache(self.question, self._full_answer)
-
-                elif next_node == "vision_analysis":
-                    logger.info(
-                        f"开始流式图片问诊：request_id={self.request_id}, "
-                        f"thread_id={self.thread_id}"
-                    )
-                    self._full_answer = ""
-                    async for token in stream_vision_answer(self._state):
-                        self._full_answer += token
-                        yield await self._emit(token)
-                    if self._full_answer:
-                        can_cache, revision_sse = await self._run_safety_review()
-                        if revision_sse:
-                            yield revision_sse
-
-                else:
-                    # RAG 流水线（含渐进式进度反馈）
-                    self._rag_grade_next = None
-                    async for sse_event in self._run_rag_pipeline(next_node):
-                        yield sse_event
-                    grade_next = self._rag_grade_next
-
-                    if grade_next == "answer_generation" and self._state.get("final_answer"):
-                        self._full_answer = self._state["final_answer"]
-                        yield await self._emit(self._full_answer)
-                        can_cache, revision_sse = await self._run_safety_review()
-                        if revision_sse:
-                            yield revision_sse
-                        if can_cache and not has_profile:
-                            _save_answer_cache(self.question, self._full_answer)
-
-                    elif self._state.get("retrieved_docs"):
-                        logger.info(
-                            f"开始流式生成 RAG 答案：request_id={self.request_id}, "
-                            f"thread_id={self.thread_id}"
-                        )
-                        sources_event = self._emit_sources_event(
-                            self._state.get("retrieved_docs", [])
-                        )
-                        if sources_event:
-                            yield sources_event
-                        self._full_answer = ""
-                        async for token in stream_answer_generation(self._state):
-                            self._full_answer += token
-                            yield await self._emit(token)
-                        if self._full_answer:
-                            can_cache, revision_sse = await self._run_safety_review()
-                            if revision_sse:
-                                yield revision_sse
-                            if can_cache and not has_profile:
-                                _save_answer_cache(self.question, self._full_answer)
-                            self._check_hallucination(self._full_answer)
-
-                    else:
-                        # 无检索文档 → 澄清追问而非自由生成（消除幻觉出口）
-                        logger.info(
-                            f"无检索文档，返回澄清追问：request_id={self.request_id}, "
-                            f"thread_id={self.thread_id}"
-                        )
-                        self._record_low_score_bad_case()
-                        self._record_retrieval_miss()
-                        clarification = self._build_clarification_answer()
-                        self._full_answer = clarification
-                        yield await self._emit(clarification)
+                async for sse_event in self._run_native_graph(route_type):
+                    yield sse_event
 
             # 阶段 4：收尾
             total_elapsed_ms = (time.time() - self.request_start_time) * 1000
@@ -726,17 +525,6 @@ class StreamingOrchestrator:
                 "total_elapsed_ms": round(total_elapsed_ms, 2),
             }
             yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
-
-            await self._save_history()
-
-            # 档案提取（回答后异步，不阻塞用户）
-            try:
-                profile_state = profile_extraction_node(self._state)
-                if profile_state:
-                    self._state.update(profile_state)
-                    logger.info(f"档案提取完成（回答后）：request_id={self.request_id}")
-            except Exception as profile_err:
-                logger.warning(f"档案提取失败（不影响回答）：{profile_err}")
 
         except Exception as e:
             logger.error(

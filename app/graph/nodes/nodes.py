@@ -25,6 +25,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 from langgraph.types import Command
 
 from app.core.app_logging import get_logger
@@ -2010,25 +2012,17 @@ def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, A
     return messages
 
 
-@timing_decorator("答案生成")
-def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """答案生成节点
+@async_timing_decorator("答案生成")
+async def answer_generation_node(state: MedicalAssistantState, config: RunnableConfig) -> Dict[str, Any]:
+    """答案生成节点（v9.18 改为异步流式）
 
     功能描述：
         基于检索到的文档生成用户友好的医疗答案
         这是RAG流程的生成节点，负责答案生成
 
-    Args：
-        state：当前状态，包含question和retrieved_docs字段
-
-    Returns：
-        Dict[str, Any]：需要更新的状态字段
-
-    设计理念：
-        1、RAG生成：结合检索到的文档生成答案
-        2、用户友好：生成易于理解的答案
-        3、安全提醒：添加必要的医疗安全提醒
-        4、结构化输出：生成清晰的答案结构
+    v9.18 (P0-1)：改为 async + get_llm(streaming=True).astream()，
+    使 token 能通过 graph.astream(stream_mode="messages") 原生流出，
+    同时兼容非流式 ainvoke（内部累加后一次性返回 final_answer）。
     """
     logger.info("答案生成节点开始执行")
 
@@ -2063,20 +2057,27 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
             symptoms=state.get("symptoms"),
         )
 
-        llm = get_llm()
+        llm = get_llm(streaming=True)
         start_time = time.time()
-        # v9.1: prompt 现在是 List[BaseMessage]（ChatPromptTemplate 产出）
-        # ChatOpenAI.invoke() 同时支持 str 和 List[BaseMessage]
-        response = llm.invoke(prompt)
-        answer = response.content.strip()
+        full_answer = ""
+        chunks = []
+
+        # 显式传入 config，确保 Python < 3.11 下也能被 messages 模式捕获 token
+        async for chunk in llm.astream(prompt, config=config):
+            chunks.append(chunk)
+            token = chunk.content if isinstance(chunk.content, str) else ""
+            if token:
+                full_answer += token
+
+        answer = full_answer.strip()
         generation_time = (time.time() - start_time) * 1000
 
-        # v9.0: Token 用量自动采集
+        # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
         try:
-            from app.core.token_tracker import track_tokens
-            track_tokens(
+            from app.core.token_tracker import track_stream_tokens
+            track_stream_tokens(
                 node_name="答案生成",
-                response=response,
+                chunks=chunks,
                 request_id=state.get("request_id", ""),
                 thread_id=state.get("thread_id", ""),
             )
@@ -2104,7 +2105,7 @@ def answer_generation_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "final_answer": "抱歉，生成答案时出现错误。",
             "error": str(e),
             "messages": [
-                HumanMessage(content=question),
+                HumanMessage(content=original_question),
                 AIMessage(content="抱歉，生成答案时出现错误。")
             ]
         }
@@ -2421,6 +2422,10 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
         rag_query = _build_rag_query_from_vision(vision_result, question)
         logger.info(f"图片问诊构造RAG查询：{rag_query}")
 
+        # v9.18: 通过 get_stream_writer 流式输出图片分析摘要（原生流式）
+        # 非流式上下文（ainvoke）下 get_stream_writer 为 no-op，静默降级
+        _emit_vision_summary(vision_result)
+
         # 将结构化提取结果和RAG查询写入 state，交给后续 RAG 管线
         return Command(
             update={
@@ -2657,119 +2662,62 @@ def _build_rag_query_from_vision(vision_result: VisionAnalysisOutput,
     return " ".join(parts)
 
 
-async def stream_vision_answer(state: MedicalAssistantState):
-    """流式图片问诊（异步生成器）
+def _build_vision_summary(vision_result: VisionAnalysisOutput) -> str:
+    """构建图片分析摘要文本（图片识别 + 提取数据 + 分析方向）
 
-    方案C下的流式模式：
-    - 非流式节点 vision_analysis_node 已完成结构化提取 + RAG查询构造
-    - 流式模式下，VLM提取仍然是非流式的（需要完整JSON）
-    - RAG生成部分复用主RAG管线的流式输出
+    v9.18 (P0-1)：原 stream_vision_answer 中的摘要逻辑提取为纯函数，
+    由 vision_analysis_node 通过 get_stream_writer 流式输出。
     """
-    logger.info("流式图片问诊节点开始执行（方案C）")
+    summary_parts = []
+    if vision_result.objective_description:
+        summary_parts.append(f"📷 图片识别：{vision_result.objective_description}")
+    if vision_result.extracted_data:
+        data_lines = []
+        for entry in vision_result.extracted_data[:8]:
+            name = entry.get("name", "")
+            value = entry.get("value", "")
+            unit = entry.get("unit", "")
+            reference = entry.get("reference", "")
+            src = entry.get("source", "")
+            tag = "✓" if src == "ocr_verified" else ""
+            line = f"  • {name}: {value}{unit}"
+            if reference:
+                line += f"（参考{reference}）"
+            line += tag
+            data_lines.append(line)
+        summary_parts.append("📋 提取数据：\n" + "\n".join(data_lines))
+    if vision_result.possible_directions:
+        summary_parts.append("🔍 分析方向：" + "、".join(vision_result.possible_directions[:3]))
 
-    question = state.get("question", "")
-    image_base64 = state.get("image_base64", "")
+    if not summary_parts:
+        return ""
+    return "\n\n".join(summary_parts) + "\n\n---\n\n"
 
-    if not image_base64:
-        yield "抱歉，未能接收到您的图片，请重新上传。"
-        return
 
+def _emit_vision_summary(vision_result: VisionAnalysisOutput) -> None:
+    """通过 get_stream_writer 流式输出图片分析摘要（custom 事件）
+
+    非流式上下文（如 ainvoke）下 get_stream_writer 为 no-op，静默降级。
+    """
     try:
-        # Step 1: VLM结构化提取（非流式，需要完整JSON）
-        vision_result = _vlm_structured_extract(image_base64, question)
-
-        # Step 2: OCR校准
-        data_types = {"lab_report", "prescription", "medication_label"}
-        if vision_result.image_type in data_types and vision_result.extracted_data:
-            ocr_data = _ocr_extract_from_base64(image_base64)
-            if ocr_data:
-                vision_result = _merge_ocr_into_vision(vision_result, ocr_data)
-
-        # Step 3: 不确定性 → 直接追问
-        if vision_result.needs_followup and vision_result.followup_question:
-            yield vision_result.followup_question
-            return
-
-        if vision_result.confidence == "low":
-            yield "图片较为模糊，难以准确识别。建议您重新拍摄一张更清晰的照片，或者用文字描述您的症状和问题。"
-            return
-
-        # Step 4: 构造RAG查询 → 流式调用RAG管线
-        rag_query = _build_rag_query_from_vision(vision_result, question)
-        logger.info(f"流式图片问诊构造RAG查询：{rag_query}")
-
-        # 流式输出图片分析摘要
-        summary_parts = []
-        if vision_result.objective_description:
-            summary_parts.append(f"📷 图片识别：{vision_result.objective_description}")
-        if vision_result.extracted_data:
-            data_lines = []
-            for entry in vision_result.extracted_data[:8]:
-                name = entry.get("name", "")
-                value = entry.get("value", "")
-                unit = entry.get("unit", "")
-                reference = entry.get("reference", "")
-                src = entry.get("source", "")
-                tag = "✓" if src == "ocr_verified" else ""
-                line = f"  • {name}: {value}{unit}"
-                if reference:
-                    line += f"（参考{reference}）"
-                line += tag
-                data_lines.append(line)
-            summary_parts.append("📋 提取数据：\n" + "\n".join(data_lines))
-        if vision_result.possible_directions:
-            summary_parts.append("🔍 分析方向：" + "、".join(vision_result.possible_directions[:3]))
-
-        yield "\n\n".join(summary_parts) + "\n\n---\n\n"
-
-        # Step 5: 流式 RAG 生成（复用检索+生成管线）
-        from app.rag.hybrid_retriever import get_hybrid_retriever
-        from app.graph.nodes.prompts import RAG_ANSWER_PROMPT
-
-        retriever = get_hybrid_retriever(k=5, alpha=0.5, use_reranker=True, rerank_top_k=8)
-        docs = retriever.invoke(rag_query)
-
-        if not docs:
-            yield "抱歉，未能从知识库中找到与图片内容相关的参考信息。"
-            return
-
-        # 构建上下文
-        context_parts = []
-        for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "未知来源")
-            context_parts.append(f"[文档{i}]（来源：{source}）\n{doc.page_content}")
-        context = "\n\n".join(context_parts)
-
-        # 使用 RAG Prompt 流式生成
-        llm = get_llm(streaming=True)
-        prompt = RAG_ANSWER_PROMPT.format_messages(
-            frozen_profile_section="",
-            context=context,
-            time_facts_section="",
-            checkpoint_section="",
-            history_section="",
-            question=rag_query,
-            followup_section="",
-        )
-
-        async for chunk in llm.astream(prompt):
-            if hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
-
-    except Exception as e:
-        logger.error(f"流式图片问诊失败：{str(e)}")
-        yield "抱歉，图片解读遇到了问题，请稍后重试。"
+        writer = get_stream_writer()
+        summary = _build_vision_summary(vision_result)
+        if summary:
+            writer(summary)
+    except Exception:
+        pass
 
 
-@timing_decorator("同步直接回答")
-def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
-    """直接回答节点
+@async_timing_decorator("直接回答")
+async def direct_answer_node(state: MedicalAssistantState, config: RunnableConfig) -> Dict[str, Any]:
+    """直接回答节点（v9.18 改为异步流式）
+
     功能描述：
         对于一般性问题，不需要检索知识库，直接调用llm回复
         优化：简单问候/寒暄直接返回预设回复，不调用LLM
 
-    Agrs：
-        state：当前状态，包含question字段
+    v9.18 (P0-1)：改为 async + get_llm(streaming=True).astream()，
+    使 token 能通过 graph.astream(stream_mode="messages") 原生流出。
     """
     logger.info("直接回答节点开始执行")
 
@@ -2794,16 +2742,25 @@ def direct_answer_node(state: MedicalAssistantState) -> Dict[str, Any]:
             user_profile=user_profile,
             state=state,
         )
-        llm = get_llm()
-        response = llm.invoke(prompt)
-        answer = response.content.strip()
+        llm = get_llm(streaming=True)
+        full_answer = ""
+        chunks = []
 
-        # v9.0: Token 用量自动采集
+        # 显式传入 config，确保 Python < 3.11 下也能被 messages 模式捕获 token
+        async for chunk in llm.astream(prompt, config=config):
+            chunks.append(chunk)
+            token = chunk.content if isinstance(chunk.content, str) else ""
+            if token:
+                full_answer += token
+
+        answer = full_answer.strip()
+
+        # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
         try:
-            from app.core.token_tracker import track_tokens
-            track_tokens(
+            from app.core.token_tracker import track_stream_tokens
+            track_stream_tokens(
                 node_name="直接回答",
-                response=response,
+                chunks=chunks,
                 request_id=state.get("request_id", ""),
                 thread_id=state.get("thread_id", ""),
             )
@@ -3764,46 +3721,3 @@ async def stream_answer_generation(state: MedicalAssistantState):
     except Exception as e:
         logger.error(f"流式生成失败：{str(e)}")
         yield "抱歉，生成答案时出现错误"
-
-
-async def stream_direct_answer(state: MedicalAssistantState):
-    """流式直接回答节点
-    优化：简单问候/寒暄直接返回预设回复，不调用LLM
-    """
-    logger.info("流式直接回答节点开始执行")
-    start_time=time.time()
-
-    question = state.get("question", "")
-    user_profile = state.get("user_profile")
-
-    # 优化：简单问候直接返回（仅对原问题判断，不判断重写后的长问题）
-    quick_answer = _is_simple_greeting(question)
-    if quick_answer:
-        logger.info(f"简单问候直接返回，跳过LLM调用：{question}")
-        yield quick_answer
-        return
-
-    # 优先使用重写后的完整问题（含上下文）
-    final_q = state.get("final_question") or question
-    prompt = build_direct_answer_prompt(
-        question=final_q,
-        user_profile=user_profile,
-        state=state,
-    )
-
-    llm = get_llm(streaming=True)
-    full_answer = ""
-
-    try:
-        async for chunk in llm.astream(prompt):
-            token = chunk.content
-            if token:
-                full_answer += token
-                yield token
-
-        elapsed_time = (time.time() - start_time) * 1000
-        logger.info(f"流式生成完成，总长度：{len(full_answer)}字符，耗时：{elapsed_time:.2f}ms")
-
-    except Exception as e:
-        logger.error(f"流式直接回答失败：{str(e)}")
-        yield "您好，有什么可以帮助你的吗？"

@@ -56,6 +56,8 @@ class MedicalAssistantState(TypedDict):
     question: str
     user_id: Optional[str]
     image_base64: Optional[str]  # 图片base64编码（多模态问诊）
+    thread_id: Optional[str]     # 会话线程ID（checkpointer 键，同时供观测节点关联）
+    request_id: Optional[str]    # 请求ID（token 追踪 / 指标关联）
 
     # ===== LangGraph标准字段 =====
     messages: Annotated[List[BaseMessage], add_messages]
@@ -97,6 +99,8 @@ class InputSchema(TypedDict):
     question: str
     user_id: Optional[str]
     image_base64: Optional[str]  # 图片base64编码
+    thread_id: Optional[str]     # 会话线程ID
+    request_id: Optional[str]    # 请求ID
 
 
 class OutputSchema(TypedDict):
@@ -112,6 +116,8 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "question": question,
         "user_id": user_id,
         "image_base64": image_base64,
+        "thread_id": None,
+        "request_id": None,
         "messages": [],
         "final_answer": None,
         "warnings": [],

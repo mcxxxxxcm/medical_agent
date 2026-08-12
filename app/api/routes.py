@@ -47,16 +47,6 @@ from app.rag.loader import LOADERS
 
 logger = get_logger(__name__)
 
-# 快照更新锁，防止同一 thread 的并发快照更新导致竞态
-_snapshot_locks: Dict[str, asyncio.Lock] = {}
-
-
-def _get_snapshot_lock(thread_id: str) -> asyncio.Lock:
-    """获取指定线程的快照更新锁（懒创建）"""
-    if thread_id not in _snapshot_locks:
-        _snapshot_locks[thread_id] = asyncio.Lock()
-    return _snapshot_locks[thread_id]
-
 
 # Pydantic模型
 class ChatRequest(BaseModel):
@@ -162,13 +152,6 @@ async def lifespan(app: FastAPI):
             logger.info("本地模型预热完成")
     except Exception as e:
         logger.warning(f"本地模型预热失败（不影响功能，首次请求会稍慢）：{e}")
-
-    # 验证流式接口与 Graph 节点定义同步
-    try:
-        from app.graph.graph import validate_streaming_sync
-        validate_streaming_sync()
-    except Exception as e:
-        logger.warning(f"流式接口同步验证失败：{e}")
 
     # 启动 L1 本地缓冲后台 flush
     try:
@@ -405,7 +388,6 @@ async def stream(request: ChatRequest, http_request: Request):
         image_base64=request.image_base64,
         request_id=request_id,
         request_start_time=request_start_time,
-        snapshot_lock=_get_snapshot_lock(thread_id),
     )
 
     return StreamingResponse(

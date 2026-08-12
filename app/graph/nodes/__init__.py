@@ -80,8 +80,6 @@ from .nodes import (
     safety_check_node,
     should_update_snapshot,
     stream_answer_generation,
-    stream_direct_answer,
-    stream_vision_answer,
     strip_rag_documents_from_history,
     symptom_analysis_node,
     update_clinical_snapshot_node,

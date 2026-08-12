@@ -21,7 +21,6 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import uuid
-from typing import List, Literal
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
@@ -41,6 +40,7 @@ from app.graph.nodes import (
     direct_answer_node,
     vision_analysis_node,
     query_rewrite_node,
+    question_decompose_node,
     grade_documents_node,
     should_update_snapshot,
     update_clinical_snapshot_node
@@ -58,10 +58,8 @@ def build_graph() -> StateGraph:
     Returns:
         StateGraph: 未编译的工作流图构建器
 
-    ⚠️ 同步提醒：
-        流式接口 (app/api/routes.py) 手动编排节点调用顺序。
-        修改此图的节点或边时，必须同步更新 routes.py 中的流式处理逻辑。
-        启动时会自动运行 validate_streaming_sync() 检测不一致。
+    v9.18 (P0-1)：流式接口已迁移到原生 LangGraph 流式（graph.astream），
+    本图是唯一的节点编排来源，不再存在双维护问题。
     """
     builder = StateGraph(
         MedicalAssistantState,
@@ -80,6 +78,7 @@ def build_graph() -> StateGraph:
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("safety_check", safety_check_node)
     builder.add_node("query_rewrite", query_rewrite_node)
+    builder.add_node("question_decompose", question_decompose_node)
     # L2会话层：临床状态快照（滑动窗口触发）
     builder.add_node("update_snapshot", update_clinical_snapshot_node)
     builder.add_edge("update_snapshot", END)
@@ -91,11 +90,12 @@ def build_graph() -> StateGraph:
     builder.add_edge("memory_load", "profile_extraction")
     builder.add_edge("profile_extraction", "router")
 
-    # symptom 路径：router -> symptom_analysis -> query_rewrite -> knowledge_retrieval
+    # symptom 路径：router -> symptom_analysis -> query_rewrite -> question_decompose -> knowledge_retrieval
     builder.add_edge("symptom_analysis", "query_rewrite")
-    builder.add_edge("query_rewrite", "knowledge_retrieval")
+    builder.add_edge("query_rewrite", "question_decompose")
+    builder.add_edge("question_decompose", "knowledge_retrieval")
 
-    # knowledge 路径：router -> query_rewrite -> knowledge_retrieval
+    # knowledge 路径：router -> query_rewrite -> question_decompose -> knowledge_retrieval
 
     # general 路径：router -> direct_answer
 
@@ -202,48 +202,6 @@ def reset_graph() -> None:
     global _graph
     _graph = None
     logger.info("工作流图已重置")
-
-
-# 流式接口必须编排的节点名称集合（不含 memory_load/profile_extraction，它们在流式接口中单独处理）
-_STREAMING_REQUIRED_NODES = {
-    "router", "symptom_analysis", "query_rewrite",
-    "knowledge_retrieval", "grade_documents",
-    "answer_generation", "direct_answer", "vision_analysis",
-    "update_snapshot",
-}
-
-
-def validate_streaming_sync() -> List[str]:
-    """验证流式接口与 Graph 定义是否同步
-
-    检查 Graph 中定义的节点是否都在流式接口中被编排。
-    启动时自动调用，发现不一致时输出警告。
-
-    Returns:
-        不一致的节点名称列表（空列表表示完全同步）
-    """
-    builder = build_graph()
-    graph_nodes = set(builder.nodes.keys())
-
-    # 检查流式接口是否遗漏了 Graph 中的节点
-    missing_in_streaming = graph_nodes - _STREAMING_REQUIRED_NODES - {"memory_load", "profile_extraction", "safety_check"}
-
-    # 检查流式接口是否引用了 Graph 中不存在的节点
-    extra_in_streaming = _STREAMING_REQUIRED_NODES - graph_nodes
-
-    issues = []
-    if missing_in_streaming:
-        issues.append(f"Graph 中存在但流式接口未编排的节点：{missing_in_streaming}")
-    if extra_in_streaming:
-        issues.append(f"流式接口引用了 Graph 中不存在的节点：{extra_in_streaming}")
-
-    for issue in issues:
-        logger.warning(f"⚠️ 流式接口与 Graph 不同步：{issue}，请检查 app/api/routes.py")
-
-    if not issues:
-        logger.info("✅ 流式接口与 Graph 节点定义同步验证通过")
-
-    return issues
 
 
 async def run_graph(

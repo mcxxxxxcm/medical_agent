@@ -557,9 +557,9 @@ medical_assistant_agent/
 - [x] 查询重写轻量化
 - [x] 文档来源 SSE 元数据推送
 - [x] MinerU PDF 解析
-- [ ] 图片识别功能
-- [ ] RAGAS 自动评估
-- [ ] 并行检索架构
+- [x] 图片识别功能（图问诊已通过 image_base64 实现；`/api/upload/analyze` OCR 上传端点待补充）
+- [x] RAGAS 自动评估（四维指标 + 版本化 A/B 对比 + Bad Case 回归）
+- [x] 并行检索架构（多子问题 ThreadPoolExecutor 并行检索）
 - [ ] 全节点异步化
 - [ ] 多语言支持
 

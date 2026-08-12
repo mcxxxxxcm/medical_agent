@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>医疗AI助手系统架构拓扑图</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg: #0a0e1a;
+  --surface: #111827;
+  --surface2: #1a2235;
+  --border: #1e2d4a;
+  --border-glow: #2563eb22;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --text-dim: #475569;
+  --blue: #3b82f6;
+  --blue-light: #60a5fa;
+  --cyan: #06b6d4;
+  --green: #10b981;
+  --amber: #f59e0b;
+  --rose: #f43f5e;
+  --violet: #8b5cf6;
+  --teal: #14b8a6;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans SC', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ===== Header ===== */
+.header {
+  text-align: center;
+  padding: 48px 24px 32px;
+  position: relative;
+}
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 120px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+}
+.header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--blue-light), var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+.header p {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 300;
+  letter-spacing: 1px;
+}
+
+/* ===== Layout ===== */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+/* ===== Section ===== */
+.section {
+  margin-bottom: 48px;
+  animation: fadeUp 0.6s ease both;
+}
+.section:nth-child(1) { animation-delay: 0.1s; }
+.section:nth-child(2) { animation-delay: 0.2s; }
+.section:nth-child(3) { animation-delay: 0.3s; }
+.section:nth-child(4) { animation-delay: 0.4s; }
+.section:nth-child(5) { animation-delay: 0.5s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+.section-label .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ===== Flow Row ===== */
+.flow-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+
+/* ===== Node Card ===== */
+.node {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+.node:hover {
+  border-color: var(--blue);
+  box-shadow: 0 0 24px var(--border-glow);
+  transform: translateY(-2px);
+}
+.node-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.node-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.node-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.node-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+.tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 400;
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+/* ===== Arrow ===== */
+.arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 18px;
+  position: relative;
+}
+.arrow::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 8px; right: 8px;
+  height: 1px;
+  background: var(--border);
+}
+.arrow span {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+  padding: 0 4px;
+}
+
+/* ===== Big Arrow (between sections) ===== */
+.section-arrow {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  color: var(--text-dim);
+  font-size: 20px;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ===== Grid ===== */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+
+/* ===== Color variants ===== */
+.c-blue .node-icon { background: #1e3a5f; color: var(--blue-light); }
+.c-cyan .node-icon { background: #0e3740; color: var(--cyan); }
+.c-green .node-icon { background: #0e3728; color: var(--green); }
+.c-amber .node-icon { background: #3b2e0e; color: var(--amber); }
+.c-rose .node-icon { background: #3b0e1a; color: var(--rose); }
+.c-violet .node-icon { background: #2a1a4e; color: var(--violet); }
+.c-teal .node-icon { background: #0e3735; color: var(--teal); }
+
+/* ===== Split Flow ===== */
+.split-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.split-left, .split-right {
+  flex: 1;
+}
+.split-center {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.split-center .branch-line {
+  position: absolute;
+  top: 50%;
+  left: 0; right: 0;
+  height: 1px;
+  background: var(--border);
+}
+.split-center .branch-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--blue);
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== Pipeline ===== */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.3s;
+}
+.pipeline-step:hover {
+  border-color: var(--blue);
+  box-shadow: 0 0 16px var(--border-glow);
+}
+.pipeline-step .step-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blue);
+  background: #1e3a5f;
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pipeline-step .step-content {
+  flex: 1;
+}
+.pipeline-step .step-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pipeline-step .step-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pipeline-connector {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ===== Data Store ===== */
+.data-stores {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.store {
+  flex: 1;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  transition: all 0.3s;
+}
+.store:hover {
+  border-color: var(--blue);
+  box-shadow: 0 0 16px var(--border-glow);
+}
+.store-icon {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+.store-name {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.store-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ===== Feedback Loop ===== */
+.feedback-loop {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  position: relative;
+}
+.feedback-loop::before {
+  content: '闭环';
+  position: absolute;
+  top: -10px; left: 24px;
+  background: var(--bg);
+  padding: 0 8px;
+  font-size: 10px;
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.feedback-items {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: center;
+}
+.feedback-item {
+  text-align: center;
+}
+.feedback-item .fi-icon {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+.feedback-item .fi-text {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.feedback-arrow {
+  color: var(--text-dim);
+  font-size: 16px;
+}
+
+/* ===== Legend ===== */
+.legend {
+  margin-top: 48px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.legend-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.legend-color {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .flow-row { flex-direction: column; gap: 8px; }
+  .arrow { width: auto; height: 32px; }
+  .arrow::before { top: 50%; left: 50%; right: auto; width: 1px; height: 100%; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .split-flow { flex-direction: column; }
+  .split-center { width: auto; height: 32px; }
+  .feedback-items { flex-direction: column; gap: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>医疗AI助手 · 系统架构拓扑</h1>
+  <p>Medical Assistant RAG System Architecture</p>
+</div>
+
+<div class="container">
+
+  <!-- ===== 1. 数据录入层 ===== -->
+  <div class="section">
+    <div class="section-label"><span class="dot" style="background:var(--green)"></span>一、数据录入与知识库构建</div>
+    
+    <div class="flow-row">
+      <div class="node c-green">
+        <div class="node-icon">📄</div>
+        <div class="node-title">多格式文档上传</div>
+        <div class="node-desc">支持12种文件格式，管理后台Web界面上传</div>
+        <div class="node-tags">
+          <span class="tag">.pdf</span><span class="tag">.docx</span><span class="tag">.xlsx</span><span class="tag">.csv</span><span class="tag">.md</span><span class="tag">.txt</span><span class="tag">.png/.jpg</span>
+        </div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-green">
+        <div class="node-icon">⚙️</div>
+        <div class="node-title">智能解析引擎</div>
+        <div class="node-desc">按文件类型分发处理：MinerU解析PDF/DOCX，PaddleOCR识别扫描件/图片，pandas读取表格</div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-green">
+        <div class="node-icon">🏷️</div>
+        <div class="node-title">元数据自动提取</div>
+        <div class="node-desc">四源交叉校验：文件名解析 → PDF属性 → LLM正文提取 → 文件系统时间，置信度分级写入</div>
+      </div>
+    </div>
+
+    <div class="section-arrow">↓</div>
+
+    <div class="flow-row">
+      <div class="node c-cyan">
+        <div class="node-icon">✂️</div>
+        <div class="node-title">父子分块策略</div>
+        <div class="node-desc">Parent(~2000字) + Child(~300字) 双层切片，保留章节结构</div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-cyan">
+        <div class="node-icon">🔢</div>
+        <div class="node-title">向量化 + 索引</div>
+        <div class="node-desc">智谱embedding-3向量化 → ChromaDB存储<br>BM25稀疏索引 → pickle缓存</div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-cyan">
+        <div class="node-icon">💾</div>
+        <div class="node-title">知识库落盘</div>
+        <div class="node-desc">向量库 + 稀疏索引 + 父子映射 + 元数据，四库一体</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 2. 用户交互与路由 ===== -->
+  <div class="section">
+    <div class="section-label"><span class="dot" style="background:var(--blue)"></span>二、用户交互与智能路由</div>
+
+    <div class="flow-row">
+      <div class="node c-blue">
+        <div class="node-icon">💬</div>
+        <div class="node-title">多模态输入</div>
+        <div class="node-desc">文字提问 + 图片问诊（base64编码传入）</div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-blue">
+        <div class="node-icon">👤</div>
+        <div class="node-title">用户档案加载</div>
+        <div class="node-desc">长期记忆(L1)：过敏史、既往病史、症状首发时间等跨会话持久信息</div>
+      </div>
+      <div class="arrow"><span>→</span></div>
+      <div class="node c-blue">
+        <div class="node-icon">🔀</div>
+        <div class="node-title">三层路由决策</div>
+        <div class="node-desc">规则层(0ms) → 上下文层(0ms) → LLM分类层(~1s)<br>分流至symptom/knowledge/general/vision四条路径</div>
+        <div class="node-tags">
+          <span class="tag">symptom</span><span class="tag">knowledge</span><span class="tag">general</span><span class="tag">vision</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 3. 核心处理管线 ===== -->
+  <div class="section">
+    <div class="section-label"><span class="dot" style="background:var(--violet)"></span>三、核心处理管线</div>
+
+    <div class="grid-2">
+      <!-- 左：文字路径 -->
+      <div>
+        <div style="font-size:12px;color:var(--blue-light);font-weight:600;margin-bottom:12px;letter-spacing:1px;">文字问诊路径</div>
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <div class="step-title">症状解析 + 口语化同义词替换</div>
+              <div class="step-desc">35+条口语→医学术语映射，如"拉肚子→腹泻"</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <div class="step-title">查询重写 + HyDE</div>
+              <div class="step-desc">生成FINAL完整问句 + SEARCH关键词 + HyDE假想答案</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <div class="step-title">混合检索（Dense + Sparse）</div>
+              <div class="step-desc">向量检索(K=5~8) + BM25稀疏检索 → RRF融合 → Reranker精排</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <div class="step-title">三层拒答 + 文档评分</div>
+              <div class="step-desc">时效过滤 → 版本去重 → 置信度评分(4维×时效×权威) → 分级路由</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+              <div class="step-title">RAG生成 + 引用标注</div>
+              <div class="step-desc">基于检索文档生成答案，关键事实标注[来源:文档名]</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：图片路径 -->
+      <div>
+        <div style="font-size:12px;color:var(--teal);font-weight:600;margin-bottom:12px;letter-spacing:1px;">图片问诊路径</div>
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#0e3735;color:var(--teal)">V1</div>
+            <div class="step-content">
+              <div class="step-title">VLM结构化提取（JSON输出）</div>
+              <div class="step-desc">glm-4v-plus识别图片类型，输出客观描述+可能方向+置信度</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#0e3735;color:var(--teal)">V2</div>
+            <div class="step-content">
+              <div class="step-title">OCR数值校准（仅数据类图片）</div>
+              <div class="step-desc">报告/处方/药盒 → PaddleOCR精确提取数值 → 注入VLM Prompt</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#0e3735;color:var(--teal)">V3</div>
+            <div class="step-content">
+              <div class="step-title">安全性校验</div>
+              <div class="step-desc">不确定内容追问 / 低置信度拦截 / 非医疗图片引导</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#0e3735;color:var(--teal)">V4</div>
+            <div class="step-content">
+              <div class="step-title">RAG检索生成</div>
+              <div class="step-desc">VLM提取信息构造查询 → 走文字路径Step3~5 → 知识库佐证回答</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 4. 安全与上下文 ===== -->
+  <div class="section">
+    <div class="section-label"><span class="dot" style="background:var(--amber)"></span>四、安全护栏 & 上下文管理</div>
+
+    <div class="grid-2">
+      <div>
+        <div style="font-size:12px;color:var(--amber);font-weight:600;margin-bottom:12px;letter-spacing:1px;">三层拒答机制</div>
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#3b2e0e;color:var(--amber)">R1</div>
+            <div class="step-content">
+              <div class="step-title">检索层：硬门槛 + 软过滤</div>
+              <div class="step-desc">时效过滤(过期剔除) + 权威加权 + 版本去重 + 置信度评分</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#3b2e0e;color:var(--amber)">R2</div>
+            <div class="step-content">
+              <div class="step-title">生成层：分级拒答</div>
+              <div class="step-desc">完全无匹配→拒答引导 / 信息不完整→部分回答+声明 / 多源冲突→展示分歧</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#3b2e0e;color:var(--amber)">R3</div>
+            <div class="step-content">
+              <div class="step-title">输出层：安全审查</div>
+              <div class="step-desc">规则引擎(0ms) + LLM深度审查(高风险触发) → pass/revise/block</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:12px;color:var(--violet);font-weight:600;margin-bottom:12px;letter-spacing:1px;">上下文管理</div>
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#2a1a4e;color:var(--violet)">C1</div>
+            <div class="step-content">
+              <div class="step-title">L1冻结层：用户档案</div>
+              <div class="step-desc">过敏史、既往病史、症状首发时间，跨会话永久保留</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#2a1a4e;color:var(--violet)">C2</div>
+            <div class="step-content">
+              <div class="step-title">L2会话层：临床快照</div>
+              <div class="step-desc">结构化JSON，70%窗口触发压缩，原文存档磁盘可回溯</div>
+            </div>
+          </div>
+          <div class="pipeline-connector">↓</div>
+          <div class="pipeline-step">
+            <div class="step-num" style="background:#2a1a4e;color:var(--violet)">C3</div>
+            <div class="step-content">
+              <div class="step-title">L3对话层：四层压缩</div>
+              <div class="step-desc">中间输出清除 → 大输出持久化 → 工具调用裁剪 → LLM摘要</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 5. 存储与闭环 ===== -->
+  <div class="section">
+    <div class="section-label"><span class="dot" style="background:var(--rose)"></span>五、存储基础设施 & 闭环优化</div>
+
+    <div class="data-stores">
+      <div class="store">
+        <div class="store-icon" style="color:var(--cyan)">🔮</div>
+        <div class="store-name">ChromaDB</div>
+        <div class="store-desc">向量存储<br>embedding-3维度<br>~1000 chunks</div>
+      </div>
+      <div class="store">
+        <div class="store-icon" style="color:var(--green)">📊</div>
+        <div class="store-name">BM25 Index</div>
+        <div class="store-desc">稀疏检索<br>pickle缓存<br>1005文档</div>
+      </div>
+      <div class="store">
+        <div class="store-icon" style="color:var(--amber)">🗄️</div>
+        <div class="store-name">SQLite</div>
+        <div class="store-desc">metrics.db<br>node_metrics<br>token_usage<br>refusal_logs<br>feedback</div>
+      </div>
+      <div class="store">
+        <div class="store-icon" style="color:var(--violet)">🧠</div>
+        <div class="store-name">PostgresStore</div>
+        <div class="store-desc">长期记忆<br>bad_cases<br>用户档案</div>
+      </div>
+      <div class="store">
+        <div class="store-icon" style="color:var(--rose)">⚡</div>
+        <div class="store-name">Redis</div>
+        <div class="store-desc">语义缓存(L2)<br>相似度≥0.92命中<br>LRU淘汰</div>
+      </div>
+      <div class="store">
+        <div class="store-icon" style="color:var(--blue)">📁</div>
+        <div class="store-name">磁盘归档</div>
+        <div class="store-desc">原文存档<br>大输出持久化<br>对话transcript</div>
+      </div>
+    </div>
+
+    <div style="height:24px"></div>
+
+    <div class="feedback-loop">
+      <div class="feedback-items">
+        <div class="feedback-item">
+          <div class="fi-icon">👎</div>
+          <div class="fi-text">用户负反馈</div>
+        </div>
+        <div class="feedback-arrow">→</div>
+        <div class="feedback-item">
+          <div class="fi-icon">🐛</div>
+          <div class="fi-text">Bad Case自动采集</div>
+        </div>
+        <div class="feedback-arrow">→</div>
+        <div class="feedback-item">
+          <div class="fi-icon">🔍</div>
+          <div class="fi-text">归因分析<br>路由/检索/生成/知识缺失</div>
+        </div>
+        <div class="feedback-arrow">→</div>
+        <div class="feedback-item">
+          <div class="fi-icon">🔧</div>
+          <div class="fi-text">定向修复<br>Prompt/阈值/同义词/文档</div>
+        </div>
+        <div class="feedback-arrow">→</div>
+        <div class="feedback-item">
+          <div class="fi-icon">✅</div>
+          <div class="fi-text">回归测试<br>黄金测试集验证</div>
+        </div>
+        <div class="feedback-arrow">→</div>
+        <div class="feedback-item">
+          <div class="fi-icon">📈</div>
+          <div class="fi-text">评估报告<br>Recall/F1/Faithfulness</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Legend ===== -->
+  <div class="legend">
+    <div class="legend-title">图例 LEGEND</div>
+    <div class="legend-items">
+      <div class="legend-item"><div class="legend-color" style="background:var(--green)"></div>数据录入</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--cyan)"></div>知识库构建</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--blue)"></div>用户交互</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--violet)"></div>核心管线</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--teal)"></div>图片路径</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--amber)"></div>安全护栏</div>
+      <div class="legend-item"><div class="legend-color" style="background:var(--rose)"></div>存储闭环</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
