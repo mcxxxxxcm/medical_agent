@@ -251,7 +251,7 @@ VISION_STRUCTURED_EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 - needs_followup: 图片模糊/不完整/类型不确定时设为 true
 - followup_question: 需要追问用户的具体问题
 
-用户问题：{question}"""),
+用户问题：{question}"""},
         {"type": "image_url", "image_url": "{image_url}"},
     ]),
 ])
@@ -285,7 +285,7 @@ VISION_OCR_INJECTED_PROMPT = ChatPromptTemplate.from_messages([
   "followup_question": null
 }}
 
-用户问题：{question}"""),
+用户问题：{question}"""},
         {"type": "image_url", "image_url": "{image_url}"},
     ]),
 ])

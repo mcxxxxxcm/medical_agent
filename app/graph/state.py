@@ -102,6 +102,22 @@ class InputSchema(TypedDict):
     thread_id: Optional[str]     # 会话线程ID
     request_id: Optional[str]    # 请求ID
 
+    # 以下中间字段允许调用方显式重置，防止同一 thread 的 checkpointer
+    # 残留上一轮状态导致串台（典型：上轮 final_answer 被下轮问题复用）
+    final_answer: Optional[str]
+    retrieved_docs: Optional[List[Document]]
+    all_retrieved_docs: Optional[List[Document]]
+    rewritten_query: Optional[str]
+    final_question: Optional[str]
+    symptoms: Optional[Dict[str, Any]]
+    question_type: Optional[str]
+    retrieval_attempts: Optional[int]
+    retrieval_confidence: Optional[float]
+    refusal_type: Optional[str]
+    sub_questions: Optional[List[str]]
+    hyde_answer: Optional[str]
+    error: Optional[str]
+
 
 class OutputSchema(TypedDict):
     """输出Schema - 返回给用户"""

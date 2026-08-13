@@ -1120,3 +1120,23 @@ Traceback (most recent call last):
     用户问题：{question}"""),
                       ^
 SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on line 226
+2026-08-13 04:01:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:54 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:55 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:56 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:56 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:01:56 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:02:02 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:02:03 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 04:02:03 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 17:57:11 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 17:57:14 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:22 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:22 - app.rag.hybrid_retriever - ERROR - Dense 检索失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:27 - app.graph.nodes.nodes - ERROR - 答案生成失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-13 18:52:27 - app.graph.nodes.nodes - ERROR - 答案生成失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}

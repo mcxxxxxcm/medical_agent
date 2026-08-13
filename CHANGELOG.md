@@ -4,7 +4,7 @@
 
 ### 核心改进：消除双维护，graph.py 成为唯一节点编排来源
 
-**问题**：`StreamingOrchestrator`（`app/graph/streaming.py`）手动逐个调用节点（router → symptom_analysis → query_rewrite → question_decompose → knowledge_retrieval → grade_documents → answer_generation），与 `graph.py` 的边定义重复维护，容易漂移。
+**问题**：`StreamingOrchestrator`（`app/graph/streaming.py`）手动逐个调用节点（router → symptom\_analysis → query\_rewrite → question\_decompose → knowledge\_retrieval → grade\_documents → answer\_generation），与 `graph.py` 的边定义重复维护，容易漂移。
 
 **方案**：改为驱动 `graph.astream(stream_mode=["messages", "updates", "custom"])` 原生流式：
 
@@ -27,7 +27,7 @@
 
 ### 行为差异（迁移带来的已知变化）
 
-- **澄清追问文案**：无检索文档时由 `build_no_results_answer`（graph 内 grade_documents 节点）替代原 `_build_clarification_answer`
+- **澄清追问文案**：无检索文档时由 `build_no_results_answer`（graph 内 grade\_documents 节点）替代原 `_build_clarification_answer`
 - **档案提取时机**：由「回答后异步」改为「graph 内 pre-router」（`profile_extraction_node` 本就在 graph 中，且只依赖 question 不依赖 answer，无语义损失）
 - **进度事件移除**：`_emit_progress`（正在分析/检索/生成）不再发出；如需恢复可用 `get_stream_writer` 在节点内补发
 - **安全审查**：`ENABLE_SAFETY_CHECK=False`（默认）时由编排器后置审查；`=True` 时由 graph 内 `safety_check_node` 原生审查
@@ -39,6 +39,8 @@
 
 - **L2 语义缓存从未生效**：原 `_check_cache` 判断 `route_type == "knowledge"`，但 router 的 `goto` 实际是 `"query_rewrite"`，条件永不匹配 → 改为 `route_type == "query_rewrite"`，知识类查询现在能命中 L2 语义缓存
 - **答案生成异常处理**：修复 `answer_generation_node` except 分支引用未定义 `question` 变量（改为 `original_question`）
+- **启动阻塞：`build_conflict_answer` f-string 含反斜杠转义**：`nodes.py` 中 `f"- {c.get('source', '未...')}..."` 在 `{}` 表达式内出现 `\uXXXX` 转义，Python < 3.12 直接 SyntaxError 导致项目无法启动 → 将默认值提取到普通字符串变量后拼入 f-string
+- **启动阻塞：视觉 Prompt dict 漏闭合花括号**：`prompts.py` 的 `VISION_STRUCTURED_EXTRACT_PROMPT`（254 行）与 `VISION_OCR_INJECTED_PROMPT`（288 行）把 `{"type": "text", "text": """...""")` 的 dict 闭合 `}` 误写成 `)`，导致括号不匹配 SyntaxError → 修正为 `"""},`
 
 ## v9.17 - 上下文管理优化：动态压缩 + 原文存档
 

@@ -23,7 +23,11 @@
       "Bash(pip list *)",
       "Bash(/c/Users/86176/AppData/Local/Python/bin/python3.exe *)",
       "Bash(/c/Users/86176/AppData/Local/Python/bin/pip.exe list *)",
-      "Bash(/c/Users/86176/AppData/Local/Python/bin/pip3.exe list *)"
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/pip3.exe list *)",
+      "Read(//d/Agent/software/envs/my_medical_env/**)",
+      "Bash(/d/Agent/software/envs/my_medical_env/python.exe -m pip show langgraph chromadb)",
+      "Bash(/d/Agent/software/envs/my_medical_env/python.exe *)",
+      "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent /d/Agent/software/envs/my_medical_env/python.exe .claude/tmp_bench_rerank.py)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -3,10 +3,15 @@ import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
+from dotenv import load_dotenv
 
 # 先确定项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+# 将 .env 加载到环境变量，使任何模块都能用 os.getenv() 直接读取配置
+# 默认 override=False：不覆盖系统已有环境变量（如 Docker 注入的配置），优先级保持一致
+load_dotenv(ENV_FILE_PATH)
 
 
 class Settings(BaseSettings):
@@ -28,7 +33,7 @@ class Settings(BaseSettings):
     # MODEL_NAME: str = "glm-4.5-air"   # 备选：推理更强但首token 10-20s
     # MODEL_NAME: str = "glm-4"         # 备选：平衡型
     MODEL_URL: Optional[str] = None
-    MODEL_API_KEY: Optional[str] = None
+    MODEL_API_KEY: Optional[str] = os.getenv("ZHIPU_API_KEY")
     MODEL_TEMPERATURE: float = 0.2
     REWRITE_MODEL_NAME: Optional[str] = None  # 查询重写专用模型（留空则使用MODEL_NAME）
     SYMPTOM_MODEL_NAME: str = "glm-4-flash"  # 症状解析专用模型（快速轻量）

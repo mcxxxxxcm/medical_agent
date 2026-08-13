@@ -494,12 +494,11 @@
 
         if ((!question && !currentImageBase64) || isStreaming) return;
 
-        // 知识库更新状态检测（非阻断提示）
-        try {
-            const statusRes = await fetch(`${window.location.origin}/api/admin/kb/status`);
-            if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                if (statusData.update_status && statusData.update_status.updating) {
+        // 知识库更新状态检测（非阻断提示）：异步触发 + 2秒超时，绝不阻塞消息发送
+        fetch(`${window.location.origin}/api/admin/kb/status`, { signal: AbortSignal.timeout(2000) })
+            .then(statusRes => statusRes.ok ? statusRes.json() : null)
+            .then(statusData => {
+                if (statusData && statusData.update_status && statusData.update_status.updating) {
                     const tip = document.createElement('div');
                     tip.className = 'message assistant';
                     tip.style.background = '#fff7e6';
@@ -512,8 +511,8 @@
                     document.getElementById('messages').appendChild(tip);
                     setTimeout(() => tip.remove(), 5000);
                 }
-            }
-        } catch (e) {} // 非阻断，失败不影响发送
+            })
+            .catch(() => {}); // 非阻断，失败不影响发送
 
         const userId = document.getElementById('userId').value || 'default';
         const threadId = document.getElementById('threadId').value || null;

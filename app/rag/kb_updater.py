@@ -57,8 +57,28 @@ def compute_content_hash(content: str) -> str:
 
 # ===== Embedding 模型版本 =====
 
+_embedding_info_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+_EMBEDDING_INFO_TTL = 60  # 秒；避免高频轮询（如 /api/admin/kb/status）每次触发外部 embedding API
+
+
 def get_embedding_model_info() -> Dict[str, Any]:
-    """获取当前 Embedding 模型信息（用于元数据标注和一致性校验）"""
+    """获取当前 Embedding 模型信息（用于元数据标注和一致性校验）
+
+    带 TTL 缓存：embed_query("test") 会调用外部 embedding API（慢且不稳定，
+    日志中曾出现 40s 的超时重试），不应在每次轮询时都触发。
+    """
+    now = time.time()
+    if _embedding_info_cache["data"] is not None and now - _embedding_info_cache["ts"] < _EMBEDDING_INFO_TTL:
+        return _embedding_info_cache["data"]
+
+    info = _compute_embedding_model_info()
+    _embedding_info_cache["ts"] = now
+    _embedding_info_cache["data"] = info
+    return info
+
+
+def _compute_embedding_model_info() -> Dict[str, Any]:
+    """实际计算 Embedding 模型信息（无缓存）"""
     try:
         from app.core.embeddings import get_embeddings
         embeddings = get_embeddings()

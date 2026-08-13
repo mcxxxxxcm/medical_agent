@@ -453,7 +453,8 @@ def build_conflict_answer(question: str, conflicts: list) -> str:
     """构建多源冲突回答：展示分歧 + 建议核实"""
     conflict_lines = []
     for c in conflicts:
-        conflict_lines.append(f"- {c.get('source', '\u672a\u77e5\u6765\u6e90')}\uff1a{c.get('content', '')}")
+        source = c.get('source', '\u672a\u77e5\u6765\u6e90')
+        conflict_lines.append(f"- {source}\uff1a{c.get('content', '')}")
     conflict_text = "\n".join(conflict_lines)
     return (
         f"\u5173\u4e8e\u201c{question}\u201d\uff0c\u4e0d\u540c\u53c2\u8003\u6765\u6e90\u5b58\u5728\u5dee\u5f02\uff1a\n{conflict_text}\n\n"
@@ -2036,7 +2037,9 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
         logger.info("已注入用户上下文")
 
     try:
-        if existing_answer:
+        # 仅当本轮确实无检索文档（预生成兜底场景）时才复用缓存答案；
+        # 若本轮检索到文档但 final_answer 残留上轮值，必须强制重新生成，避免串台
+        if existing_answer and not retrieved_docs:
             logger.info("检测到预生成兜底答案，跳过 LLM 再生成")
             result = {
                 "final_answer": existing_answer,

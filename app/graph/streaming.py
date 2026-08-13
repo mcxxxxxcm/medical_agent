@@ -388,6 +388,21 @@ class StreamingOrchestrator:
             "image_base64": self.image_base64,
             "thread_id": self.thread_id,
             "request_id": self.request_id,
+            # 重置上轮残留的中间状态，防止 checkpointer 恢复旧值导致 final_answer 串台
+            # （如上一轮"肚子疼"的答案被下一轮"头痛"请求复用）
+            "final_answer": None,
+            "retrieved_docs": None,
+            "all_retrieved_docs": None,
+            "rewritten_query": None,
+            "final_question": None,
+            "symptoms": None,
+            "question_type": None,
+            "retrieval_attempts": 0,
+            "retrieval_confidence": None,
+            "refusal_type": None,
+            "sub_questions": None,
+            "hyde_answer": None,
+            "error": None,
         }
 
         self._full_answer = ""

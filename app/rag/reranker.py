@@ -41,6 +41,9 @@ RERANKER_MODELS = {
 DEFAULT_MODEL = RERANKER_MODELS["bge-v2-m3"]
 MAX_RERANK_DOC_CHARS = 200  # 头 134 + 尾 66，适配 max_length=256 的 token 窗口（~200字≈256 tokens）
 
+# ONNX 推理线程数：ONNX Runtime 默认用 4 线程，机器核数充足时提高到 8 可显著缩短 rerank 耗时
+ORT_INFERENCE_THREADS = 8
+
 
 # 简单的中文清洗规则 (去除多余空白、特殊符号)
 def clean_text(text: str) -> str:
@@ -105,7 +108,9 @@ class Reranker:
                 if not onnx_path.exists():
                     onnx_path = onnx_files[0]  # 使用找到的第一个
 
-                self._model = ort.InferenceSession(str(onnx_path), providers=['CPUExecutionProvider'])
+                sess_options = ort.SessionOptions()
+                sess_options.intra_op_num_threads = ORT_INFERENCE_THREADS
+                self._model = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=['CPUExecutionProvider'])
                 self._tokenizer = AutoTokenizer.from_pretrained(str(model_path))
             else:
                 # HuggingFace 在线模型
@@ -117,7 +122,9 @@ class Reranker:
                     repo_id=self.model_name,
                     filename="onnx/model.onnx"
                 )
-                self._model = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
+                sess_options = ort.SessionOptions()
+                sess_options.intra_op_num_threads = ORT_INFERENCE_THREADS
+                self._model = ort.InferenceSession(onnx_path, sess_options=sess_options, providers=['CPUExecutionProvider'])
                 self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
             self._available = True

@@ -237,6 +237,20 @@ async def run_graph(
     input_state = {
         "question": question,
         "user_id": user_id,
+        # 重置残留中间状态，防止同一 thread 复用上一轮 final_answer
+        "final_answer": None,
+        "retrieved_docs": None,
+        "all_retrieved_docs": None,
+        "rewritten_query": None,
+        "final_question": None,
+        "symptoms": None,
+        "question_type": None,
+        "retrieval_attempts": 0,
+        "retrieval_confidence": None,
+        "refusal_type": None,
+        "sub_questions": None,
+        "hyde_answer": None,
+        "error": None,
     }
 
     result = await graph.ainvoke(input_state, config)
