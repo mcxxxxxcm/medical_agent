@@ -16,6 +16,8 @@ import asyncio
 import json
 import time
 
+from langchain_core.messages import AIMessageChunk
+
 from app.cache.redis_cache import get_cache
 from app.cache.semantic_cache import get_semantic_cache
 from app.core.app_logging import get_logger
@@ -416,6 +418,11 @@ class StreamingOrchestrator:
             if mode == "messages":
                 # data = (message_chunk, metadata)
                 chunk, _metadata = data
+                # 只流式 LLM 实时 token（AIMessageChunk）。节点返回 messages 里的
+                # 完整 AIMessage/HumanMessage 会被 messages 模式额外 emit 一次，
+                # 必须跳过，否则答案会重复流出（问题+答案再次出现）。
+                if not isinstance(chunk, AIMessageChunk):
+                    continue
                 token = chunk.content if isinstance(chunk.content, str) else ""
                 if token:
                     self._full_answer += token
