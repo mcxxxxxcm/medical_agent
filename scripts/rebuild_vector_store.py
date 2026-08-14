@@ -27,6 +27,15 @@ def rebuild():
     print("开始重建向量数据库（父子索引版）")
     print("=" * 60)
 
+    # 0. 清理零停机重建指针：手动全量重建针对默认集合（base + langchain），
+    #    若残留 kb_active.json（指向影子集合），get_vector_store() 会被指针劫持到影子目录。
+    #    删除后应用下次加载回退到默认集合，本脚本重建的就是该默认集合。
+    import os
+    pointer = project_root / "data" / "kb_active.json"
+    if pointer.exists():
+        os.remove(pointer)
+        print(f"  已删除零停机指针 kb_active.json（回退到默认集合）")
+
     # 1. 加载文档
     print("\n[1/6] 加载医疗文档...")
     docs = load_medical_documents()
@@ -71,7 +80,12 @@ def rebuild():
 
     # 4. Child chunks 写入 Chroma 向量库
     print("\n[4/6] Child chunks 写入向量库...")
-    vector_store = get_vector_store(child_chunks, force_rebuild=True)
+    # 显式传入默认持久化目录：避免被 kb_active.json 指针劫持到影子集合目录
+    from app.core.config import get_config
+    _cfg = get_config()
+    vector_store = get_vector_store(
+        child_chunks, persist_directory=_cfg.PERSIST_DIRECTORY, force_rebuild=True
+    )
     print(f"  向量库创建完成！")
 
     # 5. Parent store 持久化到磁盘

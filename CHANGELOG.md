@@ -1,5 +1,36 @@
 # 系统优化更新日志
 
+## v9.22 - 知识库不停机重建：双集合机制真正生效
+
+### 问题
+
+v9.21 之前，全量重建知识库只有一条路：`scripts/rebuild_vector_store.py` 的 `force_rebuild` 路径——**删目录再建**。Windows 下运行中的服务锁住 `data/chroma_db` 的文件时直接失败（`PermissionError: WinError 32`），必须停服才能重建。
+
+项目里本有一套为不停机设计好的机制（`DualCollectionManager` + `/api/admin/kb/rebuild` 接口：影子集合 → 校验 → 原子切换指针 → 延迟清理），但**从未真正生效**，存在多个断点：
+
+1. **加载路径不读指针**：`switch_active_collection()` 写 `kb_active.json`（`active_persist_dir` 指向影子目录）并重置全局 manager，但 `get_vector_store()` 永远从 `config.PERSIST_DIRECTORY`（`data/chroma_db`）加载，**从不消费 `kb_active.json`** → 切了等于没切，应用继续读旧集合。
+2. **延迟清理误删基础目录**：首次切换时 `previous_persist_dir` 默认指向 `data/chroma_db` 根目录，5 分钟后 `schedule_cleanup_old_collection` 会 `rmtree` 它——而影子集合是它的子目录，等于**删除还在用的活跃集合**。
+3. **`build_shadow_collection` 调 `shadow_vs.persist()`**：langchain_chroma 新版本已移除 `persist()` 方法，接口一旦真正被调用必崩。
+4. **`_write_config_atomic` 用 `Path.rename`**：Windows 上目标文件已存在时抛 `FileExistsError`，第二次写 `kb_active.json` 必崩。
+5. **重建接口 `enrich_chunk_metadata(child_chunks, source="rebuild", ...)`**：`kb_updater.py` 用 `source` 拼 `doc_id/chunk_id`，一次性传 `"rebuild"` 会把全部 chunk 的 `doc_id` 覆盖成 `"rebuild"`，丢失真实文档来源。
+6. **父索引污染线上**：接口直接用线上检索的单例 `get_parent_child_manager().build_index()`，`build_index` 会重置 store，重建期间并发检索可能读到空父索引。
+
+### 方案
+
+1. **加载路径消费指针**（`app/rag/vector_store.py`）：新增 `_resolve_active_collection()`，`VectorStoreManager.__init__` 在 `persist_directory` 为空（默认路径）时从 `kb_active.json` 解析 `active_persist_dir + active_collection`；回滚到默认集合时 active_collection 为哨兵名 `medical_kb_default`（与真实默认集合 `langchain` 不一致），此时回退到 `config.PERSIST_DIRECTORY` + 默认集合。`create_vector_store` 仅在解析到活跃集合时传 `collection_name`（None 时不传，避免 chromadb 报 `NoneType`）。
+2. **清理跳过基础目录**：`schedule_cleanup_old_collection` 当 `old_path == chroma_base_dir` 时跳过，保留默认集合及其影子子目录。
+3. **移除 `shadow_vs.persist()`**（新版本 from_documents 已自动持久化）。
+4. **`_write_config_atomic` 改用 `os.replace`**（Windows/POSIX 均可原子覆盖已存在文件），并补 `import os`。
+5. **重建接口按真实 source 分组增强元数据**（`app/api/routes.py`），保证每个 chunk 的 `doc_id` 反映文档来源。
+6. **父索引安全换入**：重建用全新 `ParentChildManager()` 构建（不污染线上单例），切换后 `pcs._parent_child_manager = parent_manager` 原子替换全局单例再 `save_to_disk`。
+7. **重建脚本确定化**（`scripts/rebuild_vector_store.py`）：开头删除 `kb_active.json`（回退默认集合），`get_vector_store` 显式传 `persist_directory=config.PERSIST_DIRECTORY`，手动全量重建始终针对默认集合，不被指针劫持。
+
+### 验证
+
+- 零停机流程单测（`scripts/verify_zerodowntime.py`）：基线默认集合 `langchain`(386) → 建 mini 影子集合(3 chunks) → 原子切换 → `get_vector_store()` 加载影子集合并检索到测试内容 → 回滚 → 回退默认集合 `langchain`(386)，全部通过 ✅
+- 回归：检索单测（5 症状各自召回治疗内容、无跨症状污染）+ 端到端"发烧怎么办"（减少衣物/散热，无"增加衣物保暖"幻觉）均通过 ✅
+- 生产路径：`/api/admin/kb/rebuild` 走影子集合构建 → 校验 → 原子切换，服务不中断；切换后 300s 延迟清理旧影子集合（跳过基础目录）
+
 ## v9.21 - 医疗幻觉修复：发热问诊不再出现"增加衣物保暖"（与文档相反的危险建议）
 
 ### 问题

@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -74,15 +75,56 @@ def invalidate_kb_version():
         logger.info(f"kb_version 已失效（旧值：{old}），下次调用将重新计算")
 
 
+def _resolve_active_collection() -> tuple:
+    """从 kb_active.json 解析当前活跃集合（零停机重建指针）
+
+    零停机重建：DualCollectionManager 切换集合时写入 kb_active.json
+    （active_persist_dir + active_collection），本函数让加载路径消费该指针。
+
+    Returns:
+        (persist_dir, collection_name)：存在有效指针时返回；否则 (None, None)。
+        回滚到默认集合时 active_collection 为哨兵名 medical_kb_default，
+        此时返回 (None, None)，由调用方回退到默认集合（base + langchain）。
+    """
+    try:
+        dcm = get_dual_collection_manager()
+        data = dcm.get_active_config()
+        active_dir = data.get("active_persist_dir")
+        active_name = data.get("active_collection")
+        if (
+            active_dir
+            and active_name
+            and active_name != _DEFAULT_COLLECTION_NAME
+            and Path(active_dir).exists()
+        ):
+            return str(active_dir), active_name
+    except Exception as e:
+        logger.warning(f"解析活跃集合指针失败：{e}")
+    return None, None
+
+
 class VectorStoreManager:
     """向量库管理器"""
 
     def __init__(self, persist_directory: str = None):
         """初始化向量库管理器
         Args:
-            persist_directory：向量库持久化目录
+            persist_directory：向量库持久化目录（显式传入时忽略 kb_active.json 指针）
         """
-        self.persist_directory = Path(persist_directory or config.PERSIST_DIRECTORY)
+        if persist_directory:
+            # 显式指定目录（如重建脚本重建默认集合）→ 不使用活跃指针
+            self.persist_directory = Path(persist_directory)
+            self.collection_name = None
+        else:
+            # 默认路径 → 消费零停机重建指针（kb_active.json）
+            active_dir, active_name = _resolve_active_collection()
+            if active_dir and active_name:
+                self.persist_directory = Path(active_dir)
+                self.collection_name = active_name
+                logger.info(f"向量库加载活跃集合：{active_name}（{active_dir}）")
+            else:
+                self.persist_directory = Path(config.PERSIST_DIRECTORY)
+                self.collection_name = None
         self.embeddings = get_embeddings()
         self.vector_store = None
 
@@ -115,16 +157,21 @@ class VectorStoreManager:
             print(f"正在创建向量库，文档数量：{len(documents)}")
             # 分批写入，避免 Embedding API 单次请求限制（智谱API最多64条/批）
             batch_size = 60
+            # collection_name 仅在解析到活跃集合时传入（None 时由 langchain_chroma 用默认 "langchain"）
+            base_create_kwargs = {
+                "embedding": self.embeddings,
+                "persist_directory": str(self.persist_directory),
+                "collection_metadata": {"hnsw:space": "cosine"},
+            }
+            if self.collection_name:
+                base_create_kwargs["collection_name"] = self.collection_name
             for i in range(0, len(documents), batch_size):
                 batch = documents[i:i + batch_size]
                 if i == 0:
                 # 第一批：创建向量库（使用 cosine 距离，而非默认 L2）
-                    self.vector_store = Chroma.from_documents(
-                        documents=batch,
-                        embedding=self.embeddings,
-                        persist_directory=str(self.persist_directory),
-                        collection_metadata={"hnsw:space": "cosine"},
-                    )
+                    create_kwargs = dict(base_create_kwargs)
+                    create_kwargs["documents"] = batch
+                    self.vector_store = Chroma.from_documents(**create_kwargs)
                 else:
                     # 后续批次：追加到已有向量库
                     self.vector_store.add_documents(batch)
@@ -134,10 +181,13 @@ class VectorStoreManager:
             abs_path = self.persist_directory.resolve()
             print(f"向量库位于：{abs_path}")
             print(f"从{self.persist_directory}加载现有向量库。")
-            self.vector_store = Chroma(
-                persist_directory=str(self.persist_directory),
-                embedding_function=self.embeddings,
-            )
+            load_kwargs = {
+                "persist_directory": str(self.persist_directory),
+                "embedding_function": self.embeddings,
+            }
+            if self.collection_name:
+                load_kwargs["collection_name"] = self.collection_name
+            self.vector_store = Chroma(**load_kwargs)
         return self.vector_store
 
     def get_retriever(self, k: int = None, search_type: str = None) -> BaseRetriever:
@@ -398,11 +448,15 @@ class DualCollectionManager:
         return {"active_collection": _DEFAULT_COLLECTION_NAME}
 
     def _write_config_atomic(self, data: dict):
-        """原子写入配置（先写临时文件 → rename，防止半写）"""
+        """原子写入配置（先写临时文件 → 原子替换，防止半写）
+
+        os.replace 在 Windows 与 POSIX 均可覆盖已存在目标文件，
+        而 Path.rename（os.rename）在 Windows 上遇到已存在目标会抛 FileExistsError。
+        """
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = self.config_path.with_suffix(".tmp")
         temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp_path.rename(self.config_path)  # 原子操作
+        os.replace(temp_path, self.config_path)  # 原子覆盖
 
     # ===== 影子集合创建 =====
 
@@ -462,9 +516,8 @@ class DualCollectionManager:
 
             logger.info(f"影子集合写入：{min(i + batch_size, len(documents))}/{len(documents)}")
 
-        # 持久化
-        if shadow_vs:
-            shadow_vs.persist()
+        # 持久化：langchain_chroma 新版本在 from_documents 时已自动持久化到
+        # persist_directory，旧版显式 persist() 方法已移除，无需（也未能）再调用。
 
         return shadow_vs
 
@@ -613,6 +666,11 @@ class DualCollectionManager:
                     active_name = self.get_active_collection_name()
                     if old_name == active_name:
                         logger.warning(f"旧集合 {old_name} 已是活跃集合，跳过清理")
+                        return
+                    # 不删除基础目录：它承载默认集合（回退路径）且包含影子集合子目录，
+                    # 首次切换时 previous_persist_dir 默认指向它，误删会毁掉活跃的影子集合
+                    if old_path.resolve() == self.chroma_base_dir.resolve():
+                        logger.info(f"旧集合为基础目录（{old_dir}），跳过清理以保留默认集合")
                         return
 
                     shutil.rmtree(old_path)

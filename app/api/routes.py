@@ -1118,17 +1118,26 @@ async def kb_rebuild(request: Request):
             parent_docs = await loop.run_in_executor(None, split_documents, docs)
             _kb_update_status["progress"] = f"重建中：构建索引（{len(parent_docs)} 个 chunks）"
 
-            # 4. 构建父子索引
-            parent_manager = get_parent_child_manager()
+            # 4. 构建父子索引（用全新 ParentChildManager，
+            #    避免 build_index 重置 store 期间污染线上检索的父索引）
+            from app.rag.parent_child_store import ParentChildManager
+            parent_manager = ParentChildManager()
             child_chunks = await loop.run_in_executor(
                 None, lambda: parent_manager.build_index(parent_docs, child_chunk_size=150)
             )
             _kb_update_status["progress"] = f"重建中：写入影子集合（{len(child_chunks)} 个 child chunks）"
 
-            # 5. 增强元数据（全量重建，所有 chunk status=active）
-            child_chunks = enrich_chunk_metadata(
-                child_chunks, source="rebuild", version_id=1, status="active"
-            )
+            # 5. 增强元数据（按真实 source 分组，保证 doc_id/chunk_id 反映文档来源，
+            #    不能一次性传 source="rebuild"，否则所有 chunk 的 doc_id 被覆盖为 "rebuild"）
+            from collections import defaultdict
+            by_source = defaultdict(list)
+            for c in child_chunks:
+                by_source[c.metadata.get("source", "unknown")].append(c)
+            child_chunks = []
+            for src, chunks in by_source.items():
+                child_chunks.extend(
+                    enrich_chunk_metadata(chunks, src, version_id=1, status="active")
+                )
 
             # 6. 写入影子集合（对线上完全不可见！）
             def _progress_cb(done, total):
@@ -1173,7 +1182,9 @@ async def kb_rebuild(request: Request):
             # 9. 原子切换：别名指针指向影子集合
             dcm.switch_active_collection(shadow_name, str(shadow_persist_dir))
 
-            # 10. 持久化 ParentStore
+            # 10. 原子换入新父索引（替换全局单例，线上检索即刻用新 parent store）并持久化
+            import app.rag.parent_child_store as pcs
+            pcs._parent_child_manager = parent_manager
             await loop.run_in_executor(None, parent_manager.save_to_disk)
 
             _kb_update_status["progress"] = "重建中：重建 BM25 索引"
