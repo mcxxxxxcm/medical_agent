@@ -102,6 +102,15 @@ class VectorStoreManager:
         if force_rebuild or not self.persist_directory.exists():
             abs_path = self.persist_directory.resolve()
             print(f"向量库位于：{abs_path}")
+            # force_rebuild=True：先删除旧集合再重建，
+            # 否则 Chroma.from_documents 的 get_or_create_collection 会把新 chunk 追加到旧集合
+            if force_rebuild and self.persist_directory.exists():
+                import shutil
+                # 释放已加载的实例，避免 Windows 下文件被锁导致删除失败
+                self.vector_store = None
+                shutil.rmtree(self.persist_directory)
+                invalidate_kb_version()
+                print(f"已删除旧向量库：{self.persist_directory}")
             # 如果要求强制重建向量数据库或者当前不存在向量库
             print(f"正在创建向量库，文档数量：{len(documents)}")
             # 分批写入，避免 Embedding API 单次请求限制（智谱API最多64条/批）

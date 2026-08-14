@@ -992,6 +992,54 @@ def _rule_based_decompose(question: str) -> List[str]:
     return [question]
 
 
+# 治疗意图正则：命中说明用户在问"怎么处理/怎么缓解/用什么药"，
+# 需要补充处理类检索词，避免检索只召回定义/警示类 chunk 而漏掉治疗内容。
+_TREATMENT_INTENT_RE = re.compile(
+    r'(怎么办|怎么处理|如何处理|怎么缓解|如何缓解|怎么治|如何治|'
+    r'吃什么药|用什么药|用药|治疗|缓解|护理|注意事项)'
+)
+# 症状→该症状的护理/治疗专属检索词（与文档中对应治疗 section 的真实词汇对齐）
+# 仅命中治疗意图时追加，且按症状精确匹配，避免通用词（治疗/处理/用药）对
+# "物理降温/减少衣物/温水擦浴"这类文档真实词汇召回不到、或把其他症状劫持成发热内容。
+_SYMPTOM_CARE_KEYWORDS = {
+    "发热": "物理降温 散热 减少衣物 温水擦浴 退热药 布洛芬 对乙酰氨基酚",
+    "发烧": "物理降温 散热 减少衣物 温水擦浴 退热药 布洛芬 对乙酰氨基酚",
+    "头痛": "止痛 药物选择 布洛芬 对乙酰氨基酚 偏头痛 紧张型头痛 休息 缓解",
+    "头疼": "止痛 药物选择 布洛芬 对乙酰氨基酚 偏头痛 紧张型头痛 休息 缓解",
+    "咳嗽": "止咳 化痰 祛痰 止咳药 蜂蜜 多饮水 护理 药物",
+    "腹泻": "止泻 补水 电解质 补液 药物",
+    "流鼻血": "止血 按压 前倾 冷敷 鼻出血",
+    "鼻出血": "止血 按压 前倾 冷敷",
+    "失眠": "助眠 睡眠 放松 改善睡眠",
+    "胃痛": "止痛 养胃 饮食 胃酸 药物",
+    "皮疹": "止痒 抗过敏 护理 药物",
+    "咽痛": "止痛 润喉 消炎 护理",
+    "喉咙痛": "止痛 润喉 消炎 护理",
+}
+# 未命中任何已知症状时的通用兜底
+_GENERIC_TREATMENT_KEYWORDS = "治疗 处理 药物 用药 缓解 护理 注意事项 家庭护理"
+
+
+def _enrich_treatment_query(query: str) -> str:
+    """症状处理类问题检索词增强：命中治疗意图时，按症状追加护理/治疗专属关键词。
+
+    作用：弥合"发烧怎么办"这类自然查询与文档"物理降温/减少衣物"术语之间的鸿沟，
+    让治疗/护理类 chunk 进入检索候选集。已实证：发热追加护理词后"减少衣物/退热药"
+    chunk 从 fusion rank 16-21 升到 top5；通用词（v9.20）对发热 case 无效。
+    未命中意图时返回原查询，避免给知识类问题引入噪音。
+    """
+    if not query or not _TREATMENT_INTENT_RE.search(query):
+        return query
+    for symptom, care_words in _SYMPTOM_CARE_KEYWORDS.items():
+        if symptom in query:
+            if care_words.split()[0] in query:
+                return query  # 已增强过，避免重复追加
+            return f"{query} {care_words}"
+    if _GENERIC_TREATMENT_KEYWORDS.split()[0] in query:
+        return query
+    return f"{query} {_GENERIC_TREATMENT_KEYWORDS}"
+
+
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """知识检索节点
@@ -1103,6 +1151,16 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             k = config.RETRIEVAL_K_KNOWLEDGE
         else:
             k = config.RETRIEVAL_K_DEFAULT
+
+        # v9.20: 症状"怎么办/缓解/用药"类问题检索词增强，
+        # 让治疗/护理类 chunk 进入候选集（弥合用户措辞与文档专业术语的鸿沟）。
+        # 只改 search_query（检索用），不改 rewritten_query/final_question（答案 prompt 用）。
+        if question_type == "symptom":
+            enriched = _enrich_treatment_query(search_query)
+            if enriched != search_query:
+                logger.info(f"检索词增强：'{search_query}' → '{enriched}'")
+                search_query = enriched
+
         retriever = get_cached_hybrid_retriever(k=k, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
         # v9.6: 多子问题并行检索

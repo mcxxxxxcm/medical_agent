@@ -409,10 +409,12 @@ class HybridRetriever(BaseRetriever):
 
         Args:
             query: 检索查询（重写后的查询，用于 BM25 稀疏检索）
-            original_query: 原始用户查询（用于缓存 key）
+            original_query: 原始用户查询
             hyde_answer: HyDE 假想答案（用于 Dense 向量检索，提升语义召回率）
         """
-        cache_query = original_query if original_query else query
+        # 缓存 key 用实际检索词 query：检索词增强/重写逻辑变化后，旧缓存自然失效，
+        # 避免用 original_query 缓存旧差结果、遮蔽检索逻辑改进（v9.21）
+        cache_query = query
 
         # HyDE 策略：Dense 用假想答案，Sparse 用原始查询
         dense_query = hyde_answer if hyde_answer else query
@@ -528,8 +530,8 @@ class HybridRetriever(BaseRetriever):
         should_skip_reranker = self._should_skip_reranker(query, candidates, top1_dense_score)
 
         # 三阶段检索优化：RRF 融合后先轻量截断，再进 Reranker 精排 top k
-        # v9.4: RERANKER_INPUT_CAP 8→10，配合来源多样性过滤需要更多候选
-        RERANKER_INPUT_CAP = 10
+        # v9.19: 10→7 压缩 rerank 耗时（grade_documents 过滤后进 prompt 的文档仅 2-3 个，7 候选足够）
+        RERANKER_INPUT_CAP = 7
         reranker_input = candidates[:RERANKER_INPUT_CAP]
 
         # Reranker 重排序
