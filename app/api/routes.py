@@ -1221,10 +1221,13 @@ async def kb_rebuild(request: Request):
 
             # 13. 审计日志
             try:
-                from app.rag.vector_store import get_vector_store
-                vs = get_vector_store()
-                log_kb_audit(vs, "full_rebuild", "rebuild", "success",
-                             details=f"docs={len(docs)}, chunks={len(parent_docs)}, child_chunks={len(child_chunks)}, shadow={shadow_name}")
+                log_kb_audit(
+                    doc_id="full_rebuild",
+                    change_type="rebuild",
+                    chunk_count=len(child_chunks),
+                    result="success",
+                    elapsed_ms=int((time.time() - _kb_update_status["started_at"]) * 1000),
+                )
             except Exception:
                 pass
 

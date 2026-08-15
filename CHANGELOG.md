@@ -2,7 +2,7 @@
 
 ## 26/8/15待修复 - 全链路审计发现的问题清单
 
-并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0 已修复，P1/P2 待修复（逐项修复后在本条目内更新状态）。
+并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0/P1 已修复，P2 待修复（逐项修复后在本条目内更新状态）。
 
 ### P0 - 数据丢失 / 功能彻底失效（已全部修复 ✅）
 
@@ -27,13 +27,34 @@
 - reset：lru_cache currsize 归 0，双集合切换后检索器重建。
 - fallback：8 天前事件删除、1 小时前事件保留。
 
-### P1 - 功能目标落空（待修复）
+### P1 - 功能目标落空（已全部修复 ✅）
 
-1. `_is_self_contained` NameError：`nodes.py:2972` 使用未定义变量，`ENABLE_HYDE=True` 时开 HyDE 即崩（潜伏）。
-2. keyword_matcher 边界检测恒 True：`keyword_matcher.py:144-170` `_check_boundary` 无任何 `return False`，"心疼"误匹配"疼"、单字词误路由为 symptom，无否定词处理。
-3. rebuild 审计从不落库：`routes.py:1220` `log_kb_audit(vs, "full_rebuild", "rebuild", "success", details=...)` 首参应为 str、参数表无 `details` → TypeError 被 `except: pass` 吞掉。
-4. 用药指南/症状分诊引擎死代码：`skills/*` 的 `run_medication_guide_review`/`run_symptom_triage` 全项目无调用，剂量/禁忌核查从未运行；且 `check_dosage_safety` 剂量单位不一致（"4g"解析成 4），接线即误判。
-5. metadata 单源误判 high + mtime 污染：`metadata_extractor.py:549-557,658-667` 文件 mtime 作为唯一来源时置信度=high，每个文件被写入 `effective_date=mtime` → 重拷文件即被当"更新版本"。
+**1.【✅ 已修复】`_is_self_contained` NameError**
+- 根因：`nodes.py:2972` `if enable_hyde and not _is_self_contained` 引用了未定义变量，`ENABLE_HYDE=True` 时一进 HyDE 分支即 NameError（潜伏，默认 False 未触发）。
+- 修复：改用已存在的 `_has_anaphora_pattern(final_question)`（返回 True 表示"不自包含"，与 `not _is_self_contained` 语义一致）。
+- 验证：`tests/test_self_containment.py` 38 条 100% 通过。
+
+**2.【✅ 已修复】keyword_matcher 边界检测恒 True**
+- 根因：`_check_boundary` 所有分支都返回 True（恒接受），`use_boundary` 开关形同虚设；`build_route_symptom_matcher` 含单字"疼/痛"关键词 → "心疼"被误路由为 symptom；无否定词处理（"不痛"匹配"痛"）。
+- 修复：`keyword_matcher.py` 重写 `_check_boundary`（否定前缀拒绝 + 前邻/后邻更长词拒绝 + 非 CJK 词内成分拒绝 + CJK 邻接放行"偏头痛"→"头痛"）；`build_route_symptom_matcher` 移除单字"疼/痛"；`nodes.py` 全部 7 处调用点（route 93/98、extract 136、拆解 902/975、实体扫描 3378/3379）`use_boundary=False`→`True`。
+- 验证：`心疼`→不匹配；`不发烧`→不匹配；`偏头痛`→头痛；`喉咙痛`→嗓子疼；路由"心疼的滋味不好受"→None（不再误路由 symptom）；`safety_review_engine` 紧急识别保持 `use_boundary=False`（紧急宁可多报不漏报）。
+
+**3.【✅ 已修复】rebuild 审计从不落库**
+- 根因：`routes.py:1220` `log_kb_audit(vs, "full_rebuild", "rebuild", "success", details=...)`——首参应为 `doc_id: str` 却传了 vector store 对象，参数表无 `details`，`chunk_count` 被传成字符串"rebuild" → TypeError 被 `except: pass` 吞掉，审计日志永远少一条全量重建记录。
+- 修复：改为 `log_kb_audit(doc_id="full_rebuild", change_type="rebuild", chunk_count=len(child_chunks), result="success", elapsed_ms=int((time.time()-started_at)*1000))`（`details` 参数不存在，审计表也无该列，弃用）。
+
+**4.【✅ 已修复】用药指南/症状分诊引擎（单位 bug + 接入 graph）**
+- 根因：`skills/*` 的 `run_medication_guide_review`/`run_symptom_triage` 全项目无调用，剂量/禁忌核查从未运行；且 `check_dosage_safety` 用 `re.search(r"(\d+)")` 提取上限，`"4g"` 解析成 4（实为 4000mg）→ 接线即把正常剂量误判超量；答案侧只匹配 `\d+ mg`，g/μg 单位剂量漏检。
+- 修复：
+  1. 单位：`medication_guide_engine.py` 新增 `_parse_dosage_mg()`（统一 g/mg/μg/微克 → mg，支持小数），`check_dosage_safety` 上限与答案剂量全部走该函数。验证："4g"→4000；阿莫西林"每次500mg"不再误报、每次5g 正确报超量。
+  2. 接线：`safety_check_node` 规则引擎步骤扩展两个子核查——① `run_medication_guide_review`（回答含药物名时做剂量上限/禁忌人群/相互作用/5字段完整性核查，修订注入剂量/禁忌/相互作用警告与字段补全模板）；② `run_symptom_triage`（从临床快照取症状，仅响应**危险症状组合**与 **🟡建议就诊** 两类信号，注入紧凑警告，不注入整块分诊文本；单症状紧急信号仍由既有 `check_emergency_signals` 覆盖，避免重复与"腹痛→急性腹痛"子串误报）。触发风险标签后进入既有 LLM 深度审查路径。
+- 验证：布洛芬回答补全 5 字段；阿莫西林 5g 注入剂量警告；头痛+发热+颈僵 注入"脑膜炎高风险"紧急提醒；无风险回答 status=pass 仅 ~4ms 开销、final_answer 不动。
+- 说明：接线后用药类回答更频繁触发 LLM 深度审查（`qwen2.5:1.5b` 弱模型对剂量普遍过度保守、易判 block）——这是既有安全网行为，非接线引入的回归；若生产用小模型需评估是否放宽 deep-review 判 block 阈值。
+
+**5.【✅ 已修复】metadata 单源误判 high + mtime 污染**
+- 根因：`metadata_extractor.py` `_resolve_field` 在 `len(unique_values)==1` 时无条件返回 high，含 `len(sources)==1`；filesystem mtime 常为 effective_date 唯一来源 → 每文件写入 `effective_date=mtime` 且 direct 落库，重拷文件即被当"更新版本"。
+- 修复：`_resolve_field` 在 `len(sources)==1` 时提前返回 confidence="low"（无法交叉验证，写入 `doc_{field}_pending` 待复核）；多来源一致仍为 high。
+- 验证：单源 filesystem→low，双源一致→high，三源多数→mid，无源→none。
 
 ### P2 - 正确性缺陷（待修复）
 

@@ -90,12 +90,12 @@ def detect_rule_based_route(question: str) -> Optional[str]:
 
     # 1. 先检查症状关键词（最高优先级）—— AC 自动机 O(m)
     symptom_matcher = get_route_symptom_matcher()
-    if symptom_matcher.contains_any(text, use_boundary=False):
+    if symptom_matcher.contains_any(text, use_boundary=True):
         return "symptom"
 
     # 2. 再检查知识关键词 —— AC 自动机 O(m)
     knowledge_matcher = get_route_knowledge_matcher()
-    if knowledge_matcher.contains_any(text, use_boundary=False):
+    if knowledge_matcher.contains_any(text, use_boundary=True):
         return "knowledge"
 
     # 3. 最后检查 general（精确匹配，避免误判）
@@ -133,7 +133,7 @@ def _extract_symptoms_by_rules(question: str) -> Optional[Dict[str, Any]]:
     # 使用 AC 自动机提取症状（集中定义于 keyword_matcher.py）
     from app.core.keyword_matcher import get_symptom_matcher
     symptom_matcher = get_symptom_matcher()
-    found_symptoms = symptom_matcher.get_matched_keywords(text, use_boundary=False)
+    found_symptoms = symptom_matcher.get_matched_keywords(text, use_boundary=True)
 
     # 通用疼痛模式兜底：匹配"X疼/X痛"（如"手腕疼"、"膝盖痛"）
     # 仅在特定关键词未命中时补充，避免与已有映射重复
@@ -899,7 +899,7 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
         try:
             from app.core.keyword_matcher import get_symptom_matcher
             symptom_matcher = get_symptom_matcher()
-            matched_symptoms = symptom_matcher.get_matched_keywords(question, use_boundary=False)
+            matched_symptoms = symptom_matcher.get_matched_keywords(question, use_boundary=True)
             # 去重后 ≥2 个不同症状 → 判定复合问题
             if len(matched_symptoms) >= 2:
                 has_multi_symptoms = True
@@ -972,7 +972,7 @@ def _rule_based_decompose(question: str) -> List[str]:
     try:
         from app.core.keyword_matcher import get_symptom_matcher
         symptom_matcher = get_symptom_matcher()
-        matches = symptom_matcher.findall(question, use_boundary=False)
+        matches = symptom_matcher.findall(question, use_boundary=True)
         if len(matches) >= 2:
             # 按症状在文本中的位置切分
             # 每个症状实体的 start 位置作为新子问题的起始
@@ -2171,6 +2171,16 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
             ]
         }
 
+def _get_checkpoint_symptoms(clinical_checkpoint) -> List[str]:
+    """从临床快照提取症状名列表（供症状分诊使用）"""
+    if not clinical_checkpoint:
+        return []
+    symptoms = clinical_checkpoint.get("symptoms", [])
+    if not isinstance(symptoms, list):
+        return []
+    return [s for s in symptoms if isinstance(s, str) and s.strip()]
+
+
 @timing_decorator("安全检查")
 def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """医疗合规与安全审查节点（Skill 增强）
@@ -2197,9 +2207,56 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     # ===== 第一步：规则引擎审查（0ms） =====
     rule_result = run_rule_based_review(content, clinical_checkpoint)
-    risk_tags = rule_result.get("risk_tags", [])
+    risk_tags = list(rule_result.get("risk_tags", []))
     status = rule_result["status"]
     revised_answer = rule_result["revised_answer"]
+
+    # 1b. 用药指南规则核查（剂量上限/禁忌人群/相互作用/5字段完整性）
+    #     仅在回答中出现药物名时触发，无药物则 0ms 直接 pass
+    try:
+        from app.skills.medication_guide_engine import run_medication_guide_review
+        med_review = run_medication_guide_review(
+            revised_answer, clinical_checkpoint, state.get("user_profile"),
+        )
+        if med_review["status"] == "revise":
+            revised_answer = med_review["revised_answer"]
+            for tag in med_review["risk_tags"]:
+                if tag not in risk_tags:
+                    risk_tags.append(tag)
+            status = "revise"
+    except Exception as e:
+        logger.warning(f"用药指南规则核查失败：{e}")
+
+    # 1c. 症状分诊规则核查（危险症状组合/就诊时限）
+    #     只响应"症状组合"与"建议就诊"信号，不注入整块分诊文本；
+    #     单症状紧急信号已由 run_rule_based_review 的 check_emergency_signals 覆盖
+    try:
+        from app.skills.symptom_triage_engine import run_symptom_triage
+        triage_symptoms = _get_checkpoint_symptoms(clinical_checkpoint)
+        if triage_symptoms:
+            triage = run_symptom_triage(
+                symptoms=triage_symptoms, clinical_checkpoint=clinical_checkpoint,
+            )
+            tr = triage.get("triage_result", {})
+            combos = tr.get("matched_combinations", [])
+            if combos:
+                if "dangerous_symptom_combination" not in risk_tags:
+                    risk_tags.append("dangerous_symptom_combination")
+                status = "revise"
+                risks = "、".join(c["risk"] for c in combos)
+                revised_answer = revised_answer.rstrip() + (
+                    f"\n\n⚠️ 紧急提醒：检测到{'、'.join(triage_symptoms)}等症状组合，"
+                    f"可能存在{risks}，建议立即就医评估。"
+                )
+            elif tr.get("level") == "🟡":
+                if "suggest_seek_care" not in risk_tags:
+                    risk_tags.append("suggest_seek_care")
+                status = "revise"
+                revised_answer = revised_answer.rstrip() + (
+                    "\n\n建议48小时内就诊进一步评估；如症状加重或出现新发严重症状，请及时就医。"
+                )
+    except Exception as e:
+        logger.warning(f"症状分诊规则核查失败：{e}")
 
     logger.info(f"规则引擎审查完成：status={status}, risk_tags={risk_tags}, "
                 f"耗时={(time.time() - start_time) * 1000:.1f}ms")
@@ -2969,7 +3026,7 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     #       HyDE 生成的假想答案反而把 Dense 检索引向错误方向
     # 保留 ENABLE_HYDE 开关，供未来长尾模糊查询按需启用
     enable_hyde = getattr(config, "ENABLE_HYDE", False)
-    if enable_hyde and not _is_self_contained:
+    if enable_hyde and _has_anaphora_pattern(final_question):
         try:
             llm = get_local_llm()
             hyde_prompt = f"""请针对以下医学问题，写一段简短的假想性医学回答（2-3句话）。
@@ -3375,8 +3432,8 @@ def _build_rewrite_context(messages: list, max_rounds: int = 2) -> str:
 
             # 截断前用 AC 自动机扫描全文提取医疗实体
             found_entities = set()
-            found_entities.update(drug_matcher.get_matched_originals(content, use_boundary=False))
-            found_entities.update(symptom_matcher.get_matched_originals(content, use_boundary=False))
+            found_entities.update(drug_matcher.get_matched_originals(content, use_boundary=True))
+            found_entities.update(symptom_matcher.get_matched_originals(content, use_boundary=True))
 
             has_medical = bool(found_entities)
             truncate_len = 500 if has_medical else 250

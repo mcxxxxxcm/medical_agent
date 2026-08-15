@@ -287,6 +287,27 @@ def check_drug_interactions(drugs: List[str]) -> Dict[str, Any]:
     }
 
 
+_DOSAGE_UNIT_MG = {"mg": 1.0, "g": 1000.0, "ug": 0.001, "mcg": 0.001}
+_DOSE_NUM_UNIT = r"(\d+(?:\.\d+)?)\s*(mg|g|ug|μg|mcg|微克)"
+
+
+def _parse_dosage_mg(text: str) -> Optional[float]:
+    """从文本中解析首个剂量值并统一转换为 mg
+
+    支持单位：mg / g / μg（ug/mcg/微克）
+    例："4g" → 4000.0，"2000mg（成人）" → 2000.0，"500μg" → 0.5，"0.5g" → 500.0
+
+    Returns:
+        剂量值（mg），无法解析时返回 None
+    """
+    m = re.search(_DOSE_NUM_UNIT, text, re.IGNORECASE)
+    if not m:
+        return None
+    val = float(m.group(1))
+    unit = m.group(2).replace("μg", "ug").replace("微克", "ug").lower()
+    return val * _DOSAGE_UNIT_MG.get(unit, 1.0)
+
+
 def check_dosage_safety(drug: str, answer: str) -> Dict[str, Any]:
     """检查回答中的剂量是否超过安全上限
 
@@ -312,31 +333,30 @@ def check_dosage_safety(drug: str, answer: str) -> Dict[str, Any]:
         }
 
     max_daily = drug_info["max_daily_dosage"]
-    # 提取数字部分作为上限（mg）
-    max_match = re.search(r"(\d+)", max_daily)
-    if not max_match:
+    # 解析上限并统一为 mg（修复"4g"被解析成 4 的问题）
+    max_val = _parse_dosage_mg(max_daily)
+    if max_val is None:
         return {
             "drug": drug,
             "max_daily_dosage": max_daily,
             "exceeds_limit": False,
             "extracted_dosages": [],
         }
-    max_val = int(max_match.group(1))
 
-    # 从回答中提取剂量数字（mg）
-    dosage_pattern = re.compile(r"(\d+)\s*mg")
+    # 从回答中提取剂量（统一 mg，支持 g/mg/μg）
     extracted = []
-    for m in dosage_pattern.finditer(answer):
-        val = int(m.group(1))
-        extracted.append({"value": val, "text": m.group(0)})
+    for m in re.finditer(_DOSE_NUM_UNIT, answer, re.IGNORECASE):
+        val = _parse_dosage_mg(m.group(0))
+        if val is not None:
+            extracted.append({"value": val, "text": m.group(0)})
 
     # 检查是否包含"每日"相关的超量描述
     exceeds = False
-    daily_pattern = re.compile(r"每日.*?(\d+)\s*mg|每天.*?(\d+)\s*mg|一天.*?(\d+)\s*mg")
+    daily_pattern = re.compile(r"(每日|每天|一天).{0,20}?" + _DOSE_NUM_UNIT, re.IGNORECASE)
     for m in daily_pattern.finditer(answer):
-        for g in m.groups():
-            if g and int(g) > max_val:
-                exceeds = True
+        val = _parse_dosage_mg(m.group(0))
+        if val is not None and val > max_val:
+            exceeds = True
 
     # 简单判断：单个数值超过上限也视为可能超量
     for d in extracted:

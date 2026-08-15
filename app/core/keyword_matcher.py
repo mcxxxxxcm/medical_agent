@@ -45,6 +45,8 @@ class KeywordMatcher:
 
     # 边界字符集：匹配关键词前后必须是这些字符或文本首尾
     _BOUNDARY_CHARS = set("，。！？、；：""''（）【】《》\n\r\t ,.!?;:'\"()[]{}/")
+    # 否定前缀：匹配词前紧跟这些字时拒绝（"不痛"不匹配"痛"）
+    _NEGATION_PREFIXES = set("不没无未别莫毋非")
 
     def __init__(self, keywords: List[str], mapping: Optional[Dict[str, str]] = None):
         """初始化匹配器
@@ -54,6 +56,7 @@ class KeywordMatcher:
             mapping: 可选的关键词→标准名映射，如 {"头疼": "头痛", "发热": "发烧"}
         """
         self._keywords = keywords
+        self._keyword_set = set(keywords)
         self._mapping = mapping or {}
         self._automaton = None
 
@@ -142,7 +145,15 @@ class KeywordMatcher:
         return results
 
     def _check_boundary(self, text: str, start: int, end: int) -> bool:
-        """检查匹配位置前后是否为边界字符或文本首尾
+        """检查匹配位置是否合法（真正的边界检测，修复前恒 True）
+
+        规则：
+            1. 匹配词前紧跟否定前缀（不/没/无/未/别…）→ 拒绝（"不痛"不匹配"痛"）
+            2. 前邻字符非边界：
+               - 与匹配词拼成更长的已知词 → 拒绝（长词优先，避免"心疼"里单独匹配"疼"）
+               - 非 CJK（字母数字等）且非边界 → 拒绝（"abc痛"的"痛"视为词内成分）
+               - CJK 邻接且不构成更长已知词 → 接受（允许"偏头痛"里的"头痛"）
+            3. 后邻字符同理
 
         Args:
             text: 原始文本
@@ -150,22 +161,31 @@ class KeywordMatcher:
             end: 匹配结束位置（不含）
 
         Returns:
-            True 表示匹配位置合法（前后为边界）
+            True 表示匹配位置合法
         """
-        # 前一个字符必须是边界或文本开头
-        if start > 0 and text[start - 1] not in self._BOUNDARY_CHARS:
-            # 允许中文内部匹配（如"偏头痛"中的"头痛"）
-            # 如果前一个字符也是中文字符，检查是否构成更长的已知词
-            prev_char = text[start - 1]
-            if self._is_cjk(prev_char):
-                # 简单策略：允许 CJK 内部匹配，但记录为非边界匹配
-                # 这样"偏头痛"中的"头痛"会被匹配到
-                pass
-        # 后一个字符必须是边界或文本结尾
-        if end < len(text) and text[end] not in self._BOUNDARY_CHARS:
-            next_char = text[end]
-            if self._is_cjk(next_char):
-                pass
+        kw = text[start:end]
+
+        # 1. 否定前缀拒绝
+        if start > 0 and text[start - 1] in self._NEGATION_PREFIXES:
+            return False
+
+        # 2. 前边界
+        if start > 0:
+            prev = text[start - 1]
+            if prev not in self._BOUNDARY_CHARS:
+                if kw and (prev + kw) in self._keyword_set:
+                    return False
+                if not self._is_cjk(prev):
+                    return False
+
+        # 3. 后边界
+        if end < len(text):
+            nxt = text[end]
+            if nxt not in self._BOUNDARY_CHARS:
+                if kw and (kw + nxt) in self._keyword_set:
+                    return False
+                if not self._is_cjk(nxt):
+                    return False
 
         return True
 
@@ -294,10 +314,11 @@ def build_route_symptom_matcher() -> KeywordMatcher:
         "流鼻血": "symptom", "鼻出血": "symptom", "鼻流血": "symptom",
         "嗓子疼": "symptom", "喉咙痛": "symptom",
         # 意图关键词（暗示症状咨询）
+        # 注意：单字"疼""痛"不作为关键词——"心疼/痛经/三叉神经痛"等词内成分
+        # 会被误路由为 symptom，只能靠多字词（头痛/肚子疼/胸痛）精确匹配
         "怎么办": "symptom_intent", "咋办": "symptom_intent",
         "吃什么药": "symptom_intent", "挂什么科": "symptom_intent",
         "严不严重": "symptom_intent", "缓解": "symptom_intent",
-        "疼": "symptom_intent", "痛": "symptom_intent",
         "不舒服": "symptom_intent",
     }
     return KeywordMatcher(

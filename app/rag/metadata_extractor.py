@@ -543,11 +543,22 @@ def _resolve_field(field: str, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
     # 按来源优先级排序
     source_priority = {"filename": 4, "file_properties": 3, "llm_content": 2, "filesystem": 1}
 
+    # 单一来源无法交叉验证 → low（否则 filesystem mtime 等粗粒度来源
+    # 会被当成 high 直接写入 doc_effective_date，污染元数据）
+    if len(sources) == 1:
+        only = sources[0]
+        return {
+            "value": only["value"],
+            "confidence": "low",
+            "source": only["source"],
+            "reason": f"仅 {only['source']} 单一来源，需人工复核",
+        }
+
     # 值一致性检查
     unique_values = set(s["value"] for s in sources)
 
     if len(unique_values) == 1:
-        # 所有来源一致
+        # 多来源一致
         best_source = max(sources, key=lambda s: source_priority.get(s["source"], 0))
         return {
             "value": sources[0]["value"],
