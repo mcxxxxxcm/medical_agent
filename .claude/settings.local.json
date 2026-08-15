@@ -53,7 +53,15 @@
       "Bash(ls .claude/tmp_*.py)",
       "Bash(ls scripts/)",
       "Bash(tasklist //FI \"IMAGENAME eq python.exe\")",
-      "Bash(wmic process *)"
+      "Bash(wmic process *)",
+      "Bash(\"C:/Users/86176/AppData/Local/Programs/Python/Python311/python.exe\" -c \"import langgraph; print\\(langgraph.__version__\\)\")",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python -c \"import langchain_core, os; print\\(os.path.dirname\\(langchain_core.__file__\\)\\)\")",
+      "Bash(/c/Users/86176/miniconda3/python.exe -c \"import langchain_core, langchain_openai; print\\(langchain_core.__version__\\); print\\(langchain_openai.__version__\\)\")",
+      "Bash(\"D:/Agent/.venv/Scripts/python.exe\" -c \"import langgraph; print\\('langgraph', langgraph.__version__\\)\")",
+      "Read(//c//**)",
+      "Bash(cd /tmp)",
+      "Bash(pip install *)",
+      "Bash(sed -i 's/InMemorySaver/MemorySaver/' test_lg2.py)"
     ]
   },
   "enableAllProjectMcpServers": true,

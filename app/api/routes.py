@@ -869,8 +869,14 @@ async def kb_upload(request: Request):
                     # 写入向量库（status=pending，检索层看不到！）
                     add_documents_to_store(child_chunks)
 
-                    # 双缓冲：校验 → 激活新版本(status=active) → 废弃旧版本(status=deprecated)
-                    activated = activate_document_version(vs, file_info["name"], version_id)
+                    # 双缓冲：校验 → 激活新版本(status=active) → 仅废弃新版本中已删除的旧块
+                    # keep_hashes 传新版本全部 chunk（changed + unchanged）的 hash，
+                    # 未变块在旧版本中保持 active，避免"只改几行 → 整篇 deprecated → 内容丢失"
+                    new_hashes = {c.metadata.get("content_hash", "") for c in chunks}
+                    new_hashes.discard("")
+                    activated = activate_document_version(
+                        vs, file_info["name"], version_id, keep_hashes=new_hashes
+                    )
                     if activated == 0:
                         # 校验失败：新 chunk 仍在 pending 状态，不影响旧版本检索
                         file_info["chunks"] = len(changed_chunks)

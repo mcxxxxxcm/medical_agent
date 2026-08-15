@@ -23,9 +23,10 @@ import hashlib
 import json
 import sqlite3
 import time
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 
 from langchain_core.documents import Document
 
@@ -212,7 +213,8 @@ def get_existing_content_hashes(vector_store) -> set:
         if hasattr(vector_store, '_collection') and vector_store._collection:
             results = vector_store._collection.get(
                 include=["metadatas"],
-                where={"is_deleted": False},  # 只查未删除的
+                where={"status": "active"},  # 只统计可检索块：deprecated 块不参与增量去重，
+                # 否则其 hash 会挡住"改回旧内容"的重新激活
             )
             if results and results["metadatas"]:
                 for meta in results["metadatas"]:
@@ -226,14 +228,21 @@ def get_existing_content_hashes(vector_store) -> set:
 
 # ===== 双缓冲：pending → active → deprecated 状态机 =====
 
-def activate_document_version(vector_store, source: str, version_id: int) -> int:
+def activate_document_version(
+    vector_store, source: str, version_id: int, keep_hashes: Optional[Set[str]] = None
+) -> int:
     """校验并激活新版本 chunk：status=pending → active
 
     双缓冲核心步骤：
         1. 查找该文档新版本的所有 pending chunk
         2. 轻量校验：检查 chunk 数量 > 0、content_hash 无重复
         3. 批量更新 status=active（原子操作）
-        4. 新版本激活后，再将旧版本的 chunk 标记为 deprecated
+        4. 新版本激活后，仅废弃新版本中不再存在的旧 chunk（保留未变块 active，
+           否则增量上传只改几行时未变块会被整体 deprecated 导致内容丢失）
+
+    Args:
+        keep_hashes: 新版本应有的全部 content_hash 集合（含未变块）。
+            None 时回退旧行为：废弃全部旧版本（全量替换场景）。
 
     Returns:
         激活的 chunk 数量（0 表示校验失败）
@@ -245,9 +254,15 @@ def activate_document_version(vector_store, source: str, version_id: int) -> int
 
         col = vector_store._collection
 
-        # 1. 查找新版本的 pending chunk
+        # 1. 查找新版本的 pending chunk（chromadb>=1.0 多键 where 须用 $and）
         results = col.get(
-            where={"source": source, "version_id": version_id, "status": "pending"},
+            where={
+                "$and": [
+                    {"source": source},
+                    {"version_id": version_id},
+                    {"status": "pending"},
+                ]
+            },
             include=["metadatas", "documents"],
         )
         if not results or not results["ids"]:
@@ -271,7 +286,7 @@ def activate_document_version(vector_store, source: str, version_id: int) -> int
         try:
             sample_hash = hashes[0]
             sample_results = col.get(
-                where={"content_hash": sample_hash, "status": "pending"},
+                where={"$and": [{"content_hash": sample_hash}, {"status": "pending"}]},
                 include=["embeddings"],
             )
             if not sample_results or not sample_results.get("embeddings") or not sample_results["embeddings"][0]:
@@ -291,8 +306,8 @@ def activate_document_version(vector_store, source: str, version_id: int) -> int
 
         logger.info(f"激活新版本：{source} v{version_id}，{count} 个 chunk status=pending→active")
 
-        # 4. 将旧版本标记为 deprecated（非删除，仍可被紧急回滚）
-        deprecate_old_versions(vector_store, source, version_id)
+        # 4. 仅废弃新版本中不再存在的旧 chunk（非删除，仍可被紧急回滚）
+        deprecate_old_versions(vector_store, source, version_id, keep_hashes=keep_hashes)
 
     except Exception as e:
         logger.error(f"激活失败：{source} v{version_id} - {e}")
@@ -301,12 +316,24 @@ def activate_document_version(vector_store, source: str, version_id: int) -> int
     return count
 
 
-def deprecate_old_versions(vector_store, source: str, current_version_id: int) -> int:
-    """将旧版本的 active chunk 标记为 deprecated
+def deprecate_old_versions(
+    vector_store,
+    source: str,
+    current_version_id: int,
+    keep_hashes: Optional[Set[str]] = None,
+) -> int:
+    """废弃旧 chunk：仅保留新版本需要的未变块，且同内容只留最高版本一份
 
     与 soft_delete 不同：
         - deprecated：旧版本但可能被紧急回滚引用，5 分钟后物理删除
         - is_deleted=True：管理员主动删除，30 天后物理删除
+
+    Args:
+        keep_hashes: 新版本应有的全部 content_hash 集合（含未变块）。为 None 时废弃全部
+            旧版本（全量替换）；传入时仅废弃 content_hash 不在其中的旧块。关键两点：
+            1) 未变块（hash 在 keep_hashes）保留 active，避免"只改几行 → 整篇 deprecated → 内容丢失"；
+            2) 同一 content_hash 跨版本累积多份 active 时，只保留 version_id 最高的一份，
+               避免增量更新 N 次后同一块出现 N 份 active 重复。
 
     Returns:
         废弃的 chunk 数量
@@ -317,23 +344,34 @@ def deprecate_old_versions(vector_store, source: str, current_version_id: int) -
             return 0
 
         col = vector_store._collection
-        # 查找该文档所有旧版本的 active chunk
+        # 查找该文档所有旧版本的 active chunk（多键 where 须用 $and）
         results = col.get(
-            where={"source": source, "status": "active"},
+            where={"$and": [{"source": source}, {"status": "active"}]},
             include=["metadatas"],
         )
         if not results or not results["ids"]:
             return 0
 
-        # 筛选 version_id < current_version_id 的 chunk
+        # 筛选 version_id < current 的块，按 content_hash 分组（同一 hash 可能跨版本累积）
+        by_hash: Dict[str, List[tuple]] = defaultdict(list)
+        for i, meta in enumerate(results["metadatas"]):
+            if meta.get("version_id", 0) < current_version_id:
+                by_hash[meta.get("content_hash", "")].append((results["ids"][i], meta))
+
+        # 决定废弃哪些：不在 keep_hashes 的全部废弃；在 keep_hashes 的只保留最高版本一份
         old_ids = []
         old_metas = []
         now = datetime.utcnow().isoformat()
-        for i, meta in enumerate(results["metadatas"]):
-            if meta.get("version_id", 0) < current_version_id:
-                old_ids.append(results["ids"][i])
+        for h, items in by_hash.items():
+            if keep_hashes and h and h in keep_hashes:
+                items.sort(key=lambda x: x[1].get("version_id", 0))
+                to_discard = items[:-1]
+            else:
+                to_discard = items
+            for cid, meta in to_discard:
                 meta["status"] = "deprecated"
                 meta["deprecated_at"] = now
+                old_ids.append(cid)
                 old_metas.append(meta)
 
         if old_ids:
@@ -411,7 +449,7 @@ def soft_delete_document(vector_store, source: str) -> int:
         if hasattr(vector_store, '_collection') and vector_store._collection:
             # 查找该文档的所有未删除 chunk
             results = vector_store._collection.get(
-                where={"source": source, "is_deleted": False},
+                where={"$and": [{"source": source}, {"is_deleted": False}]},
             )
             if results and results["ids"]:
                 # 更新 is_deleted = True
@@ -441,7 +479,7 @@ def restore_deleted_document(vector_store, source: str) -> int:
     try:
         if hasattr(vector_store, '_collection') and vector_store._collection:
             results = vector_store._collection.get(
-                where={"source": source, "is_deleted": True},
+                where={"$and": [{"source": source}, {"is_deleted": True}]},
             )
             if results and results["ids"]:
                 metas = []
@@ -501,7 +539,7 @@ def get_document_version(vector_store, source: str) -> int:
     try:
         if hasattr(vector_store, '_collection') and vector_store._collection:
             results = vector_store._collection.get(
-                where={"source": source, "is_deleted": False},
+                where={"$and": [{"source": source}, {"is_deleted": False}]},
                 include=["metadatas"],
             )
             if results and results["metadatas"]:

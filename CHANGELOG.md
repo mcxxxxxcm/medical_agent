@@ -1,5 +1,56 @@
 # 系统优化更新日志
 
+## 26/8/15待修复 - 全链路审计发现的问题清单
+
+并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0 已修复，P1/P2 待修复（逐项修复后在本条目内更新状态）。
+
+### P0 - 数据丢失 / 功能彻底失效（已全部修复 ✅）
+
+**1.【✅ 已修复】增量上传丢文档内容**
+- 根因：`routes.py` 增量上传时 `filter_unchanged_chunks` 把未变 chunk 跳过（只写变化块），激活新版本后 `deprecate_old_versions` 把旧版本**全部** chunk 置 deprecated，而检索层只查 `status=active` → 大文档改几行重传，未变内容整体不可见；且 deprecated 块 `is_deleted=False` 仍在 `get_existing_content_hashes` 里，二次修改仍跳过，永久丢失，只能全量重建恢复。
+- 修复：`kb_updater.py` `deprecate_old_versions` 增加 `keep_hashes` 参数，仅废弃"新版本中 content_hash 不存在的旧块"，且同 content_hash 跨版本累积时只保留 version_id 最高的一份（避免重复）；`activate_document_version` 透传该参数；`get_existing_content_hashes` 改为只统计 `status=active`（deprecated 块不再挡"改回旧内容"的重新激活）；`routes.py` 激活时传新版本全部 chunk（changed+unchanged）的 hash 集合。
+
+**1.5.【✅ 已修复】chromadb>=1.0 多键 where 语法不兼容（增量上传/软删除/版本查询实际全失效）**
+- 根因：`kb_updater.py` 的 `activate_document_version`/`deprecate_old_versions`/`soft_delete_document`/`restore_deleted_document`/`get_document_version` 均用 dict 多键 `where={"source":..., "status":...}`，chromadb 1.5.5 要求多键用 `$and` 数组（`{"$and":[{...},{...}]}`），否则抛 `Expected where to have exactly one operator` → 这些功能在生产环境实际从未成功（activate 恒返回 0、chunk 停在 pending）。
+- 修复：全部多键 where 改为 `$and` 数组结构（单键 where 不受影响）。
+
+**2.【✅ 已修复】`reset_hybrid_retriever()` 无效，零停机重建被架空**
+- 根因：`get_hybrid_retriever` 是 `@lru_cache(maxsize=8)`，`reset_hybrid_retriever` 只清实例字典和 embedding 缓存，未清 lru_cache；`HybridRetriever.__init__` 构造时就绑定 `get_vector_store()` → 切换/回滚后 lru 命中旧实例，仍读旧集合旧 BM25，旧目录 300s 后物理删除即报错。
+- 修复：`hybrid_retriever.py` reset 时补 `get_hybrid_retriever.cache_clear()`。
+
+**3.【✅ 已修复】fallback_buffer 每 5 分钟误删全部缓冲**
+- 根因：`fallback_buffer.py` `cleanup_expired` 的 `cutoff = datetime.now()`（而非 7 天前），`DELETE WHERE created_at < cutoff` 清掉所有未 flush 事件，Redis/Postgres 故障期间 L1 数据静默丢失，`retry_count` 重试补写机制失效。
+- 修复：cutoff 改为 `datetime.now() - timedelta(days=_MAX_AGE_DAYS)`，仅清理超过 7 天保留期的过期事件。
+
+**P0 验证结果**（`scripts/verify_p0_fix.py` 全部通过 ✅）
+- 增量上传：v1(A,B,C) → v2(改C→C') → v3(改回C) 全流程，active 始终 3 块、无重复 hash、旧块正确 deprecated、改回可恢复。
+- reset：lru_cache currsize 归 0，双集合切换后检索器重建。
+- fallback：8 天前事件删除、1 小时前事件保留。
+
+### P1 - 功能目标落空（待修复）
+
+1. `_is_self_contained` NameError：`nodes.py:2972` 使用未定义变量，`ENABLE_HYDE=True` 时开 HyDE 即崩（潜伏）。
+2. keyword_matcher 边界检测恒 True：`keyword_matcher.py:144-170` `_check_boundary` 无任何 `return False`，"心疼"误匹配"疼"、单字词误路由为 symptom，无否定词处理。
+3. rebuild 审计从不落库：`routes.py:1220` `log_kb_audit(vs, "full_rebuild", "rebuild", "success", details=...)` 首参应为 str、参数表无 `details` → TypeError 被 `except: pass` 吞掉。
+4. 用药指南/症状分诊引擎死代码：`skills/*` 的 `run_medication_guide_review`/`run_symptom_triage` 全项目无调用，剂量/禁忌核查从未运行；且 `check_dosage_safety` 剂量单位不一致（"4g"解析成 4），接线即误判。
+5. metadata 单源误判 high + mtime 污染：`metadata_extractor.py:549-557,658-667` 文件 mtime 作为唯一来源时置信度=high，每个文件被写入 `effective_date=mtime` → 重拷文件即被当"更新版本"。
+
+### P2 - 正确性缺陷（待修复）
+
+1. BM25 绕过软删除过滤：`vector_store.py:283` `load_all_documents` 无 where、`hybrid_retriever.py:322` `_sparse_search` 无过滤 → 已删除/废弃文档仍被 BM25 召回。
+2. RRF 去重 key 不一致：dense 文档无 `.id`、BM25 文档有 `.id`，同一文档双份进 rerank。
+3. adaptive_threshold 观察值取错字段：`hybrid_retriever.py:560` 读 `relevance_score`，`reranker.py:221` 写 `rerank_score`；且 `config.py:63` `RERANKER_THRESHOLD=0.005` 未生效（adaptive_threshold 注册默认 0.02，正是 v9.16 弃用的过严值）。
+4. sources/warnings 跨轮次累积：`state.py:67-68` 用 `add` reducer 但 InputSchema 不重置 → 用户可见陈旧引用无限增长。
+5. 流式 token 统计失效：`token_tracker.py` 读 `response_metadata["token_usage"]`，langchain-openai 1.x 实际在 `usage_metadata` → 用量恒 0。
+6. prune 死代码：`long_term_memory.py` `prune_namespace` 无任何调用 → 长期记忆无界膨胀。
+7. 匿名用户共用 thread：`graph.py:231` 所有匿名请求落 `thread_default` → 跨用户医疗对话互相加载。
+8. 缓存命中不写对话历史：`streaming.py:499` L0/L2 命中直接 yield 不进 checkpointer → 下一轮失去语境。
+9. 父对象跨请求变异：`parent_child_store.py:208` 直接改写 store 内 Document 的 metadata（rerank_score 等）→ 语义污染。
+10. 复合症状只增强首个：`nodes.py:1033-1037` 命中第一个症状即 return，"发烧头痛怎么办"只追加发热词。
+11. vision 安全关闭时静默终止：`nodes.py:2464` `goto="safety_check"` 无出边，图片追问不落库。
+12. safety_review 降级分支误报紧急：`safety_review_engine.py:132-137` 缩进错误，异常时把全部紧急症状塞入快照。
+13. 增量更新 build_index 重置父索引：`routes.py:867` 增量用线上单例 `build_index(changed_chunks)` 会清空全库 parent store → 单文档更新后全库父还原能力退化。
+
 ## v9.22 - 知识库不停机重建：双集合机制真正生效
 
 ### 问题

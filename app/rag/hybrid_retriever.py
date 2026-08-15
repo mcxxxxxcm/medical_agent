@@ -665,8 +665,14 @@ def get_cached_hybrid_retriever(k: int = 5, **kwargs) -> HybridRetriever:
 
 
 def reset_hybrid_retriever():
-    """重置检索器实例（双集合切换后调用，触发 BM25 重建）"""
+    """重置检索器实例（双集合切换/重建后调用，触发 BM25 重建）
+
+    必须同时清掉 get_hybrid_retriever 的 lru_cache：
+    HybridRetriever.__init__ 构造时就绑定 get_vector_store()，若 lru 命中旧实例，
+    切换后仍读旧集合、旧 BM25，300s 后旧目录物理删除即报错。
+    """
     global _hybrid_retriever_instances
     _hybrid_retriever_instances.clear()
+    get_hybrid_retriever.cache_clear()
     _embedding_cache.clear()
     logger.info("HybridRetriever 已重置，下次检索将重建 BM25 索引")

@@ -14,7 +14,7 @@ import json
 import sqlite3
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -195,7 +195,9 @@ def cleanup_expired():
     """清理超过最大保留时间的过期事件"""
     try:
         _ensure_db()
-        cutoff = datetime.now().isoformat()
+        # 只删除超过 _MAX_AGE_DAYS 的旧事件；若用当前时刻作 cutoff，
+        # 每 5 分钟会误删全部未 flush 事件，重试补写机制失效
+        cutoff = (datetime.now() - timedelta(days=_MAX_AGE_DAYS)).isoformat()
         conn = sqlite3.connect(str(_DB_PATH))
         deleted = conn.execute(
             "DELETE FROM pending_events WHERE created_at < ?",

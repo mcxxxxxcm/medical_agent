@@ -1140,3 +1140,4 @@ SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on l
 2026-08-13 18:52:26 - app.cache.semantic_cache - ERROR - 获取embedding失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
 2026-08-13 18:52:27 - app.graph.nodes.nodes - ERROR - 答案生成失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
 2026-08-13 18:52:27 - app.graph.nodes.nodes - ERROR - 答案生成失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}
+2026-08-15 20:01:16 - app.rag.kb_updater - ERROR - 激活失败：测试药典.txt v2 - Expected where to have exactly one operator, got {'source': '测试药典.txt', 'version_id': 2, 'status': 'pending'} in get.
