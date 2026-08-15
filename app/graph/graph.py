@@ -226,9 +226,18 @@ async def run_graph(
     except Exception as e:
         store = None
 
+    # P2-7：匿名用户不再共用 thread_default，各生成独立会话，
+    # 避免跨用户医疗对话在 checkpointer 中互相加载
+    if thread_id:
+        resolved_thread = thread_id
+    elif user_id:
+        resolved_thread = f"thread_{user_id}"
+    else:
+        resolved_thread = f"thread_anon_{uuid.uuid4().hex}"
+
     config = {
         "configurable": {
-            "thread_id": thread_id or f"thread_{user_id or 'default'}",
+            "thread_id": resolved_thread,
             "user_id": user_id,
             "store": store
         }
@@ -251,6 +260,9 @@ async def run_graph(
         "sub_questions": None,
         "hyde_answer": None,
         "error": None,
+        # P2-4：重置输出字段，防止 checkpointer 恢复上一轮 warnings/sources 无限累积
+        "warnings": None,
+        "sources": None,
     }
 
     result = await graph.ainvoke(input_state, config)

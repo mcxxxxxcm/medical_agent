@@ -317,9 +317,11 @@ def get_adaptive_threshold() -> AdaptiveThreshold:
 
                 # RERANKER_THRESHOLD: Reranker 评分的 P5
                 # 含义：评分低于历史 95% 文档的分数才被过滤
+                # P2-3 修复：默认值从 config 读取（v9.16 已把 0.02→0.005），
+                # 硬编码 0.02 会让 config 的 RERANKER_THRESHOLD 形同虚设
                 _adaptive_threshold.register(
                     name="RERANKER_THRESHOLD",
-                    default=0.02,
+                    default=get_config().RERANKER_THRESHOLD,
                     strategy="percentile",
                     percentile=5.0,
                     min_value=0.005,

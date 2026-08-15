@@ -81,6 +81,7 @@ class LongTermMemoryManager:
             value=query_data
         )
         logger.info(f"已保存查询记录：user_id={user_id}, query_id={query_id}")
+        self._prune_if_oversize("query_history", user_id)
 
     def get_query_history(
             self,
@@ -194,6 +195,22 @@ class LongTermMemoryManager:
         except Exception as e:
             logger.error(f"命名空间 {namespace_name}/{user_id} 清理失败：{e}")
             return 0
+
+    def _prune_if_oversize(self, namespace_name: str, user_id: str) -> None:
+        """写入路径阈值守卫：条目超上限时触发 prune，防止长期记忆无界膨胀
+
+        P2-6：prune_namespace 原为死代码，无任何调用者。在每次写入后
+        检查该命名空间条目数，超上限才 prune（避免每次写入都全量清理）。
+        """
+        try:
+            max_items = _NAMESPACE_MAX_ITEMS.get(namespace_name)
+            if not max_items:
+                return
+            items = self.store.search((namespace_name, user_id))
+            if len(items) > max_items:
+                self.prune_namespace(namespace_name, user_id)
+        except Exception as e:
+            logger.debug(f"写入后清理 {namespace_name}/{user_id} 跳过：{e}")
 
     def prune_all_namespaces(
             self,
@@ -334,6 +351,7 @@ class LongTermMemoryManager:
             value=event,
         )
         logger.info(f"症状事件已写入L1：user={user_id}, symptom={symptom_name}, onset={onset_iso}")
+        self._prune_if_oversize("symptom_events", user_id)
         return event_id
 
     def get_symptom_events(
@@ -492,6 +510,7 @@ class LongTermMemoryManager:
             value=case,
         )
         logger.info(f"Bad case 已记录：type={case_type}, query={original_query[:30]}")
+        self._prune_if_oversize("bad_cases", user_id)
         return case_id
 
     def get_bad_cases(
@@ -594,6 +613,7 @@ class LongTermMemoryManager:
             value=event,
         )
         logger.info(f"用药事件已写入L1：user={user_id}, drug={drug}")
+        self._prune_if_oversize("medication_events", user_id)
         return event_id
 
     def get_medication_events(

@@ -16,7 +16,7 @@ import asyncio
 import json
 import time
 
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from app.cache.redis_cache import get_cache
 from app.cache.semantic_cache import get_semantic_cache
@@ -365,6 +365,37 @@ class StreamingOrchestrator:
         except Exception as e:
             logger.warning(f"路由异常 bad case 记录失败：{e}")
 
+    async def _persist_conversation(self, answer: str) -> None:
+        """P2-8：缓存命中不经过 graph.astream，主动把本轮问答写入 checkpointer
+
+        保证同一 thread 下一轮仍有完整语境（否则 L0/L2 命中后对话历史缺失，
+        后续轮次无法引用前文）。
+        """
+        if not answer:
+            return
+        try:
+            graph = await get_graph()
+            config = {
+                "configurable": {
+                    "thread_id": self.thread_id,
+                    "user_id": self.user_id,
+                }
+            }
+            await graph.aupdate_state(
+                config,
+                {
+                    "messages": [
+                        HumanMessage(content=self.question),
+                        AIMessage(content=answer),
+                    ]
+                },
+                # as_node 指定节点以应用该节点的 messages reducer（追加而非覆盖）
+                as_node="answer_generation",
+            )
+            logger.info(f"缓存命中对话已写入 checkpointer：request_id={self.request_id}")
+        except Exception as e:
+            logger.warning(f"缓存命中对话写入 checkpointer 失败：{e}")
+
     async def _run_native_graph(self, route_type: str):
         """驱动原生 graph.astream，yield SSE 事件
 
@@ -405,6 +436,9 @@ class StreamingOrchestrator:
             "sub_questions": None,
             "hyde_answer": None,
             "error": None,
+            # P2-4：重置输出字段，防止 checkpointer 恢复上一轮 warnings/sources 无限累积
+            "warnings": None,
+            "sources": None,
         }
 
         self._full_answer = ""
@@ -500,6 +534,8 @@ class StreamingOrchestrator:
                 # L0 答案缓存命中
                 self._full_answer = cached_answer
                 yield await self._emit(cached_answer)
+                # P2-8：缓存命中不经过 graph，主动写入对话历史
+                await self._persist_conversation(cached_answer)
 
             elif cached_docs:
                 # L2 语义缓存命中：复用检索文档，直接流式生成
@@ -523,6 +559,8 @@ class StreamingOrchestrator:
                     if can_cache and not self._has_profile:
                         _save_answer_cache(self.question, self._full_answer)
                     self._check_hallucination(self._full_answer)
+                    # P2-8：L2 语义缓存命中不经过 graph，主动写入对话历史
+                    await self._persist_conversation(self._full_answer)
 
             else:
                 # 缓存 miss：驱动原生 graph.astream

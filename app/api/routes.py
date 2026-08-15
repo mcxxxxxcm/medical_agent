@@ -301,6 +301,19 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+def _resolve_thread_id(thread_id: Optional[str], user_id: Optional[str]) -> str:
+    """解析会话线程 ID
+
+    P2-7：匿名用户（thread_id 与 user_id 均为空）不再共用 thread_default，
+    否则跨用户的医疗对话在 checkpointer 中互相加载。匿名请求各生成独立会话。
+    """
+    if thread_id:
+        return thread_id
+    if user_id:
+        return f"thread_{user_id}"
+    return f"thread_anon_{uuid.uuid4().hex}"
+
+
 # API路由
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -328,7 +341,7 @@ async def chat(request: ChatRequest):
 
         config = {
             "configurable": {
-                "thread_id": request.thread_id or f"thread_{request.user_id or 'default'}",
+                "thread_id": _resolve_thread_id(request.thread_id, request.user_id),
                 "user_id": request.user_id,
                 "store": store,
             }
@@ -351,6 +364,9 @@ async def chat(request: ChatRequest):
             "sub_questions": None,
             "hyde_answer": None,
             "error": None,
+            # P2-4：重置输出字段，防止 checkpointer 恢复上一轮 warnings/sources 无限累积
+            "warnings": None,
+            "sources": None,
         }
 
         result = await graph.ainvoke(input_state, config)
@@ -389,7 +405,7 @@ async def stream(request: ChatRequest, http_request: Request):
     """
     request_id = getattr(http_request.state, "request_id", str(uuid.uuid4()))
     request_start_time = getattr(http_request.state, "request_start_time", time.time())
-    thread_id = request.thread_id or f"thread_{request.user_id or 'default'}"
+    thread_id = _resolve_thread_id(request.thread_id, request.user_id)
 
     logger.info(
         f"收到流式聊天请求：request_id={request_id}, thread_id={thread_id}, user_id={request.user_id}"
@@ -862,9 +878,10 @@ async def kb_upload(request: Request):
 
                     total_chunks += len(changed_chunks)
 
-                    # 构建父子索引
+                    # 构建父子索引（增量：只更新本次变更文档的 parent，不动其它文档，
+                    # 避免 build_index 清空全库 parent store 导致父还原能力退化）
                     parent_manager = get_parent_child_manager()
-                    child_chunks = parent_manager.build_index(changed_chunks, child_chunk_size=150)
+                    child_chunks = parent_manager.update_index(changed_chunks, child_chunk_size=150)
 
                     # 写入向量库（status=pending，检索层看不到！）
                     add_documents_to_store(child_chunks)

@@ -226,6 +226,9 @@ class HybridRetriever(BaseRetriever):
                     # 父子索引兼容检测：旧缓存无 parent_id，需重建
                     if documents and not documents[0].metadata.get("parent_id"):
                         logger.info("BM25 缓存为旧版（无 parent_id），重新从向量库加载")
+                    # P2-1 缓存版本检测：非 active 过滤缓存需重建
+                    elif not data.get("active_only"):
+                        logger.info("BM25 缓存为旧版（未过滤软删除文档），重新从向量库加载")
                     else:
                         logger.info(f"BM25 缓存加载成功，文档数：{len(documents)}")
                         return documents
@@ -241,7 +244,7 @@ class HybridRetriever(BaseRetriever):
         try:
             os.makedirs(os.path.dirname(BM25_CACHE_PATH), exist_ok=True)
             with open(BM25_CACHE_PATH, 'wb') as f:
-                pickle.dump({'documents': documents}, f)
+                pickle.dump({'documents': documents, 'active_only': True}, f)
             logger.info(f"BM25 文档已缓存到：{BM25_CACHE_PATH}")
         except Exception as e:
             logger.warning(f"保存 BM25 缓存失败：{e}")
@@ -344,7 +347,15 @@ class HybridRetriever(BaseRetriever):
 
         for docs, weight in weighted_results:
             for rank, doc in enumerate(docs, start=1):
-                doc_key = getattr(doc, "id", None) or f"{doc.metadata.get('source', '')}:{doc.metadata.get('file_path', '')}:{hash(doc.page_content)}"
+                # P2-2 修复：统一去重 key。dense 文档无 .id（用 hash 兜底）、BM25 文档有 .id，
+                # 同一 chunk 双份进 RRF 会拿双份分数且重复进 rerank。
+                # chunk_id / content_hash 在两路都稳定，优先使用。
+                doc_key = (
+                    doc.metadata.get("chunk_id")
+                    or doc.metadata.get("content_hash")
+                    or getattr(doc, "id", None)
+                    or f"{doc.metadata.get('source', '')}:{doc.metadata.get('file_path', '')}:{hash(doc.page_content)}"
+                )
                 doc_map[doc_key] = doc
                 score_map[doc_key] = score_map.get(doc_key, 0.0) + weight / (fusion_constant + rank)
 
@@ -556,8 +567,9 @@ class HybridRetriever(BaseRetriever):
                     score_threshold=adaptive_reranker_threshold
                 )
                 # 记录 reranker 评分观察值（取最高分）
+                # P2-3 修复：reranker 写的是 rerank_score，读 relevance_score 恒为 0 → 污染自适应阈值统计
                 if final_docs and at is not None:
-                    top_rerank_score = max(d.metadata.get("relevance_score", 0) for d in final_docs) if final_docs else 0
+                    top_rerank_score = max(d.metadata.get("rerank_score", 0) for d in final_docs) if final_docs else 0
                     at.observe("RERANKER_THRESHOLD", top_rerank_score)
                 rerank_ms = (time.time() - rerank_start) * 1000
                 logger.info(f"Reranker 重排序：{len(reranker_input)} -> {len(final_docs)}")

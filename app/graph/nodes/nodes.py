@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Literal, Optional
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
+from langgraph.graph import END
 from langgraph.types import Command
 
 from app.core.app_logging import get_logger
@@ -1030,11 +1031,15 @@ def _enrich_treatment_query(query: str) -> str:
     """
     if not query or not _TREATMENT_INTENT_RE.search(query):
         return query
-    for symptom, care_words in _SYMPTOM_CARE_KEYWORDS.items():
-        if symptom in query:
-            if care_words.split()[0] in query:
-                return query  # 已增强过，避免重复追加
-            return f"{query} {care_words}"
+    # P2-10：复合症状（"发烧头痛怎么办"）合并所有命中症状的护理词，
+    # 避免只增强首个症状导致其余症状的护理内容召不回
+    matched_words = [care_words for symptom, care_words in _SYMPTOM_CARE_KEYWORDS.items() if symptom in query]
+    if matched_words:
+        # 合并 + 保序去重（"发烧"/"发热"等词表重复的词只保留一份）
+        merged = " ".join(dict.fromkeys(" ".join(matched_words).split()))
+        if merged.split()[0] in query:
+            return query  # 已增强过，避免重复追加
+        return f"{query} {merged}"
     if _GENERIC_TREATMENT_KEYWORDS.split()[0] in query:
         return query
     return f"{query} {_GENERIC_TREATMENT_KEYWORDS}"
@@ -2476,6 +2481,17 @@ def _is_simple_greeting(question: str) -> Optional[str]:
     return None
 
 
+def _vision_fallback_goto() -> str:
+    """图片追问/低置信度/异常消息的流转目标
+
+    P2-11：ENABLE_SAFETY_CHECK=False 时 safety_check 无出边，若仍 goto=safety_check，
+    图会在该节点静默终止、追问不落库。此时直接 goto END 收尾。
+    """
+    if getattr(get_config(), "ENABLE_SAFETY_CHECK", True):
+        return "safety_check"
+    return END
+
+
 @timing_decorator("图片问诊")
 def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """图片问诊节点（方案C：VLM结构化提取 → OCR校准 → 不确定性追问 → RAG生成）
@@ -2523,7 +2539,7 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
                     "final_answer": vision_result.followup_question,
                     "warnings": ["⚠️ 图片信息不足，请补充后再试"],
                 },
-                goto="safety_check",
+                goto=_vision_fallback_goto(),
             )
 
         if vision_result.confidence == "low":
@@ -2533,7 +2549,7 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
                                     "或者用文字描述您的症状和问题。",
                     "warnings": ["⚠️ 图片识别置信度低，结果不可靠"],
                 },
-                goto="safety_check",
+                goto=_vision_fallback_goto(),
             )
 
         # ===== Step 4: 构造 RAG 查询，路由到 RAG 管线 =====
@@ -2559,7 +2575,7 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
         logger.error(f"图片问诊失败：{str(e)}")
         return Command(
             update={"final_answer": "抱歉，图片解读遇到了问题，请稍后重试或尝试文字描述您的症状。"},
-            goto="safety_check",
+            goto=_vision_fallback_goto(),
         )
 
 

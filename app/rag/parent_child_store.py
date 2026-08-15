@@ -119,6 +119,54 @@ class ParentChildManager:
         )
         return child_chunks
 
+    def update_index(self, parent_documents: List[Document], child_chunk_size: int = 150) -> List[Document]:
+        """增量更新指定文档的父索引（不影响其它文档的 parent）
+
+        P2-13：build_index 会重置整个 store；增量入库若复用 build_index 会清空
+        全库 parent store，导致单文档更新后其它文档的父还原能力退化。
+        本方法只删除本次变更文档的旧版本 parent 并写入新版本，其余文档保持不变。
+
+        Returns:
+            child_chunks: 本次变更文档的新子文档列表
+        """
+        child_chunks: List[Document] = []
+
+        # 仅处理本次变更涉及的文档（按 source 分组），删除其旧版本 parent
+        changed_docs = set(p.metadata.get("source", "unknown") for p in parent_documents)
+        for doc_id in changed_docs:
+            old_sections = self._doc_sections.pop(doc_id, [])
+            if old_sections:
+                self.store.mdelete([parent_id for _sec, parent_id in old_sections])
+                for _sec, parent_id in old_sections:
+                    self._parent_location.pop(parent_id, None)
+
+        source_counters: Dict[str, int] = defaultdict(int)
+        for parent_doc in parent_documents:
+            parent_id = f"p_{uuid.uuid4().hex[:12]}"
+            doc_id = parent_doc.metadata.get("source", "unknown")
+            section_index = source_counters[doc_id]
+            source_counters[doc_id] += 1
+
+            parent_doc.metadata["doc_id"] = doc_id
+            parent_doc.metadata["section_index"] = section_index
+
+            self.store.mset([(parent_id, parent_doc)])
+            self._doc_sections[doc_id].append((section_index, parent_id))
+            self._parent_location[parent_id] = (doc_id, section_index)
+
+            children = self._split_to_children(parent_doc, parent_id, child_chunk_size)
+            child_chunks.extend(children)
+
+        for doc_id in self._doc_sections:
+            self._doc_sections[doc_id].sort(key=lambda x: x[0])
+
+        self._initialized = True
+        logger.info(
+            f"父子索引增量更新：{len(parent_documents)} 个父文档（{len(changed_docs)} 个文档）"
+            f" → {len(child_chunks)} 个子文档，其余文档 parent 保持不变"
+        )
+        return child_chunks
+
     def _split_to_children(
         self, parent_doc: Document, parent_id: str, max_chars: int = 150
     ) -> List[Document]:
@@ -204,8 +252,11 @@ class ParentChildManager:
 
             parent_doc = self.store.mget([parent_id])
             if parent_doc and parent_doc[0]:
+                # P2-9：始终返回浅拷贝（含独立 metadata dict），避免调用方改写
+                # store 内共享 Document 对象（如写 rerank_score）污染后续请求
+                parent = parent_doc[0].model_copy()
+                parent.metadata = dict(parent.metadata)
                 # 从 child 的 rerank_score 传递到 parent
-                parent = parent_doc[0]
                 rerank_score = child.metadata.get("rerank_score")
                 if rerank_score is not None:
                     parent.metadata["rerank_score"] = rerank_score

@@ -281,14 +281,31 @@ class VectorStoreManager:
             return {"error": str(e)}
 
     def load_all_documents(self, limit: int = 50000) -> List[Document]:
-        """从向量库加载全部文档，供 BM25 等离线检索组件使用"""
+        """从向量库加载全部 active 文档，供 BM25 等离线检索组件使用
+
+        P2-1 修复：仅加载 status=active 的 chunk，软删除/废弃文档不再进入
+        BM25 索引。旧库（chunk 无 status 字段）时降级为全量加载，避免空索引。
+        """
         if self.vector_store is None:
             raise ValueError("向量数据库未初始化，请先调用create_vector_store")
 
         try:
             collection = self.vector_store._collection
-            results = collection.get(include=["documents", "metadatas"], limit=limit)
+            results = collection.get(
+                where={"status": "active"},
+                include=["documents", "metadatas"],
+                limit=limit,
+            )
             documents = results.get("documents") or []
+
+            # 旧库兼容：active 查询为空且库中无 status 字段 → 全量加载
+            if not documents:
+                probe = collection.get(limit=1, include=["metadatas"])
+                probe_meta = (probe.get("metadatas") or [{}])[0]
+                if "status" not in probe_meta:
+                    results = collection.get(include=["documents", "metadatas"], limit=limit)
+                    documents = results.get("documents") or []
+
             metadatas = results.get("metadatas") or []
             ids = results.get("ids") or []
 

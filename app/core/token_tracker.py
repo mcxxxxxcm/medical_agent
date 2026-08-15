@@ -41,19 +41,27 @@ def track_tokens(
     """
     try:
         # 提取 token 用量
-        # LangChain ChatOpenAI 返回格式：
+        # langchain-openai 1.x 的 AIMessage.usage_metadata（OpenAI 标准格式）：
+        #   {"input_tokens": 800, "output_tokens": 300, "total_tokens": 1100}
+        # 旧格式（langchain-openai <1.0 / 部分兼容服务）：
         #   response.response_metadata = {"token_usage": {"prompt_tokens": 800, "completion_tokens": 300, "total_tokens": 1100}, "model_name": "glm-4-flash"}
-        #   或 OpenAI 兼容格式：
         #   response.response_metadata = {"usage": {"prompt_tokens": 800, "completion_tokens": 300}}
         metadata = getattr(response, "response_metadata", {}) or {}
 
-        # 兼容多种格式
-        token_usage = metadata.get("token_usage") or metadata.get("usage") or {}
-        prompt_tokens = token_usage.get("prompt_tokens", 0) or 0
-        completion_tokens = token_usage.get("completion_tokens", 0) or 0
+        # P2-5：优先读取 usage_metadata，旧格式兜底
+        usage_metadata = getattr(response, "usage_metadata", None) or {}
+        prompt_tokens = usage_metadata.get("input_tokens") or usage_metadata.get("prompt_tokens") or 0
+        completion_tokens = usage_metadata.get("output_tokens") or usage_metadata.get("completion_tokens") or 0
+
+        token_usage = {}
+        if prompt_tokens == 0 and completion_tokens == 0:
+            token_usage = metadata.get("token_usage") or metadata.get("usage") or {}
+            prompt_tokens = token_usage.get("prompt_tokens", 0) or 0
+            completion_tokens = token_usage.get("completion_tokens", 0) or 0
 
         # 模型名
-        model = model_override or metadata.get("model_name", "") or token_usage.get("model", "")
+        model = (model_override or metadata.get("model_name", "")
+                 or usage_metadata.get("model", "") or token_usage.get("model", ""))
 
         if prompt_tokens == 0 and completion_tokens == 0:
             # 流式模式或某些模型不返回 token 信息，跳过

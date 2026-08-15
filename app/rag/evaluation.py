@@ -252,7 +252,7 @@ class RAGEvaluator:
             return {"contexts": [], "scores": [], "docs": []}
 
         contexts = [doc.page_content for doc in docs]
-        scores = [doc.metadata.get("relevance_score", 0.0) for doc in docs]
+        scores = [doc.metadata.get("rerank_score", 0.0) for doc in docs]
         return {"contexts": contexts, "scores": scores, "docs": docs}
 
     def run_generation(self, question: str, contexts: List[str]) -> str:

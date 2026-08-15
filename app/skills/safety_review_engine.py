@@ -130,11 +130,12 @@ def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str,
         from app.core.keyword_matcher import get_emergency_matcher
         answer_has_emergency = get_emergency_matcher().contains_any(answer, use_boundary=False)
     except Exception:
+        # P2-12：append 必须在命中条件内，否则异常时把全部紧急症状塞入快照误报紧急
         for emerg in EMERGENCY_SYMPTOMS:
             if emerg in answer:
                 answer_has_emergency = True
-            if emerg not in emergency_in_snapshot:
-                emergency_in_snapshot.append(emerg)
+                if emerg not in emergency_in_snapshot:
+                    emergency_in_snapshot.append(emerg)
     
     # 检查回答中是否有就医指引
     medical_care_indicators = [

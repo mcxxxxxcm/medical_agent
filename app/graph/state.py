@@ -15,12 +15,23 @@
     中间字段：retrieved_docs, symptoms（节点间传递）
     标准字段：messages（LangGraph对话历史）
 """
-from operator import add
 from typing import TypedDict, Optional, List, Dict, Any, Annotated
 
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
+
+
+def _resetable_list_add(left: Optional[list], right: Optional[list]) -> list:
+    """可重置的列表累积 reducer
+
+    P2-4 修复：替代 operator.add。warnings/sources 若用纯 add，
+    checkpointer 恢复的上一轮值会与本轮叠加，用户可见陈旧引用无限增长。
+    约定：right is None → 重置为空列表（每轮输入传 None 清空上一轮残留）。
+    """
+    if right is None:
+        return []
+    return (left or []) + (right or [])
 
 
 class MedicalAssistantState(TypedDict):
@@ -64,8 +75,8 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 输出字段 =====
     final_answer: Optional[str]
-    warnings: Annotated[List[str], add]  # 累积警告信息（多个节点的 warnings 自动合并）
-    sources: Annotated[List[Dict[str, str]], add]
+    warnings: Annotated[List[str], _resetable_list_add]  # 累积警告信息（每轮由输入 None 重置）
+    sources: Annotated[List[Dict[str, str]], _resetable_list_add]
 
     # ===== 中间字段 =====
     retrieved_docs: Optional[List[Document]]
@@ -117,6 +128,11 @@ class InputSchema(TypedDict):
     sub_questions: Optional[List[str]]
     hyde_answer: Optional[str]
     error: Optional[str]
+
+    # 输出字段允许每轮显式重置（传 None 清空上一轮 checkpointer 残留，
+    # 否则 add 累积导致用户可见陈旧来源/警告无限增长）
+    warnings: Optional[List[str]]
+    sources: Optional[List[Dict[str, str]]]
 
 
 class OutputSchema(TypedDict):

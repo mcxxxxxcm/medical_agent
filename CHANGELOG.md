@@ -2,7 +2,7 @@
 
 ## 26/8/15待修复 - 全链路审计发现的问题清单
 
-并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0/P1 已修复，P2 待修复（逐项修复后在本条目内更新状态）。
+并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0/P1/P2 已全部修复 ✅。
 
 ### P0 - 数据丢失 / 功能彻底失效（已全部修复 ✅）
 
@@ -56,21 +56,47 @@
 - 修复：`_resolve_field` 在 `len(sources)==1` 时提前返回 confidence="low"（无法交叉验证，写入 `doc_{field}_pending` 待复核）；多来源一致仍为 high。
 - 验证：单源 filesystem→low，双源一致→high，三源多数→mid，无源→none。
 
-### P2 - 正确性缺陷（待修复）
+### P2 - 正确性缺陷（已全部修复 ✅）
 
-1. BM25 绕过软删除过滤：`vector_store.py:283` `load_all_documents` 无 where、`hybrid_retriever.py:322` `_sparse_search` 无过滤 → 已删除/废弃文档仍被 BM25 召回。
-2. RRF 去重 key 不一致：dense 文档无 `.id`、BM25 文档有 `.id`，同一文档双份进 rerank。
-3. adaptive_threshold 观察值取错字段：`hybrid_retriever.py:560` 读 `relevance_score`，`reranker.py:221` 写 `rerank_score`；且 `config.py:63` `RERANKER_THRESHOLD=0.005` 未生效（adaptive_threshold 注册默认 0.02，正是 v9.16 弃用的过严值）。
-4. sources/warnings 跨轮次累积：`state.py:67-68` 用 `add` reducer 但 InputSchema 不重置 → 用户可见陈旧引用无限增长。
-5. 流式 token 统计失效：`token_tracker.py` 读 `response_metadata["token_usage"]`，langchain-openai 1.x 实际在 `usage_metadata` → 用量恒 0。
-6. prune 死代码：`long_term_memory.py` `prune_namespace` 无任何调用 → 长期记忆无界膨胀。
-7. 匿名用户共用 thread：`graph.py:231` 所有匿名请求落 `thread_default` → 跨用户医疗对话互相加载。
-8. 缓存命中不写对话历史：`streaming.py:499` L0/L2 命中直接 yield 不进 checkpointer → 下一轮失去语境。
-9. 父对象跨请求变异：`parent_child_store.py:208` 直接改写 store 内 Document 的 metadata（rerank_score 等）→ 语义污染。
-10. 复合症状只增强首个：`nodes.py:1033-1037` 命中第一个症状即 return，"发烧头痛怎么办"只追加发热词。
-11. vision 安全关闭时静默终止：`nodes.py:2464` `goto="safety_check"` 无出边，图片追问不落库。
-12. safety_review 降级分支误报紧急：`safety_review_engine.py:132-137` 缩进错误，异常时把全部紧急症状塞入快照。
-13. 增量更新 build_index 重置父索引：`routes.py:867` 增量用线上单例 `build_index(changed_chunks)` 会清空全库 parent store → 单文档更新后全库父还原能力退化。
+1. **【✅ 已修复】BM25 绕过软删除过滤**
+   - 根因：`vector_store.py:283` `load_all_documents` 无 where、`hybrid_retriever.py:322` `_sparse_search` 无过滤 → 已删除/废弃文档仍被 BM25 召回。
+   - 修复：`vector_store.py` `load_all_documents` 带 `where={"status":"active"}`（legacy 数据无 status 时回退全量）；`hybrid_retriever.py` `_load_bm25_documents` 增加 cache 版本标记 `active_only`（旧缓存触发重建），BM25 只索引 active chunk。
+2. **【✅ 已修复】RRF 去重 key 不一致**
+   - 根因：dense 文档无 `.id`、BM25 文档有 `.id`，同一文档双份进 rerank。
+   - 修复：`_reciprocal_rank_fusion` doc_key 优先 `chunk_id` metadata（dense/BM25 一致），同一文档不再双份。
+3. **【✅ 已修复】adaptive_threshold 观察值取错字段**
+   - 根因：`hybrid_retriever.py:560` 读 `relevance_score`，`reranker.py:221` 写 `rerank_score`；`config.py:63` `RERANKER_THRESHOLD=0.005` 未生效（注册默认硬编码 0.02）。
+   - 修复：`hybrid_retriever.py` 读 `rerank_score`；`evaluation.py` 同步修复；`adaptive_threshold.py` RERANKER_THRESHOLD 注册默认值改为 `get_config().RERANKER_THRESHOLD`。
+4. **【✅ 已修复】sources/warnings 跨轮次累积**
+   - 根因：`state.py` 用 `add` reducer 但 InputSchema 不重置 → 用户可见陈旧引用无限增长。
+   - 修复：新增自定义 reducer `_resetable_list_add`（`right is None → []`），`warnings`/`sources` 改用；`graph.py`/`streaming.py`/`routes.py` 三处 `ainvoke` input_state 每轮传 `None` 重置。验证：带 checkpointer 两轮，第二轮仅含本轮 warnings。
+5. **【✅ 已修复】流式 token 统计失效**
+   - 根因：`token_tracker.py` 读 `response_metadata["token_usage"]`，langchain-openai 1.x 实际在 `usage_metadata` → 用量恒 0。
+   - 修复：优先读 `AIMessage.usage_metadata`（`input_tokens`/`output_tokens`），兼容旧 `token_usage`/`usage` 格式。验证：三种格式提取正确、无 token 信息跳过。
+6. **【✅ 已修复】prune 死代码**
+   - 根因：`long_term_memory.py` `prune_namespace` 无任何调用 → 长期记忆无界膨胀。
+   - 修复：新增 `_prune_if_oversize`，在 `save_query_record`/`append_symptom_event`/`append_medication_event`/`save_bad_case` 写入后触发，条目超 `_NAMESPACE_MAX_ITEMS` 才 prune。验证：超上限触发、未超跳过、未注册 namespace 跳过。
+7. **【✅ 已修复】匿名用户共用 thread**
+   - 根因：`graph.py:231` 所有匿名请求落 `thread_default` → 跨用户医疗对话互相加载。
+   - 修复：`routes.py` 新增 `_resolve_thread_id`（有 thread 用 thread；无 thread 有 user 用 `thread_{user}`；都无则生成独立 `thread_anon_{uuid}`）；`graph.py` `run_graph` 同步。验证：匿名每次独立会话。
+8. **【✅ 已修复】缓存命中不写对话历史**
+   - 根因：`streaming.py:499` L0/L2 命中直接 yield 不进 checkpointer → 下一轮失去语境。
+   - 修复：新增 `_persist_conversation`，L0/L2 命中后用 `graph.aupdate_state(as_node="answer_generation")` 把本轮问答写入 checkpointer。验证：两轮 update_state 后 messages 追加（4 条）而非覆盖。
+9. **【✅ 已修复】父对象跨请求变异**
+   - 根因：`parent_child_store.py:208` 直接改写 store 内 Document 的 metadata（rerank_score 等）→ 语义污染。
+   - 修复：`get_parents` 始终返回 `model_copy()` + 独立 metadata dict，rerank_score 写副本。验证：store 共享对象无 rerank_score 残留、两次请求评分独立。
+10. **【✅ 已修复】复合症状只增强首个**
+    - 根因：`nodes.py:1033-1037` 命中第一个症状即 return，"发烧头痛怎么办"只追加发热词。
+    - 修复：`_enrich_treatment_query` 合并所有命中症状的护理词（保序去重）。验证："发烧头痛怎么办" 同时含发热+头痛护理词。
+11. **【✅ 已修复】vision 安全关闭时静默终止**
+    - 根因：`nodes.py:2464` `goto="safety_check"` 无出边，图片追问不落库。
+    - 修复：新增 `_vision_fallback_goto()`，`ENABLE_SAFETY_CHECK=False` 时追问/低置信度/异常 `goto=END` 收尾（不再卡在无出边的 safety_check）。验证：True→safety_check，False→END。
+12. **【✅ 已修复】safety_review 降级分支误报紧急**
+    - 根因：`safety_review_engine.py:132-137` 缩进错误，`append` 在命中条件外 → 异常时把全部紧急症状塞入快照。
+    - 修复：`emergency_in_snapshot.append` 移入 `emerg in answer` 条件内。验证：回答"胸痛..." 仅 append 胸痛，不再塞全部紧急症状。
+13. **【✅ 已修复】增量更新 build_index 重置父索引**
+    - 根因：`routes.py:867` 增量用线上单例 `build_index(changed_chunks)` 会清空全库 parent store → 单文档更新后全库父还原能力退化。
+    - 修复：`parent_child_store.py` 新增 `update_index`（仅删变更文档旧版本 parent + 写入新版本，其余文档保留）；`routes.py` 增量路径改用 `update_index`。验证：全量 A+B 后增量更新 B，A 的 parent 仍可检索。
 
 ## v9.22 - 知识库不停机重建：双集合机制真正生效
 
