@@ -260,6 +260,9 @@ async def run_graph(
         "sub_questions": None,
         "hyde_answer": None,
         "error": None,
+        # H12：重置重试振荡检测字段，防止上一轮残留干扰本轮
+        "_prev_max_score": None,
+        "_prev_relevant_count": None,
         # P2-4：重置输出字段，防止 checkpointer 恢复上一轮 warnings/sources 无限累积
         "warnings": None,
         "sources": None,

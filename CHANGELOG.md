@@ -1,5 +1,80 @@
 # 系统优化更新日志
 
+## v9.21 - 第二轮高风险项修复（14/14）
+
+承接 26/8/16 审计高风险清单，全部 14 项已修复并逐项验证：
+
+- **H1 评估生成恒空**：`evaluation.py:run_generation` 同步调用 async 节点得 coroutine → 改用 `asyncio.run(answer_generation_node(state, config))`，生成链路恢复。
+- **H2 临床快照字段读写不一致**：快照症状实际存于 `symptom_timeline`，读端统一改为从 `symptom_timeline` 提取（`_get_checkpoint_symptoms`/`check_emergency_signals`/`_detect_user_conditions`），并补读 `confirmed_facts` 用于禁忌检测。
+- **H3 rerank_top_k 不生效**：删除硬编码 `RERANKER_INPUT_CAP=7`，改用 `candidates[:max(self.rerank_top_k, self.k)]`。
+- **H4 剂量不累计每日总剂量**：新增频次×单次剂量检测（"每次600mg，每日3次"→1800mg>1200mg 告警）。
+- **H5 增量入库后 BM25 不同步**：upload 端点补齐 `bm25_index.pkl` 删除 + `reset_hybrid_retriever()`。
+- **H6 L2 无序 SET 取键**：`_find_similar_query` 改从 LRU Sorted Set `ZREVRANGE` 取最近键（旧 Set 降级兼容）。
+- **H7 L0 答案缓存绕过版本化**：key 改为 `answer:{md5(question:kb_version:prompt_version)[:16]}`，KB/Prompt 变更自动失效。
+- **H8 L2 写失败关闭全局缓存**：移除 `self._cache._available=False`，写失败仅跳过本次。
+- **H9 metrics/拒答接口无鉴权**：`_verify_admin_key` 覆盖全部 `/api/metrics/*`、`/api/admin/refusal/*`、`/api/admin/kb/*`（复核确认 13 个 admin 端点全带鉴权）。
+- **H10 上传/删除路径穿越**：新增 `_sanitize_kb_filename`（拒 `/`、`\`、盘符、`.`、`..`），upload + delete 双端点应用。
+- **H11 非流式绕过安全检查**：`/api/chat` 在 `ENABLE_SAFETY_CHECK=False` 时补齐后置 `safety_check_node`，与流式一致。
+- **H12 振荡检测字段不在 schema**：`_prev_max_score`/`_prev_relevant_count` 声明进 `MedicalAssistantState`+`InputSchema`，并每轮重置。
+- **H13 诊断断言修订删疾病名**：含通配符模式仅替换关键字前缀（`就是.{0,6}病`→只替换"就是"为"可能是"），保留疾病名。
+- **H14 分诊 duration 类型不匹配**：`assess_duration` 兼容 `{症状:{iso,ts,precision}}` 字典值，提取 `ts` 计算。
+
+## 26/8/16待修复 - 第二轮全链路审计问题清单
+
+承接 26/8/15 审计（P0/P1/P2 已全部修复），再次并行审查 5 条链路，新发现约 45 个问题：14 高风险 / 约 18 中风险 / 约 10 低风险。其中 4 项已亲自复核代码确认（标注 ⚠️已复核）。逐项修复后在本条目内更新状态。
+
+### 高风险（14 项）
+
+- **H1 ⚠️已复核【✅已修复】评估生成环节恒返回空**：`evaluation.py:263-275` `run_generation` 同步调用 `answer_generation_node`，而该节点是 `async def` 且需 `(state, config)` → 得到 coroutine，`.get("final_answer")` 抛错被 except 吞掉，恒返回 `""`。Faithfulness/Relevance 全部基于空答案，评估链路形同虚设。
+- **H2 ⚠️已复核【✅已修复】临床快照字段读写不一致**：`models.py:151-162` 快照 schema 只有 `chief_complaint/symptom_timeline/medication_history/red_flags/confirmed_facts/ruled_out/symptom_onset_dates`；`nodes.py:849-861`/`2183-2186` 却读不存在的顶层 `symptoms`/`body_parts`/`severity` → 恒空。多轮追问症状继承（`_symptoms_with_checkpoint_fallback`）静默失效；`safety_check` 里 `_get_checkpoint_symptoms` 恒空 → `run_symptom_triage` 危险组合/就诊时限核查从不触发。症状实际存于 `symptom_timeline` 数组。
+- **H3 ⚠️已复核【✅已修复】rerank_top_k 完全不生效**：`hybrid_retriever.py:545` 候选截断 `RERANKER_INPUT_CAP=7` 硬编码，`rerank` 用 `top_k=self.k`，`rerank_top_k`/`config.RERANKER_TOP_K` 从未使用。symptom 类型 k=8 被压到 ≤7，多跳症状查询召回不足。
+- **H4 ⚠️已复核【✅已修复】剂量核查不累计每日总剂量**：`medication_guide_engine.py:348-364` 只比对单次剂量 > 日上限；"每次1g，每日3次"（3000mg > 对乙酰氨基酚 2000 上限）`exceeds_limit=False` 不告警。超量漏报。
+- **H5【✅已修复】增量入库后 BM25 与知识库永久不同步**：`routes.py:887-918` `add_documents_to_store` 只失效语义缓存，不触发 `reset_hybrid_retriever` 也不删 `bm25_index.pkl`（带 `active_only` 标记的缓存仍判定有效）→ 新文档仅 dense 可召回、sparse 永不召回。
+- **H6【✅已修复】L2 语义缓存从无序 SET 任意取前 100 键**：`semantic_cache.py:179-190` `smembers` 返回 Python set 无序，`list(all_keys)[:top_k*10]` 任意截取；真正维护的 `_keys_zset`（LRU）从未用于查找排序 → 缓存 >100 条后命中变"概率事件"，L2 命中率随缓存增长崩塌。
+- **H7【✅已修复】L0 答案缓存绕过版本化 key**：`streaming.py:39-53,172-200` 用 `answer:{question}` 直接 Redis get/setex，绕过 redis_cache 的 `_generate_key`（kb_version/prompt_version 绑定）；KB 更新时无任何路由清空 `answer:*` → 知识库更新后旧答案最长残留 30 分钟。
+- **H8【✅已修复】L2 写失败关闭全局 L0 `_available`**：`semantic_cache.py:380` `set()` 捕获写异常后把**共享 Redis 单例** `self._cache._available=False`，该标志同时决定 hybrid_retriever 是否走 L2 → 一次瞬断/序列化异常拖垮整个 L0 答案缓存 + L2，降级 30 秒。
+- **H9【✅已修复】拒答日志/metrics 接口无鉴权**：`routes.py:663-678` `get_refusal_stats`/`export_refusal_logs` 声明了 `request: Request` 但从不调用 `_verify_admin_key`（同文件其余 `/api/admin/*` 均校验），`/api/metrics/*` 系列同样无鉴权 → 患者原始提问（question/request_id/thread_id）明文可导出，违反医疗数据合规。
+- **H10【✅已修复】知识库上传/删除路径穿越**：`routes.py:793,972` `target_path = docs_dir / filename`、`file_path = docs_dir / filename`，filename 直接来自 multipart/URL 参数未 `Path.name` 净化、未拒 `..` → 可写入/删除 `docs_dir` 之外任意文件，潜在 RCE/服务瘫痪。
+- **H11【✅已修复】ENABLE_SAFETY_CHECK=False 时非流式 /api/chat 完全绕过安全检查**：`routes.py:318-372` `chat` 端点 `graph.ainvoke` 直连，图内 safety_check 不可达；流式路径有后置补偿（streaming.py 调 safety_check_node），非流式没有 → 默认配置下同步接口返回的答案无任何规则引擎/用药核查/LLM 审查，安全策略按入口不一致。
+- **H12【✅已修复】`_prev_max_score`/`_prev_relevant_count` 不在 state schema，自纠正振荡检测死代码**：`nodes.py:1392-1566` grade_documents 通过 `Command(update={"_prev_max_score":...})` 写入，LangGraph 对未知键静默丢弃 → 重试轮 `state.get("_prev_max_score")` 恒 0，两个"改善不足即早退"分支永不触发，每次重试都跑满 rewrite+检索 2 轮（徒增 2s+）。
+- **H13【✅已修复】诊断断言修订删除疾病名**：`safety_review_engine.py:176-187` 模式 `就是.{0,6}病` 替换查表返回兜底"可能"、不保留疾病名；且多模式匹配基于原始串位置、先替换靠后位置后文本偏移 → "这肯定就是肺炎"→"这可能可能"，疾病名丢失、句子破碎。
+- **H14【✅已修复】症状分诊持续时间维度类型不匹配**：`symptom_triage_engine.py:172-177` `assess_duration` 用 `isinstance(onset_ts,(int,float))` 判断，但快照 `symptom_onset_dates` 实为 `{症状:{iso,ts,precision}}`，值恒为 dict → 条件恒 False，72 小时就诊阈值分支从不触发，"症状持续 3 天"被漏判为 🟢。
+
+### 中风险（约 18 项）
+
+- **M1** 自纠正重试沿用旧 `sub_questions`：`nodes.py:878-883` question_decompose 见已有列表即 `return {}`，query_rewrite 不重置 → 拆解过的复合问题重试时用旧子问题再查，新关键词检索被丢弃。
+- **M2** ROUTER_PROMPT 要求"只返回类型名称"，与 JSON 结构化提取冲突：`prompts.py:79-93` vs `nodes.py:655-678`，本地模型照 prompt 输出纯 `symptom` 时三层解析全失败 → 降级 general→direct_answer，症状/知识类问题被弱化回答；`parse_router_output` 兼容函数未被 `_llm_route` 使用。
+- **M3** L0 答案缓存以问题文本为 key 跨用户串用：`streaming.py:166-181` 仅 `not self._has_profile` 时查询，但有 thread 历史无档案的用户也命中 → 前一会话基于不同主诉的医疗答案被 30 分钟内复用。
+- **M4** vision 追问/低置信度回答不写 messages：`nodes.py:2537-2553` 只返回 final_answer/warnings，无 messages → 图片问诊追问不进 checkpointer，下一轮上下文断裂。
+- **M5** `strip_rag_documents_from_history` 正则与真实格式不匹配：`nodes.py:1668-1712` 正则要求 `[文档N 来源...]`，实际注入格式是 `[{source}]` → 历史 RAG 文档块永不被占位符替换，上下文 token 膨胀，Redis 产生孤儿 doc，MicroCompact 失效。
+- **M6** grade 无覆盖兜底时保留 sources：`nodes.py:1395-1406` 返回"无命中结果"答案但不清除 sources → 用户可见"没查到却给了来源"。
+- **M7** `get_symptom_history` 读的 `("symptom_history", user_id)` 命名空间无任何写入者：`long_term_memory.py:55` 恒空（写入在 `symptom_events`），潜伏 bug。
+- **M8** `document_cache` 命名空间无 TTL/无 prune：`long_term_memory.py:105-125` 不在 `_NAMESPACE_RETENTION/_MAX_ITEMS`，Postgres 无界增长且全库共享。
+- **M9** fallback flush 无幂等 + 无 busy_timeout：`fallback_buffer.py:118-191` 先写 L1 再 DELETE 非原子，崩溃重跑产生重复事件；sqlite 未设 busy_timeout，flush 持锁期间 enqueue 撞 `database is locked` 静默丢事件。
+- **M10** 药物相互作用去重方向写反：`medication_guide_engine.py:270-282` `already` 查 `(drug_b,drug_a)` 而首段 append `(drug_a,drug_b)` → 对称互列两药重复警告两条。
+- **M11** "儿童"禁忌含单字"岁"误判成人：`medication_guide_engine.py:46,188-193` 年龄字段几乎必含"岁" → 任何成年档案命中"儿童"，阿司匹林误报禁忌。
+- **M12** 紧急信号 `answer_has_emergency` 计算后未参与决策：`safety_review_engine.py:128-138` `needs_alert` 只看 `emergency_in_snapshot` → 用户快照无紧急症状、仅回答含"胸痛"未给就医指引时主路径不追加紧急提示，拦截落空。
+- **M13** 同步 `/api/chat` 静默丢弃 `image_base64`：`routes.py:52-57` ChatRequest 定义了但 `chat()` input_state 不传 → 图片问诊走非流式接口图片被忽略。
+- **M14** 多处配置项定义但不生效：`.env` `MAX_MESSAGES=20`/`SUMMARY_TRIGGER=14` 在 Settings 无字段（extra=ignore 静默丢弃）；`MAX_CONTENT_LENGTH`/`MAX_QUESTION_LENGTH` 定义后无消费。
+- **M15** reload_config 假热更新：`llm.py` 各 get_llm 均 `lru_cache` 用旧配置冻结实例，`RateLimitMiddleware.max_requests` 构造时捕获 → 热更新对已缓存 LLM/中间件不生效。
+- **M16** adaptive_threshold 首个校准点在 1000 而非注释宣称的 100：`adaptive_threshold.py:118-120` 校准条件被 `RECALIBRATE_INTERVAL=1000` 门控，`MIN_SAMPLES=100` 常规路径形同虚设，冷启动期固定阈值长期不校准。
+- **M17** checkpointer/long_term_memory 双重初始化竞态：`checkpointer.py:48-64`、`long_term_memory.py:645-658` 首个并发请求各自建连接池，后写覆盖全局、先建的从不 `__exit__`，连接池泄漏。
+- **M18** metrics 相对路径依赖进程 CWD：`metrics.py:46` `data/metrics/metrics.db` 未基于 PROJECT_ROOT 拼接 → 不同启动目录写不同 DB，统计丢失/对不上。
+
+### 低风险 / 清理（约 10 项）
+
+- **L1** qa_chain.invoke 双重检索：`qa_chain.py:235-238` 先取 docs 作 sources，chain 内 `RunnablePassthrough.assign` 又调一次 retriever → 检索两次、展示来源与生成所用文档可能不一致。
+- **L2** `run_rule_based_review` 文档声明支持 block，代码永不返回 block：`safety_review_engine.py:248-251` block 全依赖 LLM 深度审查，规则层无法兜底拒答。
+- **L3** `_FORCE_STRATEGY` 恒 None 且不读 env：`structured_output.py:47` 文档宣称可被 `STRUCTURED_OUTPUT_STRATEGY` 覆盖，实际不存在该能力。
+- **L4** `loader_txt_only.py` 为重复死文件：与 `loader.py` `load_medical_documents` 重复且无 import。
+- **L5** `get_collection_info` 返回绑定方法而非数值：`vector_store.py:277` `collection_info.count` 未调用 → 接入管理 API 时 JSON 序列化抛异常（当前无调用方）。
+- **L6** 熔断器注册表静默忽略同名新参数：`circuit_breaker.py:122-135` name 已存在时直接返回旧实例，新 threshold/timeout 被丢弃无日志。
+- **L7** 限流中间件 IP 桶全局共享 + 热更新无效：`routes.py:206-247` 以 `request.client.host` 为 key 未读 X-Forwarded-For，反代后全站同源 IP，单用户打满即全站 429。
+- **L8** 主模型失败无备用切换：`nodes.py:3842-3857` 仅返回道歉文案，config 注释中的"备选模型"从未被代码切换，熔断器未接入 LLM 层。
+- **L9** evaluation 每条样本重建 hybrid retriever：`evaluation.py:245-256` 每次 `get_hybrid_retriever(k=3,...)` 重建 BM25 索引，批量评估耗时线性放大。
+- **L10** `_embedding_cache` 无上限只写不读：`semantic_cache.py:93` 进程内存泄漏；`record_feedback` 插入失败仍返回 id；`prune_namespace` 对空时间戳事件按空串排序反删最新。
+
+
 ## 26/8/15待修复 - 全链路审计发现的问题清单
 
 并行审计 5 条链路（RAG 检索 / 图流程 / 缓存记忆 / 核心工具与 API / 加载评估与技能），发现约 30 个隐藏逻辑错误或功能目标落空的问题。分级记录如下，P0/P1/P2 已全部修复 ✅。

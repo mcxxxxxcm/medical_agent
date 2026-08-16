@@ -176,15 +176,18 @@ class SemanticCache:
             return None
 
         try:
-            all_keys = self._cache._redis.smembers(self._keys_set)
+            # H6 修复：优先从 LRU Sorted Set 按最近访问顺序取键（ZREVRANGE 按 score 降序）
+            # 此前读无序 Set + list[:N] 等于随机取样，最近访问的缓存可能被跳过
+            all_keys = self._cache._redis.zrevrange(self._keys_zset, 0, top_k * 10 - 1)
             if not all_keys:
-                logger.info("L2 语义缓存为空")
-                return None
+                # 兼容旧数据：仅存在于旧 Set 时降级为无序读取
+                all_keys = list(self._cache._redis.smembers(self._keys_set))
+                logger.info(f"L2 语义缓存（旧Set降级）键数量：{len(all_keys)}")
+            else:
+                logger.info(f"L2 缓存键数量：{len(all_keys)}")
 
-            logger.info(f"L2 缓存键数量：{len(all_keys)}")
-
-            # 限制检查数量，优先检查最近的条目
-            check_keys = list(all_keys)[: top_k * 10]
+            # 限制检查数量，优先检查最近的条目（zrevrange 已按最近访问降序）
+            check_keys = all_keys[: top_k * 10]
 
             # 批量获取所有缓存值（单次 Redis 往返）
             raw_values = self._cache._redis.mget(check_keys)
@@ -376,8 +379,10 @@ class SemanticCache:
             return True
 
         except Exception as e:
+            # H8 修复：不再关闭全局 Redis 缓存。此前写失败置 _cache._available=False，
+            # 一次瞬时写失败会永久禁用整个 L0 缓存层（全局单例）。
+            # 语义缓存写入失败仅跳过本次，Redis 连接健康由 redis_cache 自身管理。
             logger.warning(f"语义缓存写入失败，跳过：{e}")
-            self._cache._available = False
             return False
 
     def get_stats(self) -> Dict:

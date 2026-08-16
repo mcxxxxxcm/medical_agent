@@ -169,7 +169,10 @@ def assess_duration(
     max_duration_hours = 0.0
     duration_details = []
 
-    for sym_name, onset_ts in onset_dates.items():
+    for sym_name, onset_info in onset_dates.items():
+        # H14 修复：symptom_onset_dates 值结构为 {"iso","ts","precision"} 字典，
+        # 此前按 int/float 判断恒 False → 持续时间静默失效
+        onset_ts = onset_info.get("ts") if isinstance(onset_info, dict) else onset_info
         if isinstance(onset_ts, (int, float)):
             hours = (now - onset_ts) / 3600
             if hours > max_duration_hours:

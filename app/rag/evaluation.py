@@ -14,6 +14,7 @@
     5. 评估结果版本化管理（支持 A/B 对比）
     6. 增量评估：已评估的样本跳过
 """
+import asyncio
 import json
 import re
 import time
@@ -265,10 +266,13 @@ class RAGEvaluator:
         docs = [Document(page_content=ctx) for ctx in contexts]
         state = {
             "question": question,
+            "final_question": question,
             "retrieved_docs": docs,
         }
+        config = {"configurable": {"thread_id": "evaluation", "user_id": None, "store": None}}
         try:
-            result = answer_generation_node(state)
+            # answer_generation_node 是 async def，直接调用返回协程对象（此前恒返回空串）
+            result = asyncio.run(answer_generation_node(state, config))
             return result.get("final_answer", "")
         except Exception as e:
             logger.error(f"生成答案失败: {e}")

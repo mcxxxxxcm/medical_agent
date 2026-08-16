@@ -13,6 +13,7 @@ v9.18 (P0-1)：迁移到原生 LangGraph 流式（graph.astream），
 """
 
 import asyncio
+import hashlib
 import json
 import time
 
@@ -36,12 +37,27 @@ logger = get_logger(__name__)
 _ANSWER_CACHE_TTL = 1800  # 30 分钟
 
 
+def _answer_cache_key(question: str) -> str:
+    """L0 答案缓存 key：绑定 kb_version + prompt_version
+
+    H7 修复：知识库/Prompt 变更后旧答案缓存自动失效，避免返回陈旧内容。
+    """
+    try:
+        from app.cache.semantic_cache import _get_kb_version, _get_prompt_version
+        kb_v = _get_kb_version()
+        prompt_v = _get_prompt_version()
+        q_hash = hashlib.md5(f"{question}:{kb_v}:{prompt_v}".encode("utf-8")).hexdigest()[:16]
+        return f"answer:{q_hash}"
+    except Exception:
+        return f"answer:{question}"
+
+
 def _save_answer_cache(question: str, answer: str):
     """将完整答案写入 L0 答案缓存（仅无用户档案时调用）"""
     try:
         cache = get_cache()
         if cache._available:
-            answer_cache_key = f"{cache.prefix}answer:{question}"
+            answer_cache_key = f"{cache.prefix}{_answer_cache_key(question)}"
             cache._redis.setex(
                 answer_cache_key,
                 _ANSWER_CACHE_TTL,
@@ -169,7 +185,7 @@ class StreamingOrchestrator:
             cache = get_cache()
             if not cache._available:
                 return None
-            answer_cache_key = f"answer:{self.question}"
+            answer_cache_key = _answer_cache_key(self.question)
             cached_raw = cache._redis.get(f"{cache.prefix}{answer_cache_key}")
             if cached_raw:
                 answer = json.loads(cached_raw)
@@ -190,7 +206,7 @@ class StreamingOrchestrator:
 
             # L0 答案缓存（仅无用户档案时）
             if not has_profile:
-                answer_cache_key = f"answer:{self.question}"
+                answer_cache_key = _answer_cache_key(self.question)
                 try:
                     if cache._available:
                         cached_raw = cache._redis.get(f"{cache.prefix}{answer_cache_key}")

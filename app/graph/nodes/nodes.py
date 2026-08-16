@@ -2177,13 +2177,29 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
         }
 
 def _get_checkpoint_symptoms(clinical_checkpoint) -> List[str]:
-    """从临床快照提取症状名列表（供症状分诊使用）"""
+    """从临床快照提取症状名列表（供症状分诊使用）
+
+    H2 修复：ClinicalCheckpointOutput 无顶层 symptoms 字段，
+    症状实际存在 symptom_timeline（[{symptom, onset, severity, evolution}]）中，
+    此前读 "symptoms" 恒为空导致分诊/紧急拦截静默失效。
+    """
     if not clinical_checkpoint:
         return []
-    symptoms = clinical_checkpoint.get("symptoms", [])
-    if not isinstance(symptoms, list):
-        return []
-    return [s for s in symptoms if isinstance(s, str) and s.strip()]
+    symptoms = []
+    timeline = clinical_checkpoint.get("symptom_timeline")
+    if isinstance(timeline, list):
+        for item in timeline:
+            if isinstance(item, dict):
+                sym = item.get("symptom")
+                if isinstance(sym, str) and sym.strip():
+                    symptoms.append(sym.strip())
+    # 兼容旧的顶层 symptoms 字段（若历史数据存在）
+    legacy = clinical_checkpoint.get("symptoms")
+    if isinstance(legacy, list):
+        for s in legacy:
+            if isinstance(s, str) and s.strip() and s.strip() not in symptoms:
+                symptoms.append(s.strip())
+    return symptoms
 
 
 @timing_decorator("安全检查")

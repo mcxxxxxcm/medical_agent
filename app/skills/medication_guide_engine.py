@@ -167,12 +167,26 @@ def _detect_user_conditions(
     texts_to_check = []
 
     if clinical_checkpoint:
-        symptoms = clinical_checkpoint.get("symptoms", [])
-        if isinstance(symptoms, list):
-            texts_to_check.extend(str(s) for s in symptoms)
+        # H2 修复：ClinicalCheckpointOutput 无顶层 symptoms，症状在 symptom_timeline 中
+        symptoms = []
+        timeline = clinical_checkpoint.get("symptom_timeline")
+        if isinstance(timeline, list):
+            for item in timeline:
+                if isinstance(item, dict) and item.get("symptom"):
+                    symptoms.append(str(item["symptom"]))
+        legacy = clinical_checkpoint.get("symptoms")
+        if isinstance(legacy, list):
+            symptoms.extend(str(s) for s in legacy)
+        if symptoms:
+            texts_to_check.extend(symptoms)
         chief = clinical_checkpoint.get("chief_complaint", "")
         if chief:
             texts_to_check.append(str(chief))
+        # H2 补全：既往史/过敏史存在 confirmed_facts，是禁忌检测的关键来源
+        for list_field in ("confirmed_facts", "red_flags"):
+            vals = clinical_checkpoint.get(list_field)
+            if isinstance(vals, list):
+                texts_to_check.extend(str(v) for v in vals if v)
 
     if user_profile:
         for field in ["age_group", "special_conditions", "medical_history", "notes"]:
@@ -357,6 +371,22 @@ def check_dosage_safety(drug: str, answer: str) -> Dict[str, Any]:
         val = _parse_dosage_mg(m.group(0))
         if val is not None and val > max_val:
             exceeds = True
+
+    # H4 修复：累计每日总剂量 = 单次剂量 × 每日次数
+    # 例："每次600mg，每日3次" 单次 600<1200 不超，但 600×3=1800>1200 超量，此前漏检
+    freq_pattern = re.compile(r"(每日|每天|一天|一日).{0,10}?(\d+)\s*次", re.IGNORECASE)
+    for fm in freq_pattern.finditer(answer):
+        freq = int(fm.group(2))
+        if freq <= 0:
+            continue
+        # 在频次描述附近（±60 字）找关联的单次剂量
+        window = answer[max(0, fm.start() - 60):fm.end() + 60]
+        dose_match = re.search(_DOSE_NUM_UNIT, window, re.IGNORECASE)
+        if dose_match:
+            per_dose = _parse_dosage_mg(dose_match.group(0))
+            if per_dose is not None and per_dose * freq > max_val:
+                exceeds = True
+                break
 
     # 简单判断：单个数值超过上限也视为可能超量
     for d in extracted:

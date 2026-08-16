@@ -540,10 +540,10 @@ class HybridRetriever(BaseRetriever):
         # Reranker 跳过判断：基于 Dense Top-1 置信度，而非候选数量
         should_skip_reranker = self._should_skip_reranker(query, candidates, top1_dense_score)
 
-        # 三阶段检索优化：RRF 融合后先轻量截断，再进 Reranker 精排 top k
-        # v9.19: 10→7 压缩 rerank 耗时（grade_documents 过滤后进 prompt 的文档仅 2-3 个，7 候选足够）
-        RERANKER_INPUT_CAP = 7
-        reranker_input = candidates[:RERANKER_INPUT_CAP]
+        # 三阶段检索优化：RRF 融合后按 rerank_top_k 截断，再进 Reranker 精排 top k
+        # H3 修复：此前用硬编码 7 忽略 self.rerank_top_k，导致高分候选被截断丢失
+        # 下限取 self.k，防止 rerank_top_k 配置过小时精排结果不足 k 个
+        reranker_input = candidates[:max(self.rerank_top_k, self.k)]
 
         # Reranker 重排序
         if self.use_reranker and candidates and not should_skip_reranker:

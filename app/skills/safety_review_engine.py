@@ -23,6 +23,12 @@ DIAGNOSTIC_ASSERTION_PATTERNS = [
     r"诊断你是",
 ]
 
+# 含通配符的模式 → 仅替换其字面前缀（保留疾病名）
+# 例如 "就是.{0,6}病" 匹配 "就是感冒病"，只把 "就是" 替换为 "可能是"，保留 "感冒病"
+DIAGNOSTIC_PATTERN_KEYWORDS = {
+    r"就是.{0,6}病": "就是",
+}
+
 # 诊断性断言的替换建议
 DIAGNOSTIC_REPLACEMENTS = {
     "确诊为": "可能提示为",
@@ -61,10 +67,11 @@ BLOCK_TEMPLATE = (
 
 def detect_diagnostic_assertions(answer: str) -> List[Dict[str, Any]]:
     """检测诊断性断言
-    
+
     Returns:
         匹配结果列表，每项包含:
         - pattern: 匹配的模式
+        - keyword: 需替换的关键字前缀（含通配符模式仅替换前缀，保留疾病名）
         - match: 匹配的文本
         - position: 位置
         - replacement: 建议替换
@@ -72,13 +79,35 @@ def detect_diagnostic_assertions(answer: str) -> List[Dict[str, Any]]:
     results = []
     for pattern in DIAGNOSTIC_ASSERTION_PATTERNS:
         for match in re.finditer(pattern, answer):
+            keyword = DIAGNOSTIC_PATTERN_KEYWORDS.get(pattern, match.group())
             results.append({
                 "pattern": pattern,
+                "keyword": keyword,
                 "match": match.group(),
                 "position": match.start(),
-                "replacement": DIAGNOSTIC_REPLACEMENTS.get(match.group(), "可能"),
+                "replacement": DIAGNOSTIC_REPLACEMENTS.get(keyword, "可能"),
             })
     return results
+
+
+def _checkpoint_symptom_names(clinical_checkpoint: Optional[Dict[str, Any]]) -> List[str]:
+    """从临床快照提取症状名（H2：无顶层 symptoms，实际在 symptom_timeline 中）"""
+    if not clinical_checkpoint:
+        return []
+    symptoms = []
+    timeline = clinical_checkpoint.get("symptom_timeline")
+    if isinstance(timeline, list):
+        for item in timeline:
+            if isinstance(item, dict):
+                sym = item.get("symptom")
+                if isinstance(sym, str) and sym.strip():
+                    symptoms.append(sym.strip())
+    legacy = clinical_checkpoint.get("symptoms")
+    if isinstance(legacy, list):
+        for s in legacy:
+            if isinstance(s, str) and s.strip() and s.strip() not in symptoms:
+                symptoms.append(s.strip())
+    return symptoms
 
 
 def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -102,12 +131,11 @@ def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str,
             from app.core.keyword_matcher import get_emergency_matcher
             emergency_matcher = get_emergency_matcher()
 
-            # 检查 symptoms 字段
-            symptoms = clinical_checkpoint.get("symptoms", [])
-            if isinstance(symptoms, list):
-                for sym in symptoms:
-                    if isinstance(sym, str) and emergency_matcher.contains_any(sym, use_boundary=False):
-                        emergency_in_snapshot.append(sym)
+            # H2 修复：ClinicalCheckpointOutput 无顶层 symptoms，症状在 symptom_timeline 中
+            symptoms = _checkpoint_symptom_names(clinical_checkpoint)
+            for sym in symptoms:
+                if emergency_matcher.contains_any(sym, use_boundary=False):
+                    emergency_in_snapshot.append(sym)
 
             # 检查 symptom_onset_dates 字段
             onset_dates = clinical_checkpoint.get("symptom_onset_dates", {})
@@ -118,11 +146,10 @@ def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str,
                             emergency_in_snapshot.append(sym_name)
         except Exception:
             # 降级为原有逻辑
-            for sym in (clinical_checkpoint.get("symptoms", []) if isinstance(clinical_checkpoint.get("symptoms"), list) else []):
-                if isinstance(sym, str):
-                    for emerg in EMERGENCY_SYMPTOMS:
-                        if emerg in sym or sym in emerg:
-                            emergency_in_snapshot.append(sym)
+            for sym in _checkpoint_symptom_names(clinical_checkpoint):
+                for emerg in EMERGENCY_SYMPTOMS:
+                    if emerg in sym or sym in emerg:
+                        emergency_in_snapshot.append(sym)
 
     # 也检查当前问题中的紧急症状（使用 AC 自动机）
     answer_has_emergency = False
@@ -175,15 +202,18 @@ def check_disclaimer(answer: str) -> Dict[str, Any]:
 
 def revise_diagnostic_assertions(answer: str, assertions: List[Dict[str, Any]]) -> str:
     """替换诊断性断言
-    
-    将绝对化诊断表述替换为风险提示句式。
+
+    H13 修复：只替换断言关键字前缀，保留疾病名。
+    此前整段替换（如"就是感冒病"→"可能"）会把疾病名删掉。
     """
     revised = answer
     # 从后往前替换，避免位置偏移
     for assertion in sorted(assertions, key=lambda x: x["position"], reverse=True):
-        match_text = assertion["match"]
+        keyword = assertion.get("keyword", assertion["match"])
         replacement = assertion["replacement"]
-        revised = revised[:assertion["position"]] + replacement + revised[assertion["position"] + len(match_text):]
+        start = assertion["position"]
+        end = start + len(keyword)
+        revised = revised[:start] + replacement + revised[end:]
     return revised
 
 

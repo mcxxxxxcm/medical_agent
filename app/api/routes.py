@@ -371,6 +371,29 @@ async def chat(request: ChatRequest):
 
         result = await graph.ainvoke(input_state, config)
 
+        # H11 修复：ENABLE_SAFETY_CHECK=False 时图内无 safety_check 边，
+        # 非流式路径需与流式路径（streaming.py _run_safety_review）一致做后置安全审查，
+        # 否则同步接口返回的答案跳过全部规则引擎/用药核查/LLM 审查
+        cfg = get_config()
+        if not getattr(cfg, "ENABLE_SAFETY_CHECK", True) and result.get("final_answer"):
+            try:
+                from app.graph.nodes import safety_check_node
+                review_state = {
+                    "final_answer": result.get("final_answer"),
+                    "clinical_checkpoint": result.get("clinical_checkpoint"),
+                    "user_profile": result.get("user_profile"),
+                    "question": result.get("question") or request.question,
+                    "symptoms": result.get("symptoms"),
+                }
+                review_result = safety_check_node(review_state)
+                if review_result.get("final_answer"):
+                    result["final_answer"] = review_result["final_answer"]
+                for w in review_result.get("warnings", []):
+                    if w not in (result.get("warnings") or []):
+                        result.setdefault("warnings", []).append(w)
+            except Exception as e:
+                logger.warning(f"非流式后置安全审查失败（保留原始答案）：{e}")
+
         sources = None
         if result.get("sources"):
             sources = [
@@ -522,6 +545,24 @@ def _verify_admin_key(request: Request) -> bool:
     return request_key == admin_key
 
 
+def _sanitize_kb_filename(raw_name: Optional[str]) -> Optional[str]:
+    """净化知识库上传/删除的文件名，防止路径穿越到 docs_dir 之外
+
+    拒绝：路径分隔符（/ \\）、盘符（C:）、点目录（. ..）、空名。
+    返回净化后的纯文件名，非法输入返回 None。
+    """
+    if not raw_name:
+        return None
+    if ("/" in raw_name or "\\" in raw_name
+            or raw_name in (".", "..")
+            or (len(raw_name) > 1 and raw_name[1] == ":")):
+        return None
+    name = Path(raw_name).name
+    if not name or name in (".", ".."):
+        return None
+    return name
+
+
 @app.post("/api/cache/clear")
 async def clear_cache(request: Request):
     """清空缓存（需管理员认证）"""
@@ -621,40 +662,50 @@ async def submit_feedback(request: Request):
 
 
 @app.get("/api/metrics/nodes")
-async def node_metrics_stats(hours: int = 24):
+async def node_metrics_stats(request: Request, hours: int = 24):
     """查询节点耗时统计（P50/P95/P99）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return {"hours": hours, "stats": collector.get_node_stats(hours)}
 
 
 @app.get("/api/metrics/requests")
-async def request_metrics_stats(hours: int = 24):
+async def request_metrics_stats(request: Request, hours: int = 24):
     """查询请求级耗时统计"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return {"hours": hours, "stats": collector.get_request_stats(hours)}
 
 
 @app.get("/api/metrics/tokens")
-async def token_usage_stats(hours: int = 24):
+async def token_usage_stats(request: Request, hours: int = 24):
     """查询 Token 用量统计（按模型/节点/每日趋势 + 成本估算）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return collector.get_token_stats(hours)
 
 
 @app.get("/api/metrics/feedback")
-async def feedback_stats(hours: int = 24):
+async def feedback_stats(request: Request, hours: int = 24):
     """查询反馈统计（满意度率/差评原因分布/每日趋势）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return collector.get_feedback_stats(hours)
 
 
 @app.get("/api/metrics/feedback/candidates")
-async def feedback_golden_candidates(limit: int = 50):
+async def feedback_golden_candidates(request: Request, limit: int = 50):
     """获取差评中适合转化为黄金测试集的候选"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
@@ -663,6 +714,8 @@ async def feedback_golden_candidates(limit: int = 50):
 @app.get("/api/admin/refusal/stats")
 async def get_refusal_stats(request: Request, days: int = 7):
     """拒答日志统计"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     stats = collector.get_refusal_stats(days=days)
@@ -672,6 +725,8 @@ async def get_refusal_stats(request: Request, days: int = 7):
 @app.get("/api/admin/refusal/export")
 async def export_refusal_logs(request: Request, days: int = 7):
     """导出拒答日志明细"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     records = collector.export_refusal_logs(days=days)
@@ -775,7 +830,11 @@ async def kb_upload(request: Request):
         if not hasattr(file_item, 'filename') or not file_item.filename:
             continue
 
-        filename = file_item.filename
+        raw_filename = file_item.filename
+        filename = _sanitize_kb_filename(raw_filename)
+        if not filename:
+            errors.append({"file": raw_filename, "error": "非法文件名（不允许路径分隔符/目录穿越）"})
+            continue
         suffix = Path(filename).suffix.lower()
 
         # 检查支持的格式
@@ -935,6 +994,17 @@ async def kb_upload(request: Request):
             except Exception:
                 pass
 
+            # BM25 索引失效：新文档入库后必须重建，否则 BM25 稀疏检索仍用旧文档集
+            try:
+                config = get_config()
+                bm25_cache = config.BM25_CACHE_PATH
+                if bm25_cache.exists():
+                    bm25_cache.unlink()
+                from app.rag.hybrid_retriever import reset_hybrid_retriever
+                reset_hybrid_retriever()
+            except Exception as e:
+                logger.warning(f"上传后重置 BM25 失败：{e}")
+
             _kb_update_status["progress"] = "完成"
         except Exception as e:
             _kb_update_status["error"] = str(e)
@@ -965,6 +1035,10 @@ async def kb_delete_document(filename: str, request: Request):
 
     if _kb_update_status["updating"]:
         return JSONResponse(status_code=409, content={"detail": "知识库正在更新中，请稍后重试"})
+
+    filename = _sanitize_kb_filename(filename)
+    if not filename:
+        return JSONResponse(status_code=400, content={"detail": "非法文件名（不允许路径分隔符/目录穿越）"})
 
     async with _kb_update_lock:
         config = get_config()

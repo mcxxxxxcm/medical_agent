@@ -104,6 +104,11 @@ class MedicalAssistantState(TypedDict):
     retrieval_confidence: Optional[float]  # v9.15: 检索置信度（0~1.0）
     refusal_type: Optional[str]            # v9.15: 拒答类型（no_match/incomplete/conflict/out_of_scope/low_confidence/None）
 
+    # ===== 重试振荡检测（document_scoring_node 内部用，防重试抖动）=====
+    # H12 修复：此前未声明，LangGraph 静默丢弃 → 振荡检测恒失效
+    _prev_max_score: Optional[float]
+    _prev_relevant_count: Optional[int]
+
 
 class InputSchema(TypedDict):
     """输入Schema - 用户调用时传入"""
@@ -133,6 +138,10 @@ class InputSchema(TypedDict):
     # 否则 add 累积导致用户可见陈旧来源/警告无限增长）
     warnings: Optional[List[str]]
     sources: Optional[List[Dict[str, str]]]
+
+    # 重试振荡检测字段：每轮输入重置，防止上一轮残留干扰本轮判断
+    _prev_max_score: Optional[float]
+    _prev_relevant_count: Optional[int]
 
 
 class OutputSchema(TypedDict):
