@@ -5,6 +5,16 @@ from app.core.config import get_config
 from langchain_openai import ChatOpenAI
 
 
+def clear_llm_caches() -> None:
+    """M15 修复：清空全部 LLM 实例缓存，供 reload_config 热更新后调用。
+
+    各 get_*_llm 均带 @lru_cache，配置变更后不清理则继续用旧模型/URL/密钥。
+    """
+    for fn in (get_llm, get_local_llm, get_local_llm_json, get_rewrite_llm,
+               get_symptom_llm, get_vision_llm):
+        fn.cache_clear()
+
+
 @lru_cache(maxsize=8)
 def get_llm(model_name: str = None, model_url: str = None, streaming: bool = False) -> ChatOpenAI:
     """获取 LLM 实例（带缓存）

@@ -28,6 +28,7 @@
 包引用：
     MemorySaver：langgraph提供的内存检查点保存期
 """
+import asyncio
 from typing import Optional
 from langgraph.checkpoint.memory import InMemorySaver
 from app.core.app_logging import get_logger
@@ -35,6 +36,7 @@ from app.core.app_logging import get_logger
 logger = get_logger(__name__)
 _checkpointer = None
 _checkpointer_context = None
+_init_lock = asyncio.Lock()  # M17：防并发首建各自创建连接池，先建的 context 从不退出导致连接泄漏
 
 
 async def get_checkpointer():
@@ -47,20 +49,22 @@ async def get_checkpointer():
     """
     global _checkpointer, _checkpointer_context
     if _checkpointer is None:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from app.core.config import get_config
+        async with _init_lock:
+            if _checkpointer is None:
+                from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+                from app.core.config import get_config
 
-        config = get_config()
-        db_url = config.DATABASE_URL
-        if not db_url:
-            raise ValueError("DATABASE_URL未配置，无法使用PostgreSQL检查点保存器")
-        logger.info(f"初始化PostgreSQL检查点保存器")
+                config = get_config()
+                db_url = config.DATABASE_URL
+                if not db_url:
+                    raise ValueError("DATABASE_URL未配置，无法使用PostgreSQL检查点保存器")
+                logger.info(f"初始化PostgreSQL检查点保存器")
 
-        _checkpointer_context = AsyncPostgresSaver.from_conn_string(db_url)
-        _checkpointer = await _checkpointer_context.__aenter__()
+                _checkpointer_context = AsyncPostgresSaver.from_conn_string(db_url)
+                _checkpointer = await _checkpointer_context.__aenter__()
 
-        await _checkpointer.setup()
-        logger.info(f"PostgreSQL检查点保存器初始化完成")
+                await _checkpointer.setup()
+                logger.info(f"PostgreSQL检查点保存器初始化完成")
     return _checkpointer
 
 

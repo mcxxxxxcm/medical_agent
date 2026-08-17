@@ -15,6 +15,7 @@
     app.core.llm：获取LLM实例
     AgentError、LLMError：自定义异常类
 """
+import hashlib
 import json
 import jieba
 import re
@@ -652,11 +653,43 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
     return None
 
 
+_ROUTE_ALIASES = {
+    "symptoms": "symptom",
+    "症状": "symptom",
+    "知识": "knowledge",
+    "knowledge_query": "knowledge",
+    "general_query": "general",
+    "闲聊": "general",
+    "问候": "general",
+}
+
+
+def _parse_route_text(raw_text: str) -> Optional[str]:
+    """M2 修复：解析本地模型可能输出的纯文本路由名（非 JSON 兜底）"""
+    if not raw_text:
+        return None
+    text = raw_text.strip().lower()
+    # 直接命中类型名
+    for route in ("symptom", "knowledge", "general"):
+        if route in text:
+            return route
+    # 别名映射（含 JSON 残留如 {"question_type": "症状"}）
+    for alias, route in _ROUTE_ALIASES.items():
+        if alias in text:
+            return route
+    return None
+
+
 def _llm_route(question: str) -> str:
     """本地模型路由：使用 qwen2.5:3b 做意图分类
 
     v9.2: 使用 invoke_structured 三层降级策略（Tool Calling → JSON Mode → 纯文本）
     + RouterOutput Pydantic 校验。
+
+    M2 修复：
+        1. ROUTER_PROMPT 改为要求 JSON 输出，与 RouterOutput 结构化提取一致
+        2. 结构化解析失败时，直接用 LLM 原始输出做纯文本兜底解析，
+           不再恒降级 general（此前本地模型照旧 prompt 输出"症状/symptom"纯文本 → 三层全失败 → general）
     """
     try:
         from app.graph.nodes.prompts import ROUTER_PROMPT
@@ -666,12 +699,23 @@ def _llm_route(question: str) -> str:
         llm = get_local_llm_json()
         messages = ROUTER_PROMPT.format_messages(question=question)
 
-        result: RouterOutput = invoke_structured(
-            llm, messages, RouterOutput, max_attempts=2,
-        )
-        route = result.question_type
-        logger.info(f"本地模型路由结果（Pydantic校验通过）：{route}")
-        return route
+        try:
+            result: RouterOutput = invoke_structured(
+                llm, messages, RouterOutput, max_attempts=2,
+            )
+            route = result.question_type
+            logger.info(f"本地模型路由结果（Pydantic校验通过）：{route}")
+            return route
+        except Exception as e:
+            # 结构化输出失败 → 纯文本兜底解析
+            logger.debug(f"本地模型路由结构化输出失败，尝试纯文本解析：{e}")
+            raw_response = llm.invoke(messages)
+            raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+            route = _parse_route_text(raw_text)
+            if route:
+                logger.info(f"本地模型路由结果（纯文本兜底解析）：{route}")
+                return route
+            raise ValueError(f"无法从输出解析路由类型：{str(raw_text)[:50]}")
 
     except Exception as e:
         logger.warning(f"本地模型路由失败，兜底 general：{e}")
@@ -874,7 +918,9 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
     LLM 拆解：调用 QUESTION_DECOMPOSE_PROMPT + invoke_structured
     结果存入 state["sub_questions"]，供 knowledge_retrieval_node 并行检索
     """
-    question = state.get("question", "")
+    # M1 修复：优先用重写后的完整问题拆解（自纠正重试时 query_rewrite 已重置 sub_questions，
+    # 且 final_question 可能含新检索关键词，旧子问题会让重试丢掉新关键词）
+    question = state.get("final_question") or state.get("question", "")
     sub_questions_existing = state.get("sub_questions")
 
     # 已有子问题列表（自纠正重试），直接返回
@@ -1402,6 +1448,8 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                     "retrieved_docs": [],
                     "final_answer": build_no_results_answer(question),
                     "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                    # M6 修复：无覆盖兜底时清空 sources，避免"没查到却显示来源"
+                    "sources": [],
                 },
             )
 
@@ -1464,6 +1512,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                     "retrieved_docs": [],
                     "final_answer": build_no_results_answer(question),
                     "warnings": ["知识库暂无相关文档，无法提供可靠回答"],
+                    "sources": [],
                 },
             )
         else:
@@ -1473,6 +1522,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                 update={
                     "retrieved_docs": [],
                     "warnings": ["知识库无覆盖范围，以下回答基于通用知识"],
+                    "sources": [],
                 },
             )
     RERANK_IRRELEVANT_THRESHOLD = 0.02
@@ -1502,6 +1552,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                     "retrieved_docs": [],
                     "final_answer": build_no_results_answer(question),
                     "warnings": ["知识库暂无相关文档，无法提供可靠回答"],
+                    "sources": [],
                 },
             )
         else:
@@ -1511,6 +1562,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                 update={
                     "retrieved_docs": [],
                     "warnings": ["知识库无覆盖范围，以下回答基于通用知识"],
+                    "sources": [],
                 },
             )
 
@@ -1533,6 +1585,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                         "retrieved_docs": [],
                         "final_answer": build_no_results_answer(question),
                         "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                        "sources": [],
                     },
                 )
 
@@ -1544,6 +1597,7 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
                     "retrieved_docs": [],
                     "final_answer": build_no_results_answer(question),
                     "warnings": ["知识库暂无直接命中结果，以下回答为保守兜底建议"],
+                    "sources": [],
                 },
             )
 
@@ -1680,35 +1734,36 @@ def strip_rag_documents_from_history(history_text: str) -> str:
     if not history_text:
         return history_text
 
-    # 匹配 [文档N 来源：xxx doc_id:doc_xxxx]\n... 格式（含 doc_id）
-    # 也兼容旧格式 [文档N 来源：xxx]\n...
-    pattern = r'\[文档(\d+)\s+来源[：:](.*?)(?:\s+doc_id:(doc_\w+))?\]\n(.*?)(?=\[文档\d|\Z)'
+    # M5 修复：实际注入格式是 [{source}]\n{content}（见 build_rag_prompt），
+    # 旧正则要求 [文档N 来源：xxx] 导致永不匹配、RAG 文档块永远剥离不掉。
+    # 改为匹配 [source]\n... 直到下一个 [ 或文本结尾。
+    # 仅匹配"行首为 [xxx] 后跟换行"的块，避免误伤普通方括号文本。
+    pattern = re.compile(
+        r'\[([^\]]+)\]\n(.*?)(?=\n\[[^\]]+\]\n|\Z)',
+        flags=re.DOTALL,
+    )
 
     from app.cache.redis_cache import get_cache
     cache = get_cache()
 
     def replace_doc(match):
-        doc_num = match.group(1)
-        source = match.group(2).strip()
-        existing_doc_id = match.group(3)  # 可能为 None
-        content = match.group(4).strip()
+        source = match.group(1).strip()
+        content = match.group(2).strip()
+        if not content:
+            return match.group(0)
 
-        if existing_doc_id:
-            # 已有 doc_id（当前轮文档已存入 Redis），直接引用
-            doc_id = existing_doc_id
-            # 确认 Redis 中存在，不存在则重新存储
-            if not cache.get_doc(doc_id.replace("doc_", "")):
-                cache.store_doc(doc_id.replace("doc_", ""), content, source)
-        else:
-            # 旧格式无 doc_id，生成新的并存入 Redis
-            doc_id = f"doc_{uuid.uuid4().hex[:8]}"
+        # 用内容+来源做确定性 doc_id，相同文档去重存储
+        doc_id = f"doc_{hashlib.md5((source + content).encode('utf-8')).hexdigest()[:10]}"
+        try:
             cache.store_doc(doc_id.replace("doc_", ""), content, source)
+        except Exception:
+            pass
 
         # 取内容前20字作为摘要
         summary = content[:20] + "..." if len(content) > 20 else content
         return f"[参考文档 {doc_id}: {source} - {summary}]"
 
-    result = re.sub(pattern, replace_doc, history_text, flags=re.DOTALL)
+    result = pattern.sub(replace_doc, history_text)
     return result
 
 
@@ -1732,10 +1787,14 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
         from app.core.config import get_config
         _config = get_config()
         from app.graph.nodes.context_manager import get_adaptive_max_rounds
+        # M14 修复：MAX_MESSAGES 作为消息数量硬上限（除以2换算成轮数），
+        # 避免 .env 配置被静默丢弃、上下文无界膨胀
+        max_msg_cap = max(2, getattr(_config, 'MAX_MESSAGES', 20) // 2)
         max_rounds = get_adaptive_max_rounds(
             messages,
             context_window=getattr(_config, 'LLM_CONTEXT_WINDOW_TOKENS', 8192),
             compression_ratio=getattr(_config, 'CONTEXT_COMPRESSION_RATIO', 0.7),
+            max_rounds=max_msg_cap,
         )
 
     # 只取最近 max_rounds 轮（2*max_rounds 条消息）
@@ -2548,22 +2607,32 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 logger.info(f"OCR校准完成，覆盖 {len(ocr_data)} 个数值")
 
         # ===== Step 3: 不确定性处理 =====
+        # M4 修复：追问/低置信度分支也写入 messages，避免下一轮上下文断裂
         if vision_result.needs_followup and vision_result.followup_question:
             logger.info(f"图片分析不确定，追问用户：{vision_result.followup_question}")
             return Command(
                 update={
                     "final_answer": vision_result.followup_question,
                     "warnings": ["⚠️ 图片信息不足，请补充后再试"],
+                    "messages": [
+                        HumanMessage(content=question or "请帮我解读这张图片"),
+                        AIMessage(content=vision_result.followup_question),
+                    ],
                 },
                 goto=_vision_fallback_goto(),
             )
 
         if vision_result.confidence == "low":
+            low_conf_answer = "图片较为模糊，难以准确识别。建议您重新拍摄一张更清晰的照片，" \
+                              "或者用文字描述您的症状和问题。"
             return Command(
                 update={
-                    "final_answer": "图片较为模糊，难以准确识别。建议您重新拍摄一张更清晰的照片，"
-                                    "或者用文字描述您的症状和问题。",
+                    "final_answer": low_conf_answer,
                     "warnings": ["⚠️ 图片识别置信度低，结果不可靠"],
+                    "messages": [
+                        HumanMessage(content=question or "请帮我解读这张图片"),
+                        AIMessage(content=low_conf_answer),
+                    ],
                 },
                 goto=_vision_fallback_goto(),
             )
@@ -2589,8 +2658,15 @@ def vision_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"图片问诊失败：{str(e)}")
+        error_answer = "抱歉，图片解读遇到了问题，请稍后重试或尝试文字描述您的症状。"
         return Command(
-            update={"final_answer": "抱歉，图片解读遇到了问题，请稍后重试或尝试文字描述您的症状。"},
+            update={
+                "final_answer": error_answer,
+                "messages": [
+                    HumanMessage(content=question or "请帮我解读这张图片"),
+                    AIMessage(content=error_answer),
+                ],
+            },
             goto=_vision_fallback_goto(),
         )
 
@@ -3090,6 +3166,9 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         "rewritten_query": rewritten_query,
         "final_question": final_question,
         "hyde_answer": hyde_answer,
+        # M1 修复：自纠正重试时强制清空旧子问题，让 question_decompose
+        # 基于重写后的 final_question 重新拆解，避免用旧子问题检索丢弃新关键词
+        "sub_questions": None,
     }
 
 

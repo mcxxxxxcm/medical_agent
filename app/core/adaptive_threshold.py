@@ -115,8 +115,12 @@ class AdaptiveThreshold:
         self._sample_counts[name] = self._sample_counts.get(name, 0) + 1
 
         # 定期校准
+        # M16 修复：首个校准点被 RECALIBRATE_INTERVAL=1000 门控，MIN_SAMPLES=100
+        # 形同虚设，冷启动期固定阈值长期不校准。
+        # 改为：从未校准（last==0）时达到 MIN_SAMPLES 即校准，此后每间隔 RECALIBRATE_INTERVAL 再校准。
         count = self._sample_counts[name]
-        if count >= self.MIN_SAMPLES and count - self._last_recalibrate.get(name, 0) >= self.RECALIBRATE_INTERVAL:
+        last = self._last_recalibrate.get(name, 0)
+        if count >= self.MIN_SAMPLES and (last == 0 or count - last >= self.RECALIBRATE_INTERVAL):
             self._recalibrate(name)
 
     def get(self, name: str) -> float:

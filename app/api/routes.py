@@ -49,9 +49,14 @@ logger = get_logger(__name__)
 
 
 # Pydantic模型
+# M14 修复：MAX_QUESTION_LENGTH 此前只定义无消费，问题长度限制写死 1000。
+# 改从配置读取，.env 调整后模型校验随之生效。
+_question_max_len = getattr(get_config(), "MAX_QUESTION_LENGTH", 1000)
+
+
 class ChatRequest(BaseModel):
     """聊天请求模型"""
-    question: str = Field(..., description="用户问题", min_length=1, max_length=1000)
+    question: str = Field(..., description="用户问题", min_length=1, max_length=_question_max_len)
     user_id: Optional[str] = Field(None, description="用户ID")
     thread_id: Optional[str] = Field(None, description="会话线程ID")
     image_base64: Optional[str] = Field(None, description="图片base64编码（多模态问诊）", max_length=10_000_000)
@@ -254,6 +259,17 @@ async def request_timing_middleware(request: Request, call_next):
     request.state.request_id = request_id
     request.state.request_start_time = time.time()
 
+    # M14 修复：MAX_CONTENT_LENGTH 此前只定义无消费，请求体大小不设限。
+    # 依据 Content-Length 头拒绝超大请求，防大 body 打满内存。
+    max_content_length = getattr(get_config(), "MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_content_length:
+                return JSONResponse(status_code=413, content={"detail": "请求体过大"})
+        except ValueError:
+            pass
+
     response = await call_next(request)
 
     elapsed_ms = (time.time() - request.state.request_start_time) * 1000
@@ -350,6 +366,8 @@ async def chat(request: ChatRequest):
         input_state = {
             "question": request.question,
             "user_id": request.user_id,
+            # M13 修复：同步接口补齐 image_base64 传递，图片问诊走非流式接口不再丢图
+            "image_base64": request.image_base64,
             # 重置残留中间状态，防止同一 thread 复用上一轮 final_answer
             "final_answer": None,
             "retrieved_docs": None,

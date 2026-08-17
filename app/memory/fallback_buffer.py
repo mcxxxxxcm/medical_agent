@@ -27,22 +27,32 @@ _FLUSH_INTERVAL_SECONDS = 300  # 5 分钟
 _MAX_AGE_DAYS = 7
 
 
+def _connect() -> sqlite3.Connection:
+    """M9 修复：统一的 sqlite 连接，设置 busy_timeout 避免 flush 持锁期间 enqueue 撞
+    'database is locked' 静默丢事件。"""
+    conn = sqlite3.connect(str(_DB_PATH), timeout=5.0)
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
+
+
 def _ensure_db():
     """确保数据库和表存在"""
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS pending_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_type TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            retry_count INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
+    conn = _connect()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                retry_count INTEGER DEFAULT 0
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def enqueue_symptom_event(
@@ -63,13 +73,15 @@ def enqueue_symptom_event(
             "precision": precision,
             "source_query": source_query[:100],
         }, ensure_ascii=False)
-        conn = sqlite3.connect(str(_DB_PATH))
-        conn.execute(
-            "INSERT INTO pending_events (event_type, user_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("symptom", user_id, payload, datetime.now().isoformat()),
-        )
-        conn.commit()
-        conn.close()
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO pending_events (event_type, user_id, payload, created_at) VALUES (?, ?, ?, ?)",
+                ("symptom", user_id, payload, datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
         logger.info(f"症状事件已缓冲到本地：user={user_id}, symptom={symptom_name}")
     except Exception as e:
         logger.error(f"本地缓冲写入失败（事件将丢失）：{e}")
@@ -91,13 +103,15 @@ def enqueue_medication_event(
             "effect": effect,
             "source_query": source_query[:100],
         }, ensure_ascii=False)
-        conn = sqlite3.connect(str(_DB_PATH))
-        conn.execute(
-            "INSERT INTO pending_events (event_type, user_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("medication", user_id, payload, datetime.now().isoformat()),
-        )
-        conn.commit()
-        conn.close()
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO pending_events (event_type, user_id, payload, created_at) VALUES (?, ?, ?, ?)",
+                ("medication", user_id, payload, datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
         logger.info(f"用药事件已缓冲到本地：user={user_id}, drug={drug}")
     except Exception as e:
         logger.error(f"本地缓冲写入失败（事件将丢失）：{e}")
@@ -107,9 +121,11 @@ def get_pending_count() -> int:
     """获取待处理事件数量"""
     try:
         _ensure_db()
-        conn = sqlite3.connect(str(_DB_PATH))
-        count = conn.execute("SELECT COUNT(*) FROM pending_events").fetchone()[0]
-        conn.close()
+        conn = _connect()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM pending_events").fetchone()[0]
+        finally:
+            conn.close()
         return count
     except Exception:
         return 0
@@ -123,7 +139,7 @@ def flush() -> int:
     """
     try:
         _ensure_db()
-        conn = sqlite3.connect(str(_DB_PATH))
+        conn = _connect()
         rows = conn.execute(
             "SELECT id, event_type, user_id, payload FROM pending_events ORDER BY id"
         ).fetchall()
@@ -147,6 +163,8 @@ def flush() -> int:
                         onset_ts=payload["onset_ts"],
                         precision=payload.get("precision", "default"),
                         source_query=payload.get("source_query", ""),
+                        # M9 修复：确定性 event_id，崩溃重跑时覆盖同一 key 不产生重复事件
+                        event_id=f"se_flush_{row_id}",
                     )
                 elif event_type == "medication":
                     memory.append_medication_event(
@@ -155,6 +173,7 @@ def flush() -> int:
                         dosage=payload.get("dosage"),
                         effect=payload.get("effect"),
                         source_query=payload.get("source_query", ""),
+                        event_id=f"me_flush_{row_id}",
                     )
                 success_ids.append(row_id)
             except Exception as e:
@@ -172,7 +191,8 @@ def flush() -> int:
                         (current_retries, row_id),
                     )
 
-        # 删除成功写入的事件
+        # 删除成功写入的事件（与 L1 写入同一次事务提交，尽量保证原子性；
+        # 若中途崩溃，重跑时 L1 用确定性 key 覆盖写，不会产生重复事件）
         if success_ids:
             placeholders = ",".join("?" * len(success_ids))
             conn.execute(
@@ -198,13 +218,15 @@ def cleanup_expired():
         # 只删除超过 _MAX_AGE_DAYS 的旧事件；若用当前时刻作 cutoff，
         # 每 5 分钟会误删全部未 flush 事件，重试补写机制失效
         cutoff = (datetime.now() - timedelta(days=_MAX_AGE_DAYS)).isoformat()
-        conn = sqlite3.connect(str(_DB_PATH))
-        deleted = conn.execute(
-            "DELETE FROM pending_events WHERE created_at < ?",
-            (cutoff,),
-        ).rowcount
-        conn.commit()
-        conn.close()
+        conn = _connect()
+        try:
+            deleted = conn.execute(
+                "DELETE FROM pending_events WHERE created_at < ?",
+                (cutoff,),
+            ).rowcount
+            conn.commit()
+        finally:
+            conn.close()
         if deleted:
             logger.info(f"清理过期缓冲事件：{deleted} 条")
     except Exception as e:

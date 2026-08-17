@@ -1,5 +1,28 @@
 # 系统优化更新日志
 
+## v9.22 - 第二轮中风险项修复（18/18）
+
+承接 26/8/16 审计中风险清单，全部 18 项已修复并逐项验证：
+
+- **M1 自纠正重试沿用旧子问题**：`question_decompose_node` 改用 `final_question or question`，`query_rewrite_node` 返回 `sub_questions: None` 重置 → 重试轮用新关键词重新检索。
+- **M2 ROUTER_PROMPT 与 JSON 提取冲突**：新增 `_ROUTE_ALIASES` + `_parse_route_text()`，`_llm_route` 在 `invoke_structured` 失败时回退 `llm.invoke` 纯文本解析 → 纯类型名输出不再降级 direct_answer。
+- **M3 L0 答案缓存跨用户串用**：`streaming.py` 新增 `_has_history` 标志，有 thread 历史即跳过 L0/L2 缓存复用与写入。
+- **M4 vision 追问不写 messages**：vision 追问/低置信/错误分支的 update 补 `messages: [HumanMessage, AIMessage]` → 图片问诊追问进入 checkpointer，下一轮上下文衔接。
+- **M5 历史 RAG 文档正则失配**：重写 `strip_rag_documents_from_history` 匹配 `[{source}]\n{content}` 实际格式，doc_id 改用 `hashlib.md5` 确定性生成 → 上下文 token 不再膨胀、孤儿 doc 消除。
+- **M6 grade 无覆盖保留 sources**：5 处 no-coverage Command update 补 `sources: []` → 不再"没查到却给来源"。
+- **M7 `get_symptom_history` 读错命名空间**：改读 `("symptom_events", user_id)` 并过滤 `event_type=="symptom_report"` → 长期症状历史恢复可用。
+- **M8 `document_cache` 无界增长**：补 `_NAMESPACE_RETENTION=7天`、`_MAX_ITEMS=500`，新增 `_prune_document_cache()`（超 2 倍阈值触发，摊销清理）。
+- **M9 fallback flush 非幂等 + 无 busy_timeout**：新增 `_connect()`（`timeout=5` + `PRAGMA busy_timeout=5000`），flush 传 `event_id` 幂等 → 崩溃重跑不重复、并发不丢事件。
+- **M10 药物相互作用去重方向反**：去重查询改为 `ia["drug_a"]==drug_a and ia["drug_b"]==drug_b` → 对称互列不再重复告警。
+- **M11 "岁"误判儿童禁忌**：移除单字"岁"，新增 `age_match` 正则，`<16` 儿童 / `>=60` 老年 → 阿司匹林误报消除。
+- **M12 紧急信号参与决策**：`answer_emergency_symptoms` 合并 `emergency_in_snapshot`，`needs_alert = has_emergency and not answer_addressed` → 回答含"胸痛"未给就医指引时主路径追加紧急提示。
+- **M13 同步 /api/chat 丢 image_base64**：`input_state` 补传 `image_base64` → 非流式图片问诊恢复。
+- **M14 配置定义不生效**：Settings 补 `MAX_MESSAGES`/`SUMMARY_TRIGGER` 字段；ChatRequest `_question_max_len` 取配置；`request_timing_middleware` 加 content-length 校验（413）。
+- **M15 reload_config 假热更新**：变更时调用 `clear_llm_caches()` 清空各 `get_*_llm` 的 lru_cache → 热更新对 LLM/中间件生效。
+- **M16 adaptive_threshold 首个校准点延迟**：校准条件改为"达到 MIN_SAMPLES 且（从未校准或距上次满间隔）" → 冷启动 100 样本即校准，符合注释宣称。
+- **M17 双重初始化竞态**：`get_long_term_memory` 加 `threading.Lock` 双重检查、`get_checkpointer` 加 `asyncio.Lock` → 连接池不再泄漏。
+- **M18 metrics 相对路径依赖 CWD**：`metrics.py` 基于 `PROJECT_ROOT` 拼 `data/metrics/metrics.db` → 任意启动目录写同一 DB。
+
 ## v9.21 - 第二轮高风险项修复（14/14）
 
 承接 26/8/16 审计高风险清单，全部 14 项已修复并逐项验证：
@@ -40,26 +63,26 @@
 - **H13【✅已修复】诊断断言修订删除疾病名**：`safety_review_engine.py:176-187` 模式 `就是.{0,6}病` 替换查表返回兜底"可能"、不保留疾病名；且多模式匹配基于原始串位置、先替换靠后位置后文本偏移 → "这肯定就是肺炎"→"这可能可能"，疾病名丢失、句子破碎。
 - **H14【✅已修复】症状分诊持续时间维度类型不匹配**：`symptom_triage_engine.py:172-177` `assess_duration` 用 `isinstance(onset_ts,(int,float))` 判断，但快照 `symptom_onset_dates` 实为 `{症状:{iso,ts,precision}}`，值恒为 dict → 条件恒 False，72 小时就诊阈值分支从不触发，"症状持续 3 天"被漏判为 🟢。
 
-### 中风险（约 18 项）
+### 中风险（18 项，已全部修复 ✅，见 v9.22）
 
-- **M1** 自纠正重试沿用旧 `sub_questions`：`nodes.py:878-883` question_decompose 见已有列表即 `return {}`，query_rewrite 不重置 → 拆解过的复合问题重试时用旧子问题再查，新关键词检索被丢弃。
-- **M2** ROUTER_PROMPT 要求"只返回类型名称"，与 JSON 结构化提取冲突：`prompts.py:79-93` vs `nodes.py:655-678`，本地模型照 prompt 输出纯 `symptom` 时三层解析全失败 → 降级 general→direct_answer，症状/知识类问题被弱化回答；`parse_router_output` 兼容函数未被 `_llm_route` 使用。
-- **M3** L0 答案缓存以问题文本为 key 跨用户串用：`streaming.py:166-181` 仅 `not self._has_profile` 时查询，但有 thread 历史无档案的用户也命中 → 前一会话基于不同主诉的医疗答案被 30 分钟内复用。
-- **M4** vision 追问/低置信度回答不写 messages：`nodes.py:2537-2553` 只返回 final_answer/warnings，无 messages → 图片问诊追问不进 checkpointer，下一轮上下文断裂。
-- **M5** `strip_rag_documents_from_history` 正则与真实格式不匹配：`nodes.py:1668-1712` 正则要求 `[文档N 来源...]`，实际注入格式是 `[{source}]` → 历史 RAG 文档块永不被占位符替换，上下文 token 膨胀，Redis 产生孤儿 doc，MicroCompact 失效。
-- **M6** grade 无覆盖兜底时保留 sources：`nodes.py:1395-1406` 返回"无命中结果"答案但不清除 sources → 用户可见"没查到却给了来源"。
-- **M7** `get_symptom_history` 读的 `("symptom_history", user_id)` 命名空间无任何写入者：`long_term_memory.py:55` 恒空（写入在 `symptom_events`），潜伏 bug。
-- **M8** `document_cache` 命名空间无 TTL/无 prune：`long_term_memory.py:105-125` 不在 `_NAMESPACE_RETENTION/_MAX_ITEMS`，Postgres 无界增长且全库共享。
-- **M9** fallback flush 无幂等 + 无 busy_timeout：`fallback_buffer.py:118-191` 先写 L1 再 DELETE 非原子，崩溃重跑产生重复事件；sqlite 未设 busy_timeout，flush 持锁期间 enqueue 撞 `database is locked` 静默丢事件。
-- **M10** 药物相互作用去重方向写反：`medication_guide_engine.py:270-282` `already` 查 `(drug_b,drug_a)` 而首段 append `(drug_a,drug_b)` → 对称互列两药重复警告两条。
-- **M11** "儿童"禁忌含单字"岁"误判成人：`medication_guide_engine.py:46,188-193` 年龄字段几乎必含"岁" → 任何成年档案命中"儿童"，阿司匹林误报禁忌。
-- **M12** 紧急信号 `answer_has_emergency` 计算后未参与决策：`safety_review_engine.py:128-138` `needs_alert` 只看 `emergency_in_snapshot` → 用户快照无紧急症状、仅回答含"胸痛"未给就医指引时主路径不追加紧急提示，拦截落空。
-- **M13** 同步 `/api/chat` 静默丢弃 `image_base64`：`routes.py:52-57` ChatRequest 定义了但 `chat()` input_state 不传 → 图片问诊走非流式接口图片被忽略。
-- **M14** 多处配置项定义但不生效：`.env` `MAX_MESSAGES=20`/`SUMMARY_TRIGGER=14` 在 Settings 无字段（extra=ignore 静默丢弃）；`MAX_CONTENT_LENGTH`/`MAX_QUESTION_LENGTH` 定义后无消费。
-- **M15** reload_config 假热更新：`llm.py` 各 get_llm 均 `lru_cache` 用旧配置冻结实例，`RateLimitMiddleware.max_requests` 构造时捕获 → 热更新对已缓存 LLM/中间件不生效。
-- **M16** adaptive_threshold 首个校准点在 1000 而非注释宣称的 100：`adaptive_threshold.py:118-120` 校准条件被 `RECALIBRATE_INTERVAL=1000` 门控，`MIN_SAMPLES=100` 常规路径形同虚设，冷启动期固定阈值长期不校准。
-- **M17** checkpointer/long_term_memory 双重初始化竞态：`checkpointer.py:48-64`、`long_term_memory.py:645-658` 首个并发请求各自建连接池，后写覆盖全局、先建的从不 `__exit__`，连接池泄漏。
-- **M18** metrics 相对路径依赖进程 CWD：`metrics.py:46` `data/metrics/metrics.db` 未基于 PROJECT_ROOT 拼接 → 不同启动目录写不同 DB，统计丢失/对不上。
+- **M1【✅已修复】** 自纠正重试沿用旧 `sub_questions`：`nodes.py:878-883` question_decompose 见已有列表即 `return {}`，query_rewrite 不重置 → 拆解过的复合问题重试时用旧子问题再查，新关键词检索被丢弃。
+- **M2【✅已修复】** ROUTER_PROMPT 要求"只返回类型名称"，与 JSON 结构化提取冲突：`prompts.py:79-93` vs `nodes.py:655-678`，本地模型照 prompt 输出纯 `symptom` 时三层解析全失败 → 降级 general→direct_answer，症状/知识类问题被弱化回答；`parse_router_output` 兼容函数未被 `_llm_route` 使用。
+- **M3【✅已修复】** L0 答案缓存以问题文本为 key 跨用户串用：`streaming.py:166-181` 仅 `not self._has_profile` 时查询，但有 thread 历史无档案的用户也命中 → 前一会话基于不同主诉的医疗答案被 30 分钟内复用。
+- **M4【✅已修复】** vision 追问/低置信度回答不写 messages：`nodes.py:2537-2553` 只返回 final_answer/warnings，无 messages → 图片问诊追问不进 checkpointer，下一轮上下文断裂。
+- **M5【✅已修复】** `strip_rag_documents_from_history` 正则与真实格式不匹配：`nodes.py:1668-1712` 正则要求 `[文档N 来源...]`，实际注入格式是 `[{source}]` → 历史 RAG 文档块永不被占位符替换，上下文 token 膨胀，Redis 产生孤儿 doc，MicroCompact 失效。
+- **M6【✅已修复】** grade 无覆盖兜底时保留 sources：`nodes.py:1395-1406` 返回"无命中结果"答案但不清除 sources → 用户可见"没查到却给了来源"。
+- **M7【✅已修复】** `get_symptom_history` 读的 `("symptom_history", user_id)` 命名空间无任何写入者：`long_term_memory.py:55` 恒空（写入在 `symptom_events`），潜伏 bug。
+- **M8【✅已修复】** `document_cache` 命名空间无 TTL/无 prune：`long_term_memory.py:105-125` 不在 `_NAMESPACE_RETENTION/_MAX_ITEMS`，Postgres 无界增长且全库共享。
+- **M9【✅已修复】** fallback flush 无幂等 + 无 busy_timeout：`fallback_buffer.py:118-191` 先写 L1 再 DELETE 非原子，崩溃重跑产生重复事件；sqlite 未设 busy_timeout，flush 持锁期间 enqueue 撞 `database is locked` 静默丢事件。
+- **M10【✅已修复】** 药物相互作用去重方向写反：`medication_guide_engine.py:270-282` `already` 查 `(drug_b,drug_a)` 而首段 append `(drug_a,drug_b)` → 对称互列两药重复警告两条。
+- **M11【✅已修复】** "儿童"禁忌含单字"岁"误判成人：`medication_guide_engine.py:46,188-193` 年龄字段几乎必含"岁" → 任何成年档案命中"儿童"，阿司匹林误报禁忌。
+- **M12【✅已修复】** 紧急信号 `answer_has_emergency` 计算后未参与决策：`safety_review_engine.py:128-138` `needs_alert` 只看 `emergency_in_snapshot` → 用户快照无紧急症状、仅回答含"胸痛"未给就医指引时主路径不追加紧急提示，拦截落空。
+- **M13【✅已修复】** 同步 `/api/chat` 静默丢弃 `image_base64`：`routes.py:52-57` ChatRequest 定义了但 `chat()` input_state 不传 → 图片问诊走非流式接口图片被忽略。
+- **M14【✅已修复】** 多处配置项定义但不生效：`.env` `MAX_MESSAGES=20`/`SUMMARY_TRIGGER=14` 在 Settings 无字段（extra=ignore 静默丢弃）；`MAX_CONTENT_LENGTH`/`MAX_QUESTION_LENGTH` 定义后无消费。
+- **M15【✅已修复】** reload_config 假热更新：`llm.py` 各 get_llm 均 `lru_cache` 用旧配置冻结实例，`RateLimitMiddleware.max_requests` 构造时捕获 → 热更新对已缓存 LLM/中间件不生效。
+- **M16【✅已修复】** adaptive_threshold 首个校准点在 1000 而非注释宣称的 100：`adaptive_threshold.py:118-120` 校准条件被 `RECALIBRATE_INTERVAL=1000` 门控，`MIN_SAMPLES=100` 常规路径形同虚设，冷启动期固定阈值长期不校准。
+- **M17【✅已修复】** checkpointer/long_term_memory 双重初始化竞态：`checkpointer.py:48-64`、`long_term_memory.py:645-658` 首个并发请求各自建连接池，后写覆盖全局、先建的从不 `__exit__`，连接池泄漏。
+- **M18【✅已修复】** metrics 相对路径依赖进程 CWD：`metrics.py:46` `data/metrics/metrics.db` 未基于 PROJECT_ROOT 拼接 → 不同启动目录写不同 DB，统计丢失/对不上。
 
 ### 低风险 / 清理（约 10 项）
 

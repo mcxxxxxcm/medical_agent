@@ -151,31 +151,38 @@ def check_emergency_signals(answer: str, clinical_checkpoint: Optional[Dict[str,
                     if emerg in sym or sym in emerg:
                         emergency_in_snapshot.append(sym)
 
-    # 也检查当前问题中的紧急症状（使用 AC 自动机）
-    answer_has_emergency = False
+    # 也检查回答本身是否含紧急症状（使用 AC 自动机）
+    # M12 修复：此前 answer_has_emergency 计算后未参与决策，
+    # 快照无紧急症状、仅回答含"胸痛"且未给就医指引时拦截落空。
+    answer_emergency_symptoms = []
     try:
         from app.core.keyword_matcher import get_emergency_matcher
-        answer_has_emergency = get_emergency_matcher().contains_any(answer, use_boundary=False)
+        answer_emergency_symptoms = get_emergency_matcher().get_matched_keywords(answer, use_boundary=False)
     except Exception:
         # P2-12：append 必须在命中条件内，否则异常时把全部紧急症状塞入快照误报紧急
         for emerg in EMERGENCY_SYMPTOMS:
-            if emerg in answer:
-                answer_has_emergency = True
-                if emerg not in emergency_in_snapshot:
-                    emergency_in_snapshot.append(emerg)
-    
+            if emerg in answer and emerg not in answer_emergency_symptoms:
+                answer_emergency_symptoms.append(emerg)
+
+    # 合并快照 + 回答中的紧急症状（用于注入提示时完整列出）
+    all_emergency_symptoms = list(emergency_in_snapshot)
+    for sym in answer_emergency_symptoms:
+        if sym not in all_emergency_symptoms:
+            all_emergency_symptoms.append(sym)
+
     # 检查回答中是否有就医指引
     medical_care_indicators = [
         "就医", "就诊", "急诊", "医院", "120", "看医生",
         "及时就医", "立即就医", "尽快就医", "咨询医生",
     ]
     answer_addressed = any(ind in answer for ind in medical_care_indicators)
-    
-    needs_alert = bool(emergency_in_snapshot) and not answer_addressed
-    
+
+    has_emergency = bool(emergency_in_snapshot) or bool(answer_emergency_symptoms)
+    needs_alert = has_emergency and not answer_addressed
+
     return {
-        "has_emergency_symptom": bool(emergency_in_snapshot),
-        "emergency_symptoms": emergency_in_snapshot,
+        "has_emergency_symptom": has_emergency,
+        "emergency_symptoms": all_emergency_symptoms,
         "answer_addressed_emergency": answer_addressed,
         "needs_emergency_alert": needs_alert,
     }

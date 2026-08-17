@@ -77,8 +77,8 @@ DIRECT_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
 # ===========================================================================
 
 ROUTER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "你是一个医疗问题分类器，只返回类型名称。"),
-    ("human", """请判断以下用户问题的类型，只返回类型名称。
+    ("system", "你是一个医疗问题分类器。"),
+    ("human", """请判断以下用户问题的类型，严格以 JSON 格式输出，不要输出其他任何内容。
 
 用户问题：{question}
 
@@ -89,7 +89,7 @@ ROUTER_PROMPT = ChatPromptTemplate.from_messages([
 
 注意：即使用户没有直接提到症状，但如果问题与用药、治疗、身体不适相关，应归为symptom。
 
-只返回类型名称（symptom/knowledge/general）："""),
+输出格式：{"question_type": "symptom"} 或 {"question_type": "knowledge"} 或 {"question_type": "general"}"""),
 ])
 
 # ===========================================================================

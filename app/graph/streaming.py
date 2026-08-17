@@ -97,6 +97,7 @@ class StreamingOrchestrator:
         self._first_token_sent = False
         self._full_answer = ""
         self._has_profile = False
+        self._has_history = False
         self._state: dict = {
             "question": question,
             "user_id": user_id,
@@ -181,6 +182,9 @@ class StreamingOrchestrator:
 
     async def _check_l0_cache(self) -> str | None:
         """仅检查 L0 答案缓存（无 embedding API 调用，<1ms）"""
+        # M3 修复：有 thread 历史时跳过 L0，避免前一会话基于不同主诉的答案被 30 分钟内复用
+        if self._has_history:
+            return None
         try:
             cache = get_cache()
             if not cache._available:
@@ -204,8 +208,9 @@ class StreamingOrchestrator:
         try:
             cache = get_cache()
 
-            # L0 答案缓存（仅无用户档案时）
-            if not has_profile:
+            # L0 答案缓存（仅无用户档案 且 无 thread 历史时）
+            # M3 修复：有历史会话即使无档案也不命中，防止跨会话串用
+            if not has_profile and not self._has_history:
                 answer_cache_key = _answer_cache_key(self.question)
                 try:
                     if cache._available:
@@ -512,7 +517,7 @@ class StreamingOrchestrator:
             can_cache, revision_sse = await self._run_safety_review()
             if revision_sse:
                 yield revision_sse
-            if can_cache and not self._has_profile:
+            if can_cache and not self._has_profile and not self._has_history:
                 _save_answer_cache(self.question, self._full_answer)
             self._check_hallucination(self._full_answer)
 
@@ -526,6 +531,7 @@ class StreamingOrchestrator:
             # 阶段 1：加载初始状态（档案 + 历史）
             await self._load_initial_state()
             self._has_profile = bool(self._state.get("user_profile"))
+            self._has_history = bool(self._state.get("messages"))
 
             # 阶段 2：路由 + 缓存检查（决定是否走 graph）
             cached_docs = None
@@ -541,8 +547,8 @@ class StreamingOrchestrator:
                 if route_type == "query_rewrite":
                     # knowledge：知识查询常重复 → L0 + L2 语义缓存
                     cached_docs, cached_answer = await self._check_cache(self._has_profile)
-                elif not self._has_profile:
-                    # symptom/general: 只查 L0 答案缓存（无需 embedding API）
+                elif not self._has_profile and not self._has_history:
+                    # symptom/general: 只查 L0 答案缓存（无需 embedding API），有历史时跳过
                     cached_answer = await self._check_l0_cache()
 
             # 阶段 3：按缓存/路由结果分发处理
@@ -572,7 +578,7 @@ class StreamingOrchestrator:
                     can_cache, revision_sse = await self._run_safety_review()
                     if revision_sse:
                         yield revision_sse
-                    if can_cache and not self._has_profile:
+                    if can_cache and not self._has_profile and not self._has_history:
                         _save_answer_cache(self.question, self._full_answer)
                     self._check_hallucination(self._full_answer)
                     # P2-8：L2 语义缓存命中不经过 graph，主动写入对话历史

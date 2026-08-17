@@ -9,6 +9,7 @@
 """
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
+import threading
 import uuid
 import logging
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _long_term_memory: Optional["LongTermMemoryManager"] = None
 _store_context = None
+_init_lock = threading.Lock()  # M17：防并发首建竞态，避免连接池泄漏
 
 # v9.2 漏洞3修复：各命名空间的默认保留天数和上限
 _NAMESPACE_RETENTION = {
@@ -28,12 +30,14 @@ _NAMESPACE_RETENTION = {
     "medication_events": 90,   # 用药事件保留 90 天
     "bad_cases": 180,          # Bad Case 保留 180 天（回归测试需要）
     "query_history": 30,       # 查询历史保留 30 天
+    "document_cache": 7,       # 文档缓存保留 7 天（M8：原无 TTL/prune，Postgres 无界增长）
 }
 _NAMESPACE_MAX_ITEMS = {
     "symptom_events": 500,     # 每用户最多 500 条症状事件
     "medication_events": 300,  # 每用户最多 300 条用药事件
     "bad_cases": 500,          # 每用户最多 500 条 Bad Case
     "query_history": 200,      # 每用户最多 200 条查询历史
+    "document_cache": 500,     # 全局文档缓存最多 500 条
 }
 
 
@@ -51,18 +55,24 @@ class LongTermMemoryManager:
             user_id: str,
             limit: int = 10
     ) -> List[Dict[str, Any]]:
-        """获取症状历史记录 (按时间倒序)"""
-        items = self.store.search(("symptom_history", user_id))
+        """获取症状历史记录 (按时间倒序)
 
-        # 🔴 关键：应用层排序
-        # 提取 value 并过滤掉没有 timestamp 的脏数据
+        M7 修复：实际写入方是 append_symptom_event（命名空间 symptom_events），
+        旧代码读 ("symptom_history", user_id) 没有任何写入者，恒返回空列表。
+        改为读 symptom_events 并过滤症状报告事件。
+        """
+        items = self.store.search(("symptom_events", user_id))
+
+        # 应用层排序：提取 value 并按 created_at 倒序
         records = []
         for item in items:
-            if item.value and "timestamp" in item.value:
-                records.append(item.value)
+            if not item.value:
+                continue
+            if item.value.get("event_type", "symptom_report") != "symptom_report":
+                continue
+            records.append(item.value)
 
-        # 按时间戳倒序排序
-        records.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
         return records[:limit]
 
@@ -115,6 +125,8 @@ class LongTermMemoryManager:
             value={"content": content, "metadata": metadata or {}, "cached_at": datetime.now().isoformat()}
         )
         logger.info(f"已缓存文档：doc_id={doc_id}")
+        # M8 修复：document_cache 原无 TTL/prune，Postgres 无界增长；写入后按需清理
+        self._prune_document_cache()
 
     def get_document_cache(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """获取缓存的文档"""
@@ -123,6 +135,55 @@ class LongTermMemoryManager:
             key=doc_id
         )
         return item.value if item else None
+
+    def _prune_document_cache(self) -> None:
+        """M8 修复：清理过期的全局文档缓存
+
+        document_cache 为全局命名空间（不按用户隔离），原不在
+        _NAMESPACE_RETENTION/_NAMESPACE_MAX_ITEMS 中，导致 Postgres 无界增长。
+        按 cached_at 保留天数 + 总条数上限清理。
+        """
+        try:
+            max_age_days = _NAMESPACE_RETENTION.get("document_cache", 7)
+            max_items = _NAMESPACE_MAX_ITEMS.get("document_cache", 500)
+            namespace = ("document_cache",)
+            items = self.store.search(namespace)
+            if not items:
+                return
+
+            # 超过上限 2 倍才触发（摊销：避免每次写入都全量扫描）
+            if len(items) <= max_items * 2:
+                return
+
+            cutoff_date = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+            keys_to_delete = []
+            for item in items:
+                if not item.value:
+                    keys_to_delete.append(item.key)
+                    continue
+                cached_at = item.value.get("cached_at", "")
+                if cached_at and cached_at < cutoff_date:
+                    keys_to_delete.append(item.key)
+
+            remaining = [item for item in items if item.key not in keys_to_delete]
+            if len(remaining) > max_items:
+                remaining.sort(
+                    key=lambda x: (x.value or {}).get("cached_at", "") if x.value else "",
+                )
+                excess = len(remaining) - max_items
+                for item in remaining[:excess]:
+                    keys_to_delete.append(item.key)
+
+            for key in keys_to_delete:
+                try:
+                    self.store.delete(namespace, key=key)
+                except Exception as e:
+                    logger.warning(f"删除 document_cache/{key} 失败：{e}")
+
+            if keys_to_delete:
+                logger.info(f"文档缓存清理完成：删除 {len(keys_to_delete)} 条")
+        except Exception as e:
+            logger.error(f"文档缓存清理失败：{e}")
 
     # ===== v9.2 漏洞3修复：Prune 机制 =====
 
@@ -321,6 +382,7 @@ class LongTermMemoryManager:
             onset_ts: int,
             precision: str = "default",
             source_query: str = "",
+            event_id: Optional[str] = None,
     ) -> str:
         """追加一条症状报告事件到长期记忆
 
@@ -331,11 +393,13 @@ class LongTermMemoryManager:
             onset_ts: 症状首发 Unix 时间戳
             precision: 时间精度（exact/approximate/vague/default）
             source_query: 触发此事件的原始用户问题
+            event_id: 可选，指定事件ID（M9：fallback flush 传确定性 ID 保证幂等，
+                      崩溃重跑时 postgres put 覆盖同一 key，不产生重复事件）
 
         Returns:
             事件ID
         """
-        event_id = f"se_{uuid.uuid4().hex[:12]}"
+        event_id = event_id or f"se_{uuid.uuid4().hex[:12]}"
         event = {
             "event_type": "symptom_report",
             "symptom": symptom_name,
@@ -596,9 +660,10 @@ class LongTermMemoryManager:
             dosage: Optional[str] = None,
             effect: Optional[str] = None,
             source_query: str = "",
+            event_id: Optional[str] = None,
     ) -> str:
         """追加一条用药记录事件到长期记忆"""
-        event_id = f"me_{uuid.uuid4().hex[:12]}"
+        event_id = event_id or f"me_{uuid.uuid4().hex[:12]}"
         event = {
             "event_type": "medication_record",
             "drug": drug,
@@ -642,20 +707,23 @@ class LongTermMemoryManager:
 def get_long_term_memory() -> LongTermMemoryManager:
     """获取长期记忆管理器实例（单例）"""
     global _long_term_memory, _store_context
+    # M17 修复：加锁防止并发首建各自创建连接池，先建的 context 从不退出导致连接泄漏
     if _long_term_memory is None:
-        # 假设你的配置获取方式是同步的
-        from app.core.config import get_config
-        config = get_config()
-        db_uri = config.DATABASE_URL
+        with _init_lock:
+            if _long_term_memory is None:
+                # 假设你的配置获取方式是同步的
+                from app.core.config import get_config
+                config = get_config()
+                db_uri = config.DATABASE_URL
 
-        _store_context = PostgresStore.from_conn_string(db_uri)
-        store = _store_context.__enter__()
+                _store_context = PostgresStore.from_conn_string(db_uri)
+                store = _store_context.__enter__()
 
-        store.setup()
-        logger.info("长期记忆存储器表结构检查/创建完成")
+                store.setup()
+                logger.info("长期记忆存储器表结构检查/创建完成")
 
-        _long_term_memory = LongTermMemoryManager(store)
-        logger.info("长期记忆管理器单例已创建")
+                _long_term_memory = LongTermMemoryManager(store)
+                logger.info("长期记忆管理器单例已创建")
 
     return _long_term_memory
 

@@ -61,7 +61,9 @@
       "Read(//c//**)",
       "Bash(cd /tmp)",
       "Bash(pip install *)",
-      "Bash(sed -i 's/InMemorySaver/MemorySaver/' test_lg2.py)"
+      "Bash(sed -i 's/InMemorySaver/MemorySaver/' test_lg2.py)",
+      "Bash(ls /c/Python*)",
+      "Bash(pip --version)"
     ]
   },
   "enableAllProjectMcpServers": true,

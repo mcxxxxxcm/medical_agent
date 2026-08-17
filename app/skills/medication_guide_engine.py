@@ -41,9 +41,11 @@ DRUG_SAFETY_RULES = {
 }
 
 # 禁忌人群标记（从 clinical_checkpoint / user_profile 中检测）
+# M11 修复：儿童关键词不含"岁"（年龄字段几乎必含"岁"，含它会让任何成年档案命中儿童，
+# 阿司匹林误报禁忌）；改为由 _detect_user_conditions 按年龄数值判断儿童/老年。
 CONTRAINDICATION_KEYWORDS = {
     "孕妇": ["怀孕", "孕妇", "妊娠", "孕期", "孕"],
-    "儿童": ["儿童", "小儿", "婴儿", "幼儿", "宝宝", "岁"],
+    "儿童": ["儿童", "小儿", "婴儿", "幼儿", "宝宝"],
     "老年": ["老年", "高龄", "老人"],
     "肝功能不全": ["肝功能不全", "肝病", "肝硬化", "肝炎"],
     "肾功能不全": ["肾功能不全", "肾病", "肾衰", "透析"],
@@ -199,6 +201,16 @@ def _detect_user_conditions(
 
     combined_text = " ".join(texts_to_check)
 
+    # M11 修复：按年龄数值判断儿童/老年（年龄 <16 视为儿童，≥60 视为老年）。
+    # 旧逻辑用"岁"关键词，任何成年档案（如"35岁"）都命中儿童导致误报禁忌。
+    age_match = re.search(r"(\d{1,3})\s*岁", combined_text)
+    if age_match:
+        age = int(age_match.group(1))
+        if age < 16:
+            detected.append("儿童")
+        elif age >= 60:
+            detected.append("老年")
+
     for category, keywords in CONTRAINDICATION_KEYWORDS.items():
         for kw in keywords:
             if kw in combined_text:
@@ -283,9 +295,10 @@ def check_drug_interactions(drugs: List[str]) -> Dict[str, Any]:
                 })
             info_b = DRUG_SAFETY_RULES.get(drug_b)
             if info_b and drug_a in info_b.get("interactions", []):
-                # 避免重复记录
+                # M10 修复：去重方向写反——首段 append 的是 (drug_a, drug_b)，
+                # 旧代码查 (drug_b, drug_a) 恒不命中，对称互列时重复警告两条。
                 already = any(
-                    ia["drug_a"] == drug_b and ia["drug_b"] == drug_a
+                    ia["drug_a"] == drug_a and ia["drug_b"] == drug_b
                     for ia in interactions
                 )
                 if not already:

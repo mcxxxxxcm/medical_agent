@@ -43,7 +43,10 @@ from app.core.app_logging import get_logger
 
 logger = get_logger(__name__)
 
-_DEFAULT_DB_PATH = "data/metrics/metrics.db"
+# M18 修复：相对路径依赖进程 CWD，不同启动目录写不同 DB 导致统计丢失。
+# 基于项目根目录拼接，任何启动目录都写到同一位置。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_DB_PATH = str(_PROJECT_ROOT / "data" / "metrics" / "metrics.db")
 _RETENTION_DAYS = 30
 
 # ===== 成本估算（元/千 tokens，基于智谱官方定价 2025） =====

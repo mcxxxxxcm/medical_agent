@@ -97,8 +97,12 @@ class Settings(BaseSettings):
     # L1 永久层：Profile（PostgresStore，跨会话）- 姓名、年龄、过敏史
     # L2 会话层：Clinical Snapshot（Checkpointer State，单会话）- 症状、用药、诊断
     # L3 短期窗口：Messages（滑动窗口，最近3轮）
-    KEEP_RECENT_MESSAGES: int = 6  # 保留最近的消息数量（3轮=6条）
-    SNAPSHOT_TRIGGER: int = 8      # 触发快照更新的消息数量阈值（4轮=8条）
+    # M14 修复：MAX_MESSAGES/SUMMARY_TRIGGER 此前只存在于 .env，Settings 无字段被
+    # extra=ignore 静默丢弃，形同虚设；补齐字段并在上下文管理/校验中生效。
+    MAX_MESSAGES: int = 20          # 单会话最多保留的消息数量
+    KEEP_RECENT_MESSAGES: int = 6   # 保留最近的消息数量（3轮=6条）
+    SUMMARY_TRIGGER: int = 14       # 触发总结的消息数量阈值
+    SNAPSHOT_TRIGGER: int = 8       # 触发快照更新的消息数量阈值（4轮=8条）
 
     # ===== 动态压缩阈值（v9.17） =====
     CONTEXT_COMPRESSION_RATIO: float = 0.7   # 上下文占用超过窗口70%时触发压缩
@@ -142,6 +146,9 @@ def get_config() -> Settings:
 def reload_config() -> dict:
     """热更新配置：重新读取 .env 文件并更新全局 settings。
 
+    M15 修复：LLM 实例带 @lru_cache，旧配置被冻结在实例里，热更新不生效。
+    更新后清空 LLM 缓存，下次调用按新配置重建。
+
     Returns:
         dict: {"changed": [...], "reloaded": True/False, "error": "..."}
     """
@@ -155,6 +162,12 @@ def reload_config() -> dict:
             k for k in old_values
             if str(old_values[k]) != str(getattr(new_settings, k, None))
         ]
+        if changed:
+            try:
+                from app.core.llm import clear_llm_caches
+                clear_llm_caches()
+            except Exception:
+                pass
         return {"changed": changed, "reloaded": True}
     except Exception as e:
         settings = Settings.model_validate(old_values)
