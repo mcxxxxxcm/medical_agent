@@ -91,10 +91,11 @@
 
 | 层级 | 类型 | 存储 | 命中条件 | TTL |
 |------|------|------|----------|-----|
-| L0 | 答案缓存 | Redis | 精确匹配（无用户档案时） | 30min |
-| L2 | 语义缓存 | Redis + Embedding | 余弦相似度 ≥ 0.75 | 1h |
+| L0 | 答案缓存 | Redis | 精确匹配（无历史对话时） | 30min |
+| L2 | 语义缓存 | Redis + Embedding | 余弦相似度 ≥ 0.92 | 1h |
 
-缓存命中时跳过检索和 LLM 调用，直接返回缓存答案。
+- 缓存 key 绑定 `kb_version` 与 `prompt_version`，知识库或 Prompt 变更后旧缓存自动失效
+- 命中时跳过检索和 LLM 调用，直接返回缓存答案（有 thread 历史时跳过 L0/L2 复用，防跨会话串用）
 
 ### 记忆管理
 
@@ -112,12 +113,13 @@
 | 模型 | 用途 | 部署方式 | 配置项 |
 |------|------|----------|--------|
 | glm-4-flash | RAG 答案生成、直接回答 | 云端 API（智谱） | `MODEL_NAME` |
-| qwen2.5:3b | 查询重写、症状解析、档案提取、快照更新 | 本地部署（Ollama） | `LOCAL_MODEL_NAME` / `LOCAL_MODEL_ENABLED` |
+| qwen2.5:1.5b | 查询重写、路由、症状解析、档案提取、快照更新、安全审查 | 本地部署（Ollama） | `LOCAL_MODEL_NAME` / `LOCAL_MODEL_ENABLED` |
+| glm-4v-plus | 图片问诊 VLM 结构化提取 | 云端 API（智谱） | `VISION_MODEL_NAME` |
 | embedding-3 | 文档向量化、语义缓存相似度计算 | 云端 API（智谱） | `EMBEDDING_MODEL` |
 | bge-reranker-onnx | 检索结果重排序 | 本地 ONNX 推理 | `RERANKER_MODEL_PATH` |
 | BM25 (rank-bm25) | 稀疏检索（关键词匹配） | 本地内存 | - |
 
-**模型分工策略**：最终答案生成调用云端 API（保证质量），中间节点（重写/解析/提取）调用本地 3B 模型（降低延迟与成本），Reranker 使用 ONNX 本地推理（避免 GPU 依赖）。
+**模型分工策略**：最终答案生成调用云端 API（保证质量），中间节点（重写/解析/提取/审查）调用本地 1.5B 模型（降低延迟与成本，`LOCAL_MODEL_ENABLED=False` 时自动降级回云端 API），Reranker 使用 ONNX 本地推理（避免 GPU 依赖）。
 
 ### 智能问答
 - **流式响应**：SSE 实时推送，无需等待完整生成
@@ -139,14 +141,69 @@
 
 ### 安全防护
 - **CORS 限制**：生产环境通过 `CORS_ORIGINS` 配置允许的来源，`allow_origins=*` 时自动禁用 `credentials`
-- **接口认证**：缓存管理接口（`/api/cache/clear`、`/api/cache/{query}`）需 `X-Admin-API-Key` 认证，未配置密钥时仅允许本地访问
-- **输入限制**：`question` 最大 1000 字符，`image_base64` 最大 10MB
+- **接口认证**：`X-Admin-API-Key` 认证覆盖全部管理面——缓存管理（`/api/cache/*`）、知识库管理（`/api/admin/kb/*`）、拒答日志（`/api/admin/refusal/*`）、评估指标（`/api/metrics/*`）；未配置密钥时仅允许本地访问
+- **输入限制**：`question` 最大 1000 字符，`image_base64` 最大 10MB，知识库上传文件名净化防路径穿越
 - **异常脱敏**：生产环境（`DEBUG=false`）全局异常处理器返回通用消息，不泄露内部实现细节
 - **Redis 自动重连**：连接断开后每 30 秒尝试重连，恢复后自动切回 Redis，避免永久降级
 
-### 🖼️ 图片识别（规划中）
-- 当前主服务 `app/api/routes.py` 未暴露图片分析接口
-- 如需保留该能力，建议以独立模块或实验性接口形式补充并在文档中单独标注
+### 🖼️ 图片问诊（VLM + OCR）
+- 已通过聊天接口 `image_base64` 字段实现，同步（`/api/chat`）与流式（`/api/chat/stream`）均支持，上限 10MB
+- 处理流程（`graph/nodes/nodes.py` 的 `vision_analysis_node`）：
+  1. **VLM 结构化提取**：识别图片类型（检验单/报告/处方等）、置信度、可能方向与数值
+  2. **OCR 数值校准**：数据类图片追加 PaddleOCR 提取结果，`_merge_ocr_into_vision` 覆盖 VLM 数值偏差
+  3. **追问闭环**：识别不确定（`needs_followup`）或低置信度时反问用户，追问内容写入 checkpointer，下一轮上下文衔接
+  4. **RAG 续查**：由图片信息构建检索查询，走正常检索/生成流水线
+- 追问/低置信度/异常分支均安全收尾（`_vision_fallback_goto`），不会卡死图流程
+
+### 🗂️ 知识库管理与零停机重建
+
+基于版本化（`version_id`）+ 软删除（`status`）机制，支持增量更新与双集合原子切换：
+
+| 能力 | 说明 |
+|------|------|
+| 增量更新双缓冲 | 上传后新 chunk 先入 `pending` → 校验 → 激活 `active` → 仅废弃旧版本中已删除的块；0 窗口期 |
+| 版本管理 | 同一文档每次修改 `version_id+1`，`keep_hashes` 保留未变块，避免"改几行整篇丢失" |
+| 零停机全量重建 | 影子集合构建 → 校验 → `kb_active.json` 指针原子切换 → 300s 延迟清理旧集合 |
+| 软删除 / 恢复 | `status=deprecated` 而非物理删除，支持 `restore` 恢复，BM25 索引同步过滤 |
+| 回滚 | `/api/admin/kb/rollback` 秒级切回旧集合 |
+| 一致性校验 | `run_reconciliation` 比对文档目录与向量库差异，`stale-detect` 探测过期数据 |
+| 审计日志 | 每次上传/删除/重建/回滚写入审计记录，可查询 |
+
+**管理接口**（全部需 `X-Admin-API-Key` 认证）：
+
+| 端点 | 功能 |
+|------|------|
+| `/api/admin/kb/status` | 文档列表、向量库、版本、Embedding 一致性 |
+| `/api/admin/kb/upload` | 上传文档（增量双缓冲 + 版本化） |
+| `/api/admin/kb/documents/{filename}` | 删除文档（软删除） |
+| `/api/admin/kb/restore/{filename}` | 恢复已删除文档 |
+| `/api/admin/kb/rebuild` | 全量重建（零停机） |
+| `/api/admin/kb/rollback` | 回滚到旧集合 |
+| `/api/admin/kb/audit-log` | 审计日志查询 |
+| `/api/admin/kb/reconcile` / `stale-detect` | 一致性校验 / 过期探测 |
+| `/api/admin/kb/collection-info` | 集合信息 |
+
+文件名经 `_sanitize_kb_filename` 净化（拒绝 `/`、`\`、盘符、`..`），防路径穿越。
+
+### 🛡️ 安全检查引擎
+
+回答生成后由 `safety_check_node` 执行多层核查（`app/skills/`），不依赖单一 LLM 判断：
+
+| 引擎 | 核查内容 |
+|------|----------|
+| `medication_guide_engine` | ① 剂量上限（统一 g/mg/μg → mg，累计每日总剂量）② 禁忌人群交叉（儿童/老年按年龄数值判定）③ 重复用药 ④ 药物相互作用初筛（对称去重）⑤ 用药建议 5 字段完整性（适应症/用法用量/注意事项/禁忌/如症状持续请就医） |
+| `symptom_triage_engine` | 从临床快照提取症状，响应**危险症状组合**（如头痛+发热+颈僵→脑膜炎高风险）与 🟡 建议就诊信号，注入紧凑警告 |
+| `safety_review_engine` | 紧急信号检测（回答含紧急症状未给就医指引时追加提示）+ LLM 深度审查 + 拒答（多数据加权置信度） |
+
+- 触发风险标签后进入 LLM 深度审查路径；`ENABLE_SAFETY_CHECK` 控制开关，流式与非流式路径均已接线
+- 拒答日志/统计接口（`/api/admin/refusal/*`）需管理员鉴权
+
+### 🧪 评估与迭代
+
+- **RAGAS 四维指标**：Faithfulness / Answer Relevancy / Context Precision / Context Recall
+- **版本化评估**：结果按版本归档，支持 A/B 对比
+- **Bad Case 回归**：失败样本导出并回归复测，防止修复回退
+- 接口：`/api/feedback`（反馈）、`/api/metrics/*`（节点/请求/token 指标，需鉴权）
 
 ### 🐳 容器化部署
 - **Docker Compose**：一键启动所有服务
@@ -347,24 +404,21 @@ data: "多饮、多尿、多食..."
 data: [DONE]
 ```
 
-### 图片分析
+### 图片问诊（多模态）
+
+通过聊天接口传 `image_base64` 触发 VLM 分析，无需独立上传端点：
 
 ```bash
-curl -X POST http://localhost:8000/api/upload/analyze \
-  -F "file=@report.jpg" \
-  -F "question=这份报告有什么问题？" \
-  -F "use_ocr=true"
+curl -X POST http://localhost:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "这份检查报告有什么问题？",
+    "user_id": "user_001",
+    "image_base64": "<图片base64编码>"
+  }'
 ```
 
-**响应**：
-```json
-{
-  "ocr_text": "血常规检查...",
-  "analysis": "根据报告分析...",
-  "suggestions": ["建议复查..."],
-  "warnings": ["本分析仅供参考..."]
-}
-```
+**流程**：VLM 结构化提取 → 数据类图片追加 OCR 数值校准 → 不确定时追问用户 → 构建 RAG 查询继续检索生成。
 
 ### 健康检查
 
@@ -522,17 +576,19 @@ REWRITE_MODEL_NAME=glm-4-flash
 ```
 medical_assistant_agent/
 ├── app/
-│   ├── api/              # API 路由
-│   ├── cache/            # 缓存模块（Redis、语义缓存）
-│   ├── core/             # 核心配置（LLM、Embedding、Config）
-│   ├── graph/            # LangGraph 工作流（节点、状态、图）
-│   ├── memory/           # 记忆管理（PostgreSQL）
-│   ├── rag/              # RAG 检索（向量库、BM25、Reranker）
-│   ├── vision/           # 视觉识别（OCR、图片分析）
+│   ├── api/              # API 路由（聊天、KB 管理、metrics、admin 鉴权）
+│   ├── cache/            # 缓存模块（Redis 答案缓存、语义缓存）
+│   ├── core/             # 核心配置（LLM、Embedding、限流、熔断、指标、自适应阈值）
+│   ├── evaluation/       # 评估（RAGAS 四维指标、Bad Case 回归）
+│   ├── graph/            # LangGraph 工作流（nodes、streaming、state、prompts，含 vision 节点）
+│   ├── memory/           # 记忆管理（PostgreSQL checkpointer、长期记忆、fallback 缓冲）
+│   ├── models/           # Pydantic 数据模型
+│   ├── rag/              # RAG 检索（向量库、BM25、Reranker、KB 版本更新、元数据提取）
+│   ├── skills/           # 三大安全引擎（用药指南、症状分诊、安全审查）
 │   └── static/           # 静态文件
-├── data/                 # 数据存储
+├── data/                 # 数据存储（chroma_db、uploads、metrics）
 ├── docs/medical/         # 医疗文档
-├── scripts/              # 工具脚本
+├── scripts/              # 工具脚本（重建/评估/验证/审计脚本）
 ├── tests/                # 测试用例
 ├── docker-compose.yml    # Docker 编排
 ├── Dockerfile            # 容器镜像
@@ -557,9 +613,15 @@ medical_assistant_agent/
 - [x] 查询重写轻量化
 - [x] 文档来源 SSE 元数据推送
 - [x] MinerU PDF 解析
-- [x] 图片识别功能（图问诊已通过 image_base64 实现；`/api/upload/analyze` OCR 上传端点待补充）
+- [x] 图片问诊（聊天接口 `image_base64`：VLM 提取 + OCR 数值校准 + 追问闭环）
 - [x] RAGAS 自动评估（四维指标 + 版本化 A/B 对比 + Bad Case 回归）
 - [x] 并行检索架构（多子问题 ThreadPoolExecutor 并行检索）
+- [x] 知识库零停机重建（影子集合 → 校验 → 原子切换 → 延迟清理）
+- [x] 知识库增量更新双缓冲 + 版本化（0 窗口期、软删除、回滚）
+- [x] 知识库管理 API（上传/删除/恢复/重建/回滚/审计日志/一致性校验）
+- [x] 安全检查引擎（剂量上限/禁忌人群/相互作用/5 字段完整性/症状分诊）
+- [x] 拒答机制（多数据加权置信度 + LLM 深度审查）
+- [x] 查询/答案缓存版本化（kb_version + prompt_version 绑定，KB 更新自动失效）
 - [ ] 全节点异步化
 - [ ] 多语言支持
 

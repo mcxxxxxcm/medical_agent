@@ -1,5 +1,20 @@
 # 系统优化更新日志
 
+## v9.23 - README 同步实际进度（文档更新）
+
+对照代码与 CHANGELOG 修订 README，消除与实际实现的偏差：
+
+- **图片问诊**：「🖼️ 图片识别（规划中）」→「已实现」，补充 `image_base64` 完整流程（VLM 结构化提取 → OCR 数值校准 → 追问闭环 → RAG 续查），标注 `_vision_fallback_goto` 安全收尾。
+- **API 文档**：移除不存在的 `/api/upload/analyze` 端点示例，改为聊天接口传 `image_base64` 的实际用法（该端点代码中不存在）。
+- **新增「知识库管理与零停机重建」章节**：增量双缓冲、版本化（`version_id`）、影子集合原子切换、软删除/恢复/回滚、一致性校验、审计日志；补全 `/api/admin/kb/*` 九大管理接口清单与文件名路径穿越防护。
+- **新增「安全检查引擎」章节**：`medication_guide_engine`（剂量/禁忌人群/重复用药/相互作用/5 字段）、`symptom_triage_engine`（危险症状组合 + 建议就诊）、`safety_review_engine`（紧急信号 + LLM 深度审查 + 拒答）。
+- **新增「评估与迭代」章节**：RAGAS 四维指标、版本化 A/B 对比、Bad Case 回归、feedback/metrics 接口。
+- **项目结构修正**：移除不存在的 `app/vision/` 目录，补 `skills/`、`evaluation/`、`models/`；vision 逻辑标注在 `graph/nodes/nodes.py`。
+- **路线图**：勾选最近完成项（零停机重建、增量双缓冲、KB 管理 API、安全检查引擎、拒答机制、缓存版本化）。
+- **模型清单修正**：本地模型 `qwen2.5:3b` → 实际 `qwen2.5:1.5b`；补充视觉模型 `glm-4v-plus`；`LOCAL_MODEL_ENABLED=False` 降级说明。
+- **缓存体系**：L2 语义缓存阈值 `0.75` → 实际 `0.92`；补充缓存 key 绑定 `kb_version`/`prompt_version` 与有历史时跳过缓存复用。
+- **安全防护**：补全 `X-Admin-API-Key` 覆盖范围（`/api/cache/*`、`/api/admin/kb/*`、`/api/admin/refusal/*`、`/api/metrics/*`）。
+
 ## v9.22 - 第二轮中风险项修复（18/18）
 
 承接 26/8/16 审计中风险清单，全部 18 项已修复并逐项验证：
