@@ -1275,10 +1275,16 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             retrieval_time = (time.time() - start_time) * 1000
             logger.info(f"检索到{len(docs)}个相关文档，耗时：{retrieval_time:.2f}ms，第 {retrieval_attempts} 次检索")
 
+        # 来源去重：父子索引/兄弟章节扩展会产生多个同源文档，用户可见的来源列表只保留唯一文档名
         sources = []
+        seen_sources = set()
         for doc in docs:
+            source_name = doc.metadata.get("source", "未知")
+            if source_name in seen_sources:
+                continue
+            seen_sources.add(source_name)
             sources.append({
-                "source": doc.metadata.get("source", "未知"),
+                "source": source_name,
                 "file_path": doc.metadata.get("file_path", "未知"),
                 "content": doc.page_content[:100]
             })
@@ -1852,19 +1858,38 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
     return "\n".join(history_parts)
 
 
+def strip_source_markers(text: str) -> str:
+    """剥离答案正文中的 [来源:文档名] 引用标记
+
+    Prompt 已明确禁止 LLM 标注来源（参考来源由系统单独展示），
+    此函数作为兜底，清理历史缓存或模型偶尔残留的标记。
+    只匹配 [来源:...] 形式的完整标记，避免误伤正文。
+    """
+    if not text:
+        return text
+    cleaned = re.sub(r"\[来源:[^\]]*\]", "", text)
+    return cleaned.strip()
+
+
 def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit: int = 200) -> List[Dict[str, str]]:
     """格式化检索来源信息"""
     if not retrieved_docs:
         return []
 
-    return [
-        {
-            "source": doc.metadata.get("source", "未知来源"),
+    # 来源去重：同一文档名的多个子块/章节只保留一个来源条目
+    sources = []
+    seen_sources = set()
+    for doc in retrieved_docs:
+        source_name = doc.metadata.get("source", "未知来源")
+        if source_name in seen_sources:
+            continue
+        seen_sources.add(source_name)
+        sources.append({
+            "source": source_name,
             "file_path": doc.metadata.get("file_path", ""),
             "content": doc.page_content[:content_limit],
-        }
-        for doc in retrieved_docs
-    ]
+        })
+    return sources
 
 
 def has_query_overlap(question: str, doc_content: str) -> bool:
@@ -2194,7 +2219,7 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
             if token:
                 full_answer += token
 
-        answer = full_answer.strip()
+        answer = strip_source_markers(full_answer.strip())
         generation_time = (time.time() - start_time) * 1000
 
         # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
@@ -2979,7 +3004,7 @@ async def direct_answer_node(state: MedicalAssistantState, config: RunnableConfi
             if token:
                 full_answer += token
 
-        answer = full_answer.strip()
+        answer = strip_source_markers(full_answer.strip())
 
         # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
         try:

@@ -61,6 +61,7 @@ from .nodes import (
     filter_relevant_docs,
     format_clinical_checkpoint,
     format_retrieved_sources,
+    strip_source_markers,
     get_context_with_summary,
     get_conversation_history_text,
     get_user_context_prompt,

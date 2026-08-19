@@ -684,10 +684,17 @@
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     }
 
-    // 渲染文档来源
+    // 渲染文档来源（按来源文档名去重，父子索引/兄弟章节扩展会产生多个同源条目）
     function renderSources(sources) {
         if (!sources || sources.length === 0) return '';
-        const items = sources.map((s, i) => {
+        const seen = new Set();
+        const unique = sources.filter((s) => {
+            const name = s.source || s.file_path || '未知来源';
+            if (seen.has(name)) return false;
+            seen.add(name);
+            return true;
+        });
+        const items = unique.map((s, i) => {
             const name = s.source || s.file_path || '未知来源';
             return `<span class="source-item">[${i + 1}] ${name}</span>`;
         }).join(' ');

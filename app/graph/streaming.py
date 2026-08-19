@@ -29,6 +29,7 @@ from app.graph.nodes import (
     router_node,
     safety_check_node,
     stream_answer_generation,
+    strip_source_markers,
 )
 
 logger = get_logger(__name__)
@@ -108,6 +109,8 @@ class StreamingOrchestrator:
             "sources": [],
             "retrieval_attempts": 0,
         }
+        # 流式剥离 [来源:...] 标记的跨 token 缓冲（每轮请求开始时清空）
+        self._source_marker_buffer = ""
 
     async def _emit(self, payload) -> str:
         """生成 SSE data 行，记录首 token 延迟"""
@@ -258,17 +261,53 @@ class StreamingOrchestrator:
         return await loop.run_in_executor(None, router_node, dict(self._state))
 
     def _emit_sources_event(self, docs):
-        """推送文档来源元数据 SSE 事件"""
-        sources = [
-            {
-                "source": doc.metadata.get("source", "未知来源"),
+        """推送文档来源元数据 SSE 事件（按来源文档名去重）"""
+        sources = []
+        seen_sources = set()
+        for doc in docs:
+            source_name = doc.metadata.get("source", "未知来源")
+            if source_name in seen_sources:
+                continue
+            seen_sources.add(source_name)
+            sources.append({
+                "source": source_name,
                 "file_path": doc.metadata.get("file_path", ""),
-            }
-            for doc in docs
-        ]
+            })
         if sources:
             return f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
         return ""
+
+    def _strip_source_markers_stream(self, token: str) -> str:
+        """剥离流式 token 中的 [来源:文档名] 标记，兼容标记被拆到多个 token
+
+        策略：
+        - 先拼上上一个 token 暂存的未闭合尾部（如只有 "[来源:"）
+        - 完整标记（含 ]）直接剥离，支持一行多个标记
+        - 若末尾是未闭合的 [来源:，则暂存等待下一个 token 补全
+        - 暂存超过 50 字符视为误判，直接释放，避免无限缓存
+        """
+        if len(self._source_marker_buffer) > 50:
+            overflow, self._source_marker_buffer = self._source_marker_buffer, ""
+            text = overflow + token
+        else:
+            text = self._source_marker_buffer + token
+            self._source_marker_buffer = ""
+
+        result = []
+        pos = 0
+        while True:
+            start = text.find("[来源:", pos)
+            if start == -1:
+                result.append(text[pos:])
+                break
+            result.append(text[pos:start])
+            end = text.find("]", start)
+            if end == -1:
+                # 标记未闭合，暂存等待下一 token
+                self._source_marker_buffer = text[start:]
+                break
+            pos = end + 1
+        return "".join(result)
 
     def _check_hallucination(self, answer: str):
         """检测答案中的医疗实体是否来自检索文档（忠实度检测）
@@ -480,6 +519,10 @@ class StreamingOrchestrator:
                     continue
                 token = chunk.content if isinstance(chunk.content, str) else ""
                 if token:
+                    # 剥离正文中的 [来源:文档名] 标记（完整答案同样走剥离后的内容）
+                    token = self._strip_source_markers_stream(token)
+                    if not token:
+                        continue
                     self._full_answer += token
                     yield await self._emit(token)
 
@@ -508,6 +551,7 @@ class StreamingOrchestrator:
 
         # 无 token 流出时（快速问候 / 澄清追问 / 拒答 / 无检索文档），直接发送最终答案
         if not self._full_answer and final_answer:
+            final_answer = strip_source_markers(final_answer)
             self._full_answer = final_answer
             yield await self._emit(final_answer)
 
@@ -553,7 +597,8 @@ class StreamingOrchestrator:
 
             # 阶段 3：按缓存/路由结果分发处理
             if cached_answer:
-                # L0 答案缓存命中
+                # L0 答案缓存命中（历史缓存可能含 [来源:] 标记，统一剥离）
+                cached_answer = strip_source_markers(cached_answer)
                 self._full_answer = cached_answer
                 yield await self._emit(cached_answer)
                 # P2-8：缓存命中不经过 graph，主动写入对话历史
@@ -572,6 +617,9 @@ class StreamingOrchestrator:
                     yield sources_event
                 self._full_answer = ""
                 async for token in stream_answer_generation(self._state):
+                    token = self._strip_source_markers_stream(token)
+                    if not token:
+                        continue
                     self._full_answer += token
                     yield await self._emit(token)
                 if self._full_answer:

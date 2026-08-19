@@ -1,23 +1,172 @@
-发烧了怎么办？
+D:\Agent\software\envs\my_medical_env\python.exe D:\Agent\medical_assistant_agent\app\api\routes.py 
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+INFO:     Will watch for changes in these directories: ['D:\\Agent\\medical_assistant_agent\\app\\api']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [40012] using WatchFiles
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-08-19 10:42:42 - app.api.routes - INFO - 应用启动中...
+2026-08-19 10:42:42 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
+INFO:     Started server process [30932]
+INFO:     Waiting for application startup.
+2026-08-19 10:42:42 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
+2026-08-19 10:42:42 - app.api.routes - INFO - 检查点保存器初始化完成
+2026-08-19 10:42:42 - app.api.routes - INFO - 预加载 jieba 分词器...
+Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
+Loading model cost 1.292 seconds.
+Prefix dict has been built successfully.
+2026-08-19 10:42:43 - app.api.routes - INFO - jieba 分词器预加载完成
+2026-08-19 10:42:43 - app.api.routes - INFO - 预加载 Reranker 模型...
+2026-08-19 10:42:48 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+2026-08-19 10:42:51 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+2026-08-19 10:42:51 - app.api.routes - INFO - Reranker 模型预加载完成
+2026-08-19 10:42:51 - app.api.routes - INFO - 预热 Reranker 推理...
+2026-08-19 10:42:51 - app.rag.reranker - INFO - Reranker 输入：docs=1, valid_docs=1, top_k=1, max_doc_chars=200
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-08-19 10:42:51 - app.rag.reranker - INFO - 重排序完成：1 -> 1 （最高分：0.8766）
+2026-08-19 10:42:51 - app.rag.reranker - INFO - Reranker 预热完成
+2026-08-19 10:42:51 - app.api.routes - INFO - Reranker 预热完成
+2026-08-19 10:42:51 - app.api.routes - INFO - 预热混合检索器...
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
+从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
+2026-08-19 10:42:52 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-08-19 10:42:52 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：386
+2026-08-19 10:42:53 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-08-19 10:42:53 - app.api.routes - INFO - 混合检索器预热完成
+2026-08-19 10:42:53 - app.api.routes - INFO - 预热缓存连接...
+2026-08-19 10:42:53 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-08-19 10:42:53 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
+2026-08-19 10:42:53 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.92
+2026-08-19 10:42:53 - app.api.routes - INFO - 语义缓存预热成功
+2026-08-19 10:42:53 - app.api.routes - INFO - 缓存预热完成
+2026-08-19 10:42:53 - app.api.routes - INFO - 预热本地模型...
+2026-08-19 10:42:55 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-19 10:42:55 - app.api.routes - INFO - 本地模型预热完成
+2026-08-19 10:42:56 - app.memory.fallback_buffer - INFO - L1 本地缓冲后台 flush 已启动（间隔 300s）
+INFO:     Application startup complete.
+2026-08-19 10:43:53 - app.rag.vector_store - INFO - 知识库版本指纹：b0203cab（386 篇文档）
+2026-08-19 10:43:56 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-08-19 10:43:56 - app.api.routes - INFO - 收到流式聊天请求：request_id=29a75849-9b50-4039-8d00-d46282a941da, thread_id=thread_2c6cd267, user_id=test_user
+2026-08-19 10:43:56 - app.api.routes - INFO - 请求完成：request_id=1f866f90-6c3a-4792-99f3-7340a834bde5, path=/api/admin/kb/status, status=200, elapsed_ms=3143.36
+2026-08-19 10:43:56 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
+2026-08-19 10:43:56 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
+2026-08-19 10:43:56 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
+2026-08-19 10:43:56 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
+2026-08-19 10:43:56 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
+2026-08-19 10:43:56 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
+2026-08-19 10:43:56 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：107.95ms
+2026-08-19 10:43:56 - app.graph.graph - INFO - 工作流图构建完成
+2026-08-19 10:43:56 - app.graph.graph - INFO - 长期记忆store已加载
+2026-08-19 10:43:56 - app.graph.graph - INFO - 工作流图编译完成
+2026-08-19 10:43:56 - app.api.routes - INFO - 请求完成：request_id=29a75849-9b50-4039-8d00-d46282a941da, path=/api/chat/stream, status=200, elapsed_ms=3323.33
+INFO:     127.0.0.1:55940 - "POST /api/chat/stream HTTP/1.1" 200 OK
+2026-08-19 10:43:56 - app.graph.streaming - INFO - 从 checkpointer 加载对话历史：2 条消息
+2026-08-19 10:43:56 - app.graph.nodes.helpers - INFO - [路由] 开始执行
+2026-08-19 10:43:56 - app.graph.nodes.nodes - INFO - 路由节点开始执行
+2026-08-19 10:43:56 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=knowledge
+2026-08-19 10:43:56 - app.graph.nodes.nodes - INFO - 问题类型：knowledge（路由层：rule）
+2026-08-19 10:43:56 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：29.73ms
+2026-08-19 10:43:56 - app.graph.streaming - INFO - L0 答案缓存跳过（用户有档案，答案个性化不可缓存）
+2026-08-19 10:43:57 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-08-19 10:43:57 - app.cache.semantic_cache - INFO - L2 缓存键数量：5
+2026-08-19 10:43:57 - app.cache.semantic_cache - INFO - L2 未找到相似查询，最高相似度：0.00%（阈值：92.00%）
+2026-08-19 10:43:57 - app.graph.streaming - INFO - 流式请求路由完成：request_id=29a75849-9b50-4039-8d00-d46282a941da, thread_id=thread_2c6cd267, route=query_rewrite
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 用户档案不存在：user_id=test_user
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：2.51ms
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [路由] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 路由节点开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=knowledge
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 问题类型：knowledge（路由层：rule）
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：5.55ms
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 查询自包含（无指代词/省略结构），跳过重写：高血压怎么处理？
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：0.00ms
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [问题拆解] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 问题拆解：未检测到复合标记（1 个问号，无连接词，症状数=1），不拆解
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [问题拆解] 执行完成，耗时：0.00ms
+2026-08-19 10:43:57 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
+2026-08-19 10:43:57 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：386
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：高血压怎么处理？...
+2026-08-19 10:43:57 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-08-19 10:43:57 - app.cache.semantic_cache - INFO - L2 缓存键数量：5
+2026-08-19 10:43:57 - app.cache.semantic_cache - INFO - L2 未找到相似查询，最高相似度：0.00%（阈值：92.00%）
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - L2语义缓存耗时：embedding_ms=154.94, lookup_ms=0.50
+2026-08-19 10:43:57 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3531
+2026-08-19 10:43:57 - app.core.adaptive_threshold - INFO - 自适应阈值 [HIGH_CONFIDENCE_THRESHOLD] 注册：默认值=0.08, 策略=percentile, 百分位=5.0
+2026-08-19 10:43:57 - app.core.adaptive_threshold - INFO - 自适应阈值 [RERANKER_THRESHOLD] 注册：默认值=0.005, 策略=percentile, 百分位=5.0
+2026-08-19 10:43:57 - app.core.adaptive_threshold - INFO - 自适应阈值 [SEMANTIC_CACHE_THRESHOLD] 注册：默认值=0.92, 策略=percentile, 百分位=95.0
+2026-08-19 10:43:57 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-08-19 10:44:00 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.3340）
+2026-08-19 10:44:00 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-08-19 10:44:00 - app.rag.parent_child_store - INFO - Parent store 从磁盘加载成功：D:\Agent\medical_assistant_agent\data\parent_store.pkl（267 条）
+2026-08-19 10:44:00 - app.rag.parent_child_store - INFO - 邻域扩展索引已加载：13 个文档，267 个章节
+2026-08-19 10:44:00 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-08-19 10:44:00 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 15 个（+10 个兄弟章节），总字符数=1436
+2026-08-19 10:44:00 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 15 个完整父文档
+2026-08-19 10:44:00 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2834.74ms（query_embedding=154.94ms, semantic_lookup=0.50ms, dense=5.04ms, sparse=3.03ms, fusion=0.00ms, rerank=2821.96ms, parent_lookup=1.00ms, top1_dense_dist=0.3531）
+2026-08-19 10:44:00 - app.cache.semantic_cache - INFO - 语义缓存已写入：'高血压怎么处理？...' (15 个文档)
+2026-08-19 10:44:00 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：高血压怎么处理？...
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 检索到15个相关文档，耗时：2998.90ms，第 1 次检索
+2026-08-19 10:44:00 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：3132.24ms
+2026-08-19 10:44:00 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：慢性病管理与用药指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：常见药物使用指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：常见药物使用指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：常见药物使用指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：常见药物使用指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 旧版文档已标记废弃：常见药物使用指南.txt (version=)
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：2 -> 2 相关
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 检索置信度：0.4320 (rerank=0.3340, gap=0.1668, docs=2, overlap=1.00, timeliness=0.80, authority=0.60)
+2026-08-19 10:44:00 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：2.55ms
+2026-08-19 10:44:00 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-08-19 10:44:00 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-08-19 10:44:02 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-08-19 10:44:02 - app.graph.streaming - INFO - 首个 token 已发送：request_id=29a75849-9b50-4039-8d00-d46282a941da, thread_id=thread_2c6cd267, latency_ms=8716.74
+2026-08-19 10:44:11 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：295字符，耗时：11067.15ms
+2026-08-19 10:44:11 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：11098.65ms
+2026-08-19 10:44:11 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
+2026-08-19 10:44:11 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
+2026-08-19 10:44:11 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=1.5ms
+2026-08-19 10:44:11 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：1.50ms
+2026-08-19 10:44:11 - app.graph.streaming - INFO - 流式请求完成：request_id=29a75849-9b50-4039-8d00-d46282a941da, thread_id=thread_2c6cd267, total_elapsed_ms=17873.01
+
+
+
+您好！我是医疗助手，可以为您解答健康相关问题。请问有什么可以帮助您的？
+高血压怎么处理？
 处理建议
-- 用药：根据发热程度，可使用对乙酰氨基酚（扑热息痛）或布洛芬进行退热，剂量需根据患者体重和年龄调整，具体请参照药品说明书或咨询医生。[来源:发热诊断与家庭护理指南.txt]
-- 物理/家庭护理措施：保持室内空气流通，适当增加衣物，注意保暖；多饮水，保持水分平衡；休息充足，避免过度劳累。
-- 生活调整：保持良好的饮食习惯，摄入易消化、营养丰富的食物。
+- 用药：高血压患者可使用降压药物，具体药物需遵医嘱，常见药物包括利尿剂、ACE抑制剂、ARBs等[来源:慢性病管理与用药指南.txt]。
+- 物理/家庭护理措施：高血压患者应保持良好的生活习惯，如低盐饮食、适量运动、戒烟限酒等[来源:慢性病管理与用药指南.txt]。
+- 生活调整：高血压患者应定期监测血压，遵循医嘱调整生活方式和用药[来源:慢性病管理与用药指南.txt]。
 
 需立即就医的情况
-- 若发热持续不退，体温超过39℃；
-- 若伴有剧烈头痛、颈部僵硬、意识模糊、呼吸困难等症状；
-- 若发热伴随皮疹、呕吐、腹泻等症状；
-- 若发热伴随关节疼痛、肌肉疼痛等症状；
-- 若发热伴随尿量减少、皮肤干燥等症状。
+- 文档未提及需立即就医的情况。
 
 当前资料未提及的关键方面
-- 文档未提及具体药物剂量和适用人群，建议根据患者实际情况和医生建议使用。
+- 文档未提供关于高血压患者感冒时的具体用药建议。
 
-⚠️ 以上建议仅供参考，如有疑问请及时就医。
-
-💡 为了更准确地帮助您，您可以补充以下信息：具体部位（如：头部、腹部、四肢等）、严重程度（如：轻微、中等、剧烈）。这些信息有助于我给出更有针对性的建议。
-📚 参考来源：[1] 发热诊断与家庭护理指南.txt [2] 发热诊断与家庭护理指南.txt
+⚠️ 以上建议仅供参考，如有疑问请及时就医
+📚 参考来源：[1] 慢性病管理与用药指南.txt [2] 慢性病管理与用药指南.txt [3] 常见药物使用指南.txt [4] 慢性病管理与用药指南.txt [5] 常见药物使用指南.txt [6] 慢性病管理与用药指南.txt [7] 慢性病管理与用药指南.txt [8] 慢性病管理与用药指南.txt [9] 慢性病管理与用药指南.txt [10] 常见药物使用指南.txt [11] 常见药物使用指南.txt [12] 慢性病管理与用药指南.txt [13] 慢性病管理与用药指南.txt [14] 常见药物使用指南.txt [15] 常见药物使用指南.txt
 有帮助吗？
 👍
 👎

@@ -1,5 +1,13 @@
 # 系统优化更新日志
 
+## v9.24 - 答案来源展示优化（去重 + 正文去来源）
+
+基于 errorLog 分析（首 token 8.7s 中 Reranker 占 2.8s、LLM TTFT 占 2s）的配套展示优化：
+
+- **参考来源去重**：`knowledge_retrieval_node` / `format_retrieved_sources` / `_emit_sources_event` / 前端 `renderSources` 均按来源文档名去重 → 父子索引+兄弟章节扩展产生的 15 个同源条目收敛为 2 个唯一文档名，`📚 参考来源` 不再重复刷屏。
+- **正文剥离 [来源:文档名]**：`RAG_ANSWER_PROMPT` 移除"标注来源文档名"指令，改为明确禁止正文出现来源引用；新增 `strip_source_markers`（非流式兜底）与 `streaming.py._strip_source_markers_stream`（流式跨 token 剥离，兼容标记被拆分），覆盖 graph 流式 / L0 缓存 / L2 缓存 / 无 token 兜底全部路径。
+- 说明：L0 答案缓存 key 已绑定 `prompt_version`（prompts.py 文件 MD5），本次 prompt 改动会自动失效旧缓存，无需手动清理。
+
 ## v9.23 - README 同步实际进度（文档更新）
 
 对照代码与 CHANGELOG 修订 README，消除与实际实现的偏差：

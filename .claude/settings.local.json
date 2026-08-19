@@ -63,7 +63,8 @@
       "Bash(pip install *)",
       "Bash(sed -i 's/InMemorySaver/MemorySaver/' test_lg2.py)",
       "Bash(ls /c/Python*)",
-      "Bash(pip --version)"
+      "Bash(pip --version)",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m py_compile app/graph/nodes/nodes.py app/graph/nodes/prompts.py app/graph/nodes/__init__.py app/graph/streaming.py)"
     ]
   },
   "enableAllProjectMcpServers": true,
