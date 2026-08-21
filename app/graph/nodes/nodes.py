@@ -1395,15 +1395,28 @@ def _compute_retrieval_confidence(
 
 
 def _dedup_by_version(docs: list) -> list:
-    """同源多版本文档去重：保留最新版，旧版标记 _superseded"""
+    """同源多版本文档去重：仅对带版本标识的来源保留最新版，旧版标记 _superseded。
+
+    父子检索会按章节把同一文档切成多个 Parent 块，它们共享同一 source、
+    仅 section_index 不同、且没有 doc_version。若把"同名"一律当作多版本，
+    会把兄弟章节误标记为废弃。故仅当文档携带版本标识
+    （doc_version 或 doc_effective_date 非空）时才执行版本去重；
+    无版本标识的文档原样保留，不做废弃。
+    """
+    def _has_version(doc) -> bool:
+        return bool(doc.metadata.get("doc_version") or doc.metadata.get("doc_effective_date"))
+
+    neutral = [doc for doc in docs if not _has_version(doc)]
+    versioned = [doc for doc in docs if _has_version(doc)]
+
     by_source = defaultdict(list)
-    for doc in docs:
+    for doc in versioned:
         source = doc.metadata.get("source", "") or doc.metadata.get("file_path", "unknown")
         # 提取基础名称（去掉版本号）
         base = source.rsplit("_v", 1)[0] if "_v" in source else source
         by_source[base].append(doc)
 
-    result = []
+    result = list(neutral)
     for base, versions in by_source.items():
         if len(versions) > 1:
             # 按effective_date或version降序排序

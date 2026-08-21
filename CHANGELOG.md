@@ -1,5 +1,11 @@
 # 系统优化更新日志
 
+## v9.25 - 修复版本去重误杀父子检索章节（Bug 修复）
+
+基于 errorLog 分析：父子检索 + 邻域扩展会把同一文档按章节切成多个 Parent 块，它们共享同一 `source`、没有 `doc_version`，原 `_dedup_by_version` 却把"同名"一律当"多版本"，除排序第一的章节外全部标记废弃并逐条打日志。
+
+- **修复 `_dedup_by_version`**（`app/graph/nodes/nodes.py`）：仅当文档携带版本标识（`doc_version` 或 `doc_effective_date` 非空）时才执行同源版本去重、旧版标记 `_superseded`；无版本标识的父章节块原样保留，不再互相标记废弃 → 兄弟章节扩展不再被误删，也不会再出现"旧版文档已标记废弃 (version=)"的重复刷屏。
+
 ## v9.24 - 答案来源展示优化（去重 + 正文去来源）
 
 基于 errorLog 分析（首 token 8.7s 中 Reranker 占 2.8s、LLM TTFT 占 2s）的配套展示优化：
