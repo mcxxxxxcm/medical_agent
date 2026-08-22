@@ -1002,6 +1002,21 @@ def question_decompose_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {"sub_questions": sub_questions}
 
 
+# 拆解碎片判定正则：按症状边界切出的片段须含疑问/处理结构才算完整子问题。
+# 防止把"我过敏，现在"这类残句当子问题（如"我对芒果过敏，现在发烧了怎么办？"
+# 若把"过敏"当切分边界，会切出无意义的"过敏，现在"残句，导致发烧被吞掉）。
+_QUESTION_FRAGMENT_RE = re.compile(
+    r'(怎么办|怎么处理|如何处理|怎么治疗|如何治疗|怎么缓解|如何缓解|'
+    r'怎么|如何|什么|哪|要不要|需不需要|能不能|该不该|'
+    r'治疗|处理|缓解|用药|吃药)'
+)
+
+
+def _is_complete_question_fragment(fragment: str) -> bool:
+    """片段是否成完整子问题：须含疑问/处理意图结构，否则视为残句丢弃"""
+    return bool(_QUESTION_FRAGMENT_RE.search(fragment))
+
+
 def _rule_based_decompose(question: str) -> List[str]:
     """规则拆解降级：优先按问号切分，问号不足时按症状边界切分（不用 LLM）"""
     import re
@@ -1010,7 +1025,7 @@ def _rule_based_decompose(question: str) -> List[str]:
     parts = [p.strip() for p in parts if p.strip()]
     if not parts:
         return [question]
-    # 有问号且切出多段
+    # 有问号且切出多段，每段都是完整疑问句，直接可用
     if len(parts) >= 2:
         return [p + "？" for p in parts]
 
@@ -1028,8 +1043,13 @@ def _rule_based_decompose(question: str) -> List[str]:
                 start = m["start"]
                 end = matches[i + 1]["start"] if i + 1 < len(matches) else len(question)
                 fragment = question[start:end].strip()
-                if fragment:
+                # 过滤残句：不含疑问/处理结构（"过敏，现在"）的片段丢弃，
+                # 其信息仍通过原始 question 传入生成端
+                if fragment and _is_complete_question_fragment(fragment):
                     sub_questions.append(fragment)
+            # 过滤后不足 2 个子问题 → 不强拆，退回原问题走单问题链路
+            # （例："我对芒果过敏，现在发烧了怎么办？"只有"发烧了怎么办"成句 → 不强拆，
+            #   由单问题检索按症状"发烧"增强检索词，发烧成为检索核心，免被过敏背景覆盖）
             if len(sub_questions) >= 2:
                 logger.info(f"按症状边界切分：{sub_questions}")
                 return sub_questions
@@ -1089,6 +1109,26 @@ def _enrich_treatment_query(query: str) -> str:
     if _GENERIC_TREATMENT_KEYWORDS.split()[0] in query:
         return query
     return f"{query} {_GENERIC_TREATMENT_KEYWORDS}"
+
+
+# 过敏背景结构正则：匹配"对X过敏"（X通常为过敏原，如"对花粉过敏""对芒果过敏"）
+_ALLERGY_BACKGROUND_RE = re.compile(r'对[^\s，,。！？!?；;、　]{1,12}过敏')
+
+
+def _strip_allergic_background(query: str) -> str:
+    """从查询中剥离"对X过敏"背景，让核心诉求症状主导检索。
+
+    复合问题里"对X过敏"多为背景/修饰（如"我对花粉过敏，现在肚子疼"），
+    它并不是需要"处理"的诉求症状。若留在检索 query 中，会命中过敏/皮肤
+    文档而把真正的诉求（腹痛/发热等）带偏。此函数仅作用于检索用的
+    search_query（v9.20 已确立"只改检索词、不改 final_question"的原则），
+    答案 prompt 仍用完整原问题，故过敏背景不会丢失，生成端仍可给出过敏注意事项。
+    """
+    s = _ALLERGY_BACKGROUND_RE.sub('', query)
+    # 剥落后可能残留主语与标点（"我，现在有点腹痛怎么办？"），清理掉
+    s = re.sub(r'^[我你他她它们自己，,、\s]+', '', s)
+    s = s.strip(' ，,、')
+    return s
 
 
 @timing_decorator("知识检索")
@@ -1191,6 +1231,14 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         if preprocessed != original_query:
             logger.info(f"查询预处理：'{original_query}' → '{preprocessed}'")
             search_query = preprocessed
+
+    # v9.27: 剥离"对X过敏"背景，让核心诉求症状主导检索。
+    # 仅改检索用 search_query，答案 prompt 仍用完整原问题（保留过敏背景）。
+    # 空查询保护：剥离后为空则维持原查询，避免检索退化。
+    stripped = _strip_allergic_background(search_query)
+    if stripped and stripped != search_query:
+        logger.info(f"剥离过敏背景：'{search_query}' → '{stripped}'")
+        search_query = stripped
 
     try:
         # v9.16: 根据 question_type 动态选择 K 值
@@ -1641,9 +1689,37 @@ def grade_documents_node(state: MedicalAssistantState) -> Command:
 
     # ===== v9.15: 计算检索置信度 =====
     if relevant_docs:
-        top1_score = relevant_docs[0].metadata.get("rerank_score", 0)
-        top2_score = relevant_docs[1].metadata.get("rerank_score", 0) if len(relevant_docs) > 1 else 0
-        score_gap = top1_score - top2_score
+        if any(doc.metadata.get("sub_question") for doc in relevant_docs):
+            # 多子问题检索：各子问题分别 Rerank，分数不可交叉比较，且部分子问题
+            # 可能因候选数过多跳过 Reranker（无 rerank_score）。若直接取合并列表
+            # 首位文档的分数，遇到无分文档排到首位会误判 rerank=0、gap=0，
+            # 把置信度压虚低。改为按子问题分组，取每组最大分作为该子问题代表分，
+            # 用各组代表分的 Top2 作为 rerank/gap，避免无分文档干扰。
+            per_sub: dict = defaultdict(list)
+            for doc in relevant_docs:
+                per_sub[doc.metadata.get("sub_question", "main")].append(doc)
+            sub_scores = []
+            for group in per_sub.values():
+                s = max(
+                    (d.metadata.get("rerank_score") for d in group
+                     if d.metadata.get("rerank_score") is not None),
+                    default=None,
+                )
+                if s is not None:
+                    sub_scores.append(s)
+            if sub_scores:
+                sub_scores.sort(reverse=True)
+                top1_score = sub_scores[0]
+                top2_score = sub_scores[1] if len(sub_scores) > 1 else 0.0
+            else:
+                top1_score = 0.0
+                top2_score = 0.0
+            score_gap = top1_score - top2_score
+        else:
+            # 单一问题：直接取合并列表首两位的 Reranker 分数
+            top1_score = relevant_docs[0].metadata.get("rerank_score", 0)
+            top2_score = relevant_docs[1].metadata.get("rerank_score", 0) if len(relevant_docs) > 1 else 0
+            score_gap = top1_score - top2_score
 
         # 计算关键词重叠率
         query_terms = set(jieba.cut(question))
