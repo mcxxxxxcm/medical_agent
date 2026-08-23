@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Literal, Optional
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END
 from langgraph.types import Command
 
@@ -1131,6 +1132,29 @@ def _strip_allergic_background(query: str) -> str:
     return s
 
 
+# 复合问题中视为背景、不作为独立诉求检索的症状（"对X过敏"的过敏反应本身）
+_BACKGROUND_SYMPTOMS = {"过敏", "过敏症", "过敏性"}
+
+
+def _build_symptom_sub_queries(symptoms: List[str]) -> List[str]:
+    """复合/多症状问题时，把每个诉求症状构造成独立检索 query，
+    保证每个症状都有对应文档进候选，而非整句检索只偏其中一个。
+
+    症状列表来自症状解析（keyword_matcher 已把口语归一为标准症状名，
+    如"肚子疼"→"腹痛"）。剔除背景症状（过敏类，与 v9.27 剥离一致），
+    保留真正需要"处理"的诉求症状。
+    """
+    queries = []
+    seen = set()
+    for sym in symptoms:
+        sym = (sym or "").strip()
+        if not sym or sym in _BACKGROUND_SYMPTOMS or sym in seen:
+            continue
+        seen.add(sym)
+        queries.append(f"{sym} 怎么办 处理 用药 缓解 护理 注意事项")
+    return queries
+
+
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """知识检索节点
@@ -1263,7 +1287,17 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         retriever = get_cached_hybrid_retriever(k=k, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
         # v9.6: 多子问题并行检索
-        sub_questions = state.get("sub_questions") or [search_query]
+        # v9.27: 多症状单整句（未拆成多子问题）时，按诉求症状分别检索，
+        # 保证每个症状都有文档进候选（避免整句检索只偏其中一个症状）。
+        explicit_sub_questions = state.get("sub_questions") or []
+        if len(explicit_sub_questions) <= 1:
+            sym_list = (state.get("symptoms") or {}).get("symptoms") or []
+            if len(sym_list) >= 2:
+                symptom_queries = _build_symptom_sub_queries(sym_list)
+                if len(symptom_queries) >= 2:
+                    explicit_sub_questions = symptom_queries
+                    logger.info(f"按症状分别检索：{symptom_queries}")
+        sub_questions = explicit_sub_questions or [search_query]
         if len(sub_questions) > 1:
             logger.info(f"多子问题并行检索：{len(sub_questions)} 个子问题")
             start_time = time.time()
@@ -1947,6 +1981,106 @@ def get_conversation_history_text(state: MedicalAssistantState, max_rounds: int 
     return "\n".join(history_parts)
 
 
+def _json_prefix_end(text: str) -> int:
+    """返回 text 中连续前导 JSON 对象块（形如 {...}{...}）的结束位置（下一正文的起始）。
+    若 text 通篇仍是 JSON 前缀（尚未出现正文）返回 -1。与 streaming.py 的剥离逻辑一致，
+    供非流式 / 同步接口的完整答案去除模型在处理建议前多输出的结构化 JSON 前缀。
+    (v9.28) 模型有时先输出用户档案提取/问题拆解的结构化 JSON 再输出正文，前端拼接会污染显示。
+    """
+    i, n, depth, started = 0, len(text), 0, False
+    while i < n:
+        c = text[i]
+        if started:
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+            elif depth == 0:
+                if c.isspace():
+                    pass
+                elif c == '{':
+                    depth += 1
+                else:
+                    return i
+            i += 1
+        else:
+            if c.isspace():
+                i += 1
+            elif c == '{':
+                started = True
+                depth = 1
+                i += 1
+            else:
+                return i
+    return -1
+
+
+def _strip_leading_json_block(text: str) -> str:
+    """整段剥离开头连续 JSON 对象块（供非流式 / 同步的完整答案）。"""
+    end = _json_prefix_end(text)
+    return text[end:] if end != -1 else text
+
+
+def _object_start_at(text: str, end: int) -> int:
+    """返回 text[0:end] 中与闭合于 end-1 的花括号匹配的顶层 '{' 下标；无法匹配则返回 -1。"""
+    depth = 0
+    idx = end - 1
+    while idx >= 0:
+        c = text[idx]
+        if c == '}':
+            depth += 1
+        elif c == '{':
+            depth -= 1
+            if depth == 0:
+                return idx
+        idx -= 1
+    return -1
+
+
+def _trailing_json_block_start(text: str) -> int:
+    """返回 text 末尾连续 JSON 对象块（形如 ...{...}{...}）的起始下标；不存在则返回 -1。
+
+    (v9.29) 模型有时在正文写完后再尾随复述一段结构化 JSON（如临床快照
+    {"chief_complaint":...}），v9.28 仅剥离开头 JSON 前缀，此处兜底清理文末 JSON 后缀。
+    从右向左用括号深度逐个匹配完整对象，支持连续多个对象；并要求末尾块含引号
+    （JSON 键值形态）才认定是 JSON，避免误伤正文中普通花括号文本。
+    """
+    t = text.rstrip()
+    if not t or t[-1] != '}':
+        return -1
+    end = len(t)
+    earliest = None
+    while True:
+        if end <= 0 or t[end - 1] != '}':
+            break
+        s = _object_start_at(t, end)
+        if s == -1:
+            break
+        earliest = s if earliest is None else s
+        j = s - 1
+        while j >= 0 and t[j].isspace():
+            j -= 1
+        if j >= 0 and t[j] == '}':
+            end = j + 1
+            continue
+        break
+    if earliest is None:
+        return -1
+    if '"' not in t[earliest:]:
+        return -1
+    return earliest
+
+
+def _strip_trailing_json_block(text: str) -> str:
+    """整段剥离开头/文末连续 JSON 对象块（供非流式 / 同步的完整答案）。"""
+    start = _trailing_json_block_start(text)
+    if start == -1:
+        return text
+    if start == 0:
+        return ""
+    return text[:start].rstrip()
+
+
 def strip_source_markers(text: str) -> str:
     """剥离答案正文中的 [来源:文档名] 引用标记
 
@@ -2119,6 +2253,345 @@ def _build_followup_hints(symptoms: Optional[Dict[str, Any]]) -> str:
     return f"\n\n💡 为了更准确地帮助您，您可以补充以下信息：{hints}。这些信息有助于我给出更有针对性的建议。"
 
 
+_SYMPTOM_WHITELIST_WORDS = [
+    "鼻出血", "流鼻血", "高血压", "低血压", "糖尿病", "高血糖", "胸闷", "心慌",
+    "腹泻", "拉肚子", "呕吐", "恶心", "发热", "发烧", "咳嗽", "咳痰", "咽痛", "喉咙痛",
+    "头痛", "头疼", "腹痛", "肚子疼", "胃痛", "头晕", "眩晕", "失眠", "乏力",
+    "水肿", "皮疹", "瘙痒", "过敏", "鼻塞", "流涕", "关节痛", "肌肉酸痛",
+    "呼吸困难", "心悸", "便血", "抽搐", "胸痛", "牙龈出血", "便秘",
+]
+
+def _get_question_symptom_whitelist(question: str, symptoms: Optional[Dict[str, Any]]) -> List[str]:
+    """返回"本次待处理症状"白名单：优先用症状解析的规则结果，为空则回退到问题文本症状词匹配。
+
+    v9.31：白名单是模型唯一允许逐一作答的症状集合，由代码（规则引擎/词匹配）确定，
+    不交由模型从上下文推断，从输入侧压掉"把快照既往症状当成本次多症状"的根因。
+    """
+    if symptoms and isinstance(symptoms, dict):
+        raw = symptoms.get("symptoms")
+        if isinstance(raw, list):
+            cleaned = [s.strip() for s in raw if isinstance(s, str) and s.strip()]
+            if cleaned:
+                return cleaned
+    if not question:
+        return []
+    matched = []
+    for term in _SYMPTOM_WHITELIST_WORDS:
+        if term in question and term not in matched:
+            matched.append(term)
+    return matched
+
+
+def _extract_bullet_symptom_token(line: str) -> Optional[str]:
+    """从形如 '- 头痛：...' 的行提取冒号前的症状型令牌；非症状 bullet 或无法提取返回 None。
+
+    v9.31：L2 校验器用，识别"多症状逐一作答"里每个症状小标题，用于剔除白名单外症状。
+    """
+    t = line.strip()
+    if not t.startswith("- "):
+        return None
+    rest = t[2:]
+    sep = "：" if "：" in rest else (":" if ":" in rest else None)
+    if sep is None:
+        return None
+    tok = rest.split(sep)[0].strip()
+    return tok or None
+
+
+def _strip_out_of_scope_symptom_sections(
+    answer: str,
+    whitelist: List[str],
+    external_symptoms: List[str],
+    removed: Optional[List[str]] = None,
+) -> str:
+    """确定性剔除"多症状逐一作答"里白名单外的症状小节（纯字符串，不依赖 LLM）。
+
+    whitelist：本次待处理症状（代码计算的唯一作答集）。
+    external_symptoms：临床快照/历史里的既往症状（背景），它们若被模型列成小节即越界。
+    匹配规则：bullet 首令牌命中 known(白名单∪外部∪内置症状词) 但 ∉ 白名单 → 剔除该小节及其续行。
+    """
+    if not answer:
+        return answer
+    wl = {_norm_symptom(x) for x in (whitelist or []) if x}
+    if not wl:
+        # 无白名单则无法判断"哪些症状是本次该答的"，不冒险删除任何小节，交由 prompt 约束
+        return answer
+    known = set()
+    for x in (external_symptoms or []):
+        if x:
+            known.add(_norm_symptom(x))
+    for x in _SYMPTOM_WHITELIST_WORDS:
+        known.add(_norm_symptom(x))
+    if not known:
+        return answer
+
+    lines = answer.split("\n")
+    out = []
+    i, n = 0, len(lines)
+    removed = removed if removed is not None else []
+    while i < n:
+        line = lines[i]
+        tok = _extract_bullet_symptom_token(line)
+        if tok is not None and (_norm_symptom(tok) in known or tok in wl) and _norm_symptom(tok) not in wl:
+            removed.append(tok)
+            i += 1  # 丢弃本行及后缀续行（至下一 bullet / 空行 / 标题）
+            while i < n:
+                nxt = lines[i]
+                s = nxt.strip()
+                if not s:
+                    break
+                if s.startswith("- ") or s.startswith("**") or s.startswith("#"):
+                    break
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    cleaned = "\n".join(out)
+    # 规整多余空行
+    lines2 = [ln for ln in cleaned.split("\n")]
+    return "\n".join(lines2).rstrip()
+
+
+def _strip_off_doc_medications(
+    text: str,
+    docs_text: str,
+    removed: Optional[List[str]] = None,
+) -> str:
+    """确定性剔除**检索文档中未出现**的药物（纯字符串，不依赖 LLM）。
+
+    原则：答案只能转述检索文档里的用药；奥司他韦等来自历史/临床快照的药物若文档没有，
+    视为越界/幻觉，一律从答案移除，避免按历史用药给建议。v9.32 修复：不再只删药名留下
+    "可考虑使用（每次75mg，每日2次…）"残句，改为把"只含 off-doc 药、不含 on-doc 药"
+    的**整句/整行**删除。
+    1) 移除只含 off-doc 药物、不含任何 on-doc 药物的 '- 用药：' 整行
+    2) 按句末符/换行切句，整句删除只含 off-doc 药、不含 on-doc 药的句子（含剂量括号）
+    3) 兜底：对混着 on-doc 药仍要保留的句子，单独摘除 off-doc 药名及紧邻剂量括号
+    """
+    try:
+        from app.graph.nodes.helpers import _DRUG_KEYWORDS
+    except Exception:
+        return text
+    docs_text = docs_text or ""
+    on_doc = {kw for kw in _DRUG_KEYWORDS if kw and kw in docs_text}
+    off_doc = [kw for kw in _DRUG_KEYWORDS if kw and kw in text and kw not in on_doc]
+    if not off_doc:
+        return text
+    removed = removed if removed is not None else []
+
+    # 1) '- 用药：' 整行（仅含 off-doc）删除
+    out_lines = []
+    for line in text.split("\n"):
+        t = line.strip()
+        if t.startswith("- 用药："):
+            if not any(kw in t for kw in on_doc):
+                removed.append(t[:40])
+                continue
+        out_lines.append(line)
+    text = "\n".join(out_lines)
+
+    # 2) 整句删除：按句末符/换行切句，只含 off-doc 药的整句连同剂量括号一起删
+    parts = re.split(r'(?<=[。！？\n])', text)
+    kept = []
+    for s in parts:
+        s_off = [kw for kw in off_doc if kw in s]
+        s_on = any(kw in s for kw in on_doc)
+        if s_off and not s_on:
+            if s.strip():
+                removed.append(s.strip()[:40])
+            continue
+        kept.append(s)
+    text = "".join(kept)
+
+    # 3) 兜底：句子同时含 on-doc 与 off-doc（罕见）→ 只摘 off-doc 药名及其剂量括号
+    for kw in off_doc:
+        text = re.sub(re.escape(kw) + r'\s*[（(][^（()）]{0,60}[)）]?', '', text)
+        text = text.replace(kw, "")
+    return text
+
+
+def _sanitize_answer(
+    answer: str,
+    whitelist: List[str],
+    external_symptoms: List[str],
+    docs_text: str,
+):
+    """对原始生成答案执行确定性清洗（L2 校验器入口）。
+
+    Returns (cleaned, removed_sections, removed_meds) 便于日志/bad-case。
+    """
+    removed_sections: List[str] = []
+    removed_meds: List[str] = []
+    cleaned = _strip_out_of_scope_symptom_sections(answer, whitelist, external_symptoms, removed_sections)
+    cleaned = _strip_off_doc_medications(cleaned, docs_text, removed_meds)
+    return cleaned, removed_sections, removed_meds
+
+
+# v9.33 按段先校验后流出：块缓存的句子终结符（散文按此分段以便响应）
+_SEG_SENT_END = "。！？"
+_SEG_BULLET_RE = re.compile(r"[-\*•]\s")
+
+
+class _SegmentedEmitter:
+    """按段先校验后流出的分段发射器（v9.33）。
+
+    取代 v9.31 的『整段缓冲→清洗→一次性发出』——那是首 token 变慢的根因（生成期前端
+    全黑）。本发射器在 LangGraph 流式下一边生成一边攒，攒成一个**逻辑块**就以纯规则
+    校验该块，干净才放行：
+
+    - 逻辑块 = 一个 bullet 及其续行（至下一个 bullet / 空行 / 标题 / 句末散文）
+    - 校验 = 复用 `_sanitize_answer`：越界症状小节（白名单外）整块剔除，文档外药物整句剔除
+    - 因此『幻觉段不流出前端』得到保留，同时让首 token 回到流式（一般 1 个块即流出）
+
+    流式上下文经 emit 回调（get_stream_writer）实时发出；非流式（ainvoke）下 emit 为
+    no-op，clean_parts 仍累计出清洗后的完整答案。
+    """
+
+    def __init__(self, whitelist, external_symptoms, docs_text, emit=None, logger=None):
+        self.whitelist = whitelist or []
+        self.external_symptoms = external_symptoms or []
+        self.docs_text = docs_text or ""
+        self.emit = emit or (lambda _seg: None)
+        self.log = logger
+        self.buf = ""
+        self.clean_parts: List[str] = []
+        self.removed_sections: List[str] = []
+        self.removed_meds: List[str] = []
+        self._json_prefix_done = False
+
+    def feed(self, token: str) -> None:
+        if not token:
+            return
+        self.buf += token
+        self._scan()
+
+    def finish(self) -> str:
+        self._flush(self.buf)
+        self.buf = ""
+        return "".join(self.clean_parts)
+
+    # ---- 装箱切块 ----
+
+    def _scan(self) -> None:
+        while True:
+            idx, _kind = self._next_split()
+            if idx is None:
+                return
+            if idx <= 0:
+                # 边界落在块首（极端），整块刷出，避免死循环
+                self._flush(self.buf)
+                self.buf = ""
+                return
+            seg, self.buf = self.buf[:idx], self.buf[idx:]
+            self._flush(seg)
+
+    def _next_split(self):
+        buf = self.buf
+        if not buf:
+            return None, None
+        # 1) 新 bullet 起点："...\n- "/"\n* "/"\n• "
+        m = _SEG_SENT_END and re.search(r"\n[-\*•]\s", buf)
+        if m and m.start() > 0:
+            return m.start(), "bullet_begin"
+        # 2) 空行 / 新标题："\n\n" 或 "\n#"/"\n**"
+        m = re.search(r"\n\n|\n(?=#\s?|\*\*)", buf)
+        if m and m.start() > 0:
+            return m.start(), "blank_head"
+        # 3) 散文句末（非 bullet 上下文）：切到最后一个句末符之后，保证响应
+        if not self._buf_is_bullet():
+            best = -1
+            for ch in _SEG_SENT_END:
+                i = buf.rfind(ch)
+                if i > best:
+                    best = i
+            if 0 <= best < len(buf) - 1:
+                return best + 1, "sent"
+        return None, None
+
+    def _buf_is_bullet(self) -> bool:
+        s = self.buf.lstrip()
+        return bool(s and _SEG_BULLET_RE.match(s))
+
+    # ---- 校验并放行 ----
+
+    def _flush(self, seg: str) -> None:
+        if not seg or not seg.strip():
+            return
+        # 去 [来源:...]；开始时剥前导 JSON 前缀（提示词已禁 JSON，此为保险）
+        seg = strip_source_markers(seg)
+        if not self._json_prefix_done:
+            pre = _strip_leading_json_block(seg.lstrip())
+            if pre != seg.lstrip():
+                seg = pre.lstrip()
+                if not seg:
+                    return
+                self._json_prefix_done = True
+            elif pre.strip():
+                self._json_prefix_done = True
+
+        if not seg.strip():
+            return
+        rem_s: List[str] = []
+        rem_m: List[str] = []
+        cleaned, rem_s, rem_m = _sanitize_answer(
+            seg, self.whitelist, self.external_symptoms, self.docs_text
+        )
+        if rem_s:
+            self.removed_sections.extend(rem_s)
+        if rem_m:
+            self.removed_meds.extend(rem_m)
+        cleaned = cleaned.rstrip()
+        if cleaned.strip():
+            self.clean_parts.append(cleaned)
+            self.emit(cleaned)
+
+
+# 症状近义词 → 规范词。用于把"问题措辞"与"模型措辞"归一化到同一键，避免
+# 问题说"发烧"、模型写"发热"时被 L2 误判为越界小节而误删。
+_SYMPTOM_CANONICAL = {
+    "发烧": "发热",
+    "头疼": "头痛",
+    "肚子疼": "腹痛",
+    "肚痛": "腹痛",
+    "拉肚子": "腹泻",
+    "喉咙痛": "咽痛",
+    "眩晕": "头晕",
+    "恶心想吐": "恶心",
+    "量体温": "发热",
+}
+
+
+def _norm_symptom(s: str) -> str:
+    s = s.strip()
+    for ch in "。，,、；;：""'' ":
+        s = s.replace(ch, "")
+    return _SYMPTOM_CANONICAL.get(s, s)
+
+
+def sanitize_cached_answer(
+    answer: str,
+    question: str,
+    symptoms: Optional[Dict[str, Any]] = None,
+    checkpoint: Optional[Dict[str, Any]] = None,
+) -> str:
+    """L3：对缓存命中的答案做确定性清洗（无检索文档场景）。
+
+    与 `_sanitize_answer` 的区别：缓存命中时拿不到检索文档，无法比对答案中的用药是否
+    出自文档，因此只做"白名单症状小节"校验、跳过"文档外用药"剔除——避免把用户合法
+    的用药建议当成幻觉删掉。白名单为空（无从判断哪些症状该答）时原样返回。
+    """
+    if not answer:
+        return answer
+    whitelist = _get_question_symptom_whitelist(question, symptoms)
+    if not whitelist:
+        return answer
+    external = _get_checkpoint_symptoms(checkpoint)
+    return _strip_out_of_scope_symptom_sections(answer, whitelist, external, None)
+
+
+# L2：清洗通过后按小段经 custom 事件发出的字长（打字机效果）
+_EMIT_CHUNK = 24
+
+
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
     """构建 RAG 问答提示词（三层上下文架构）
 
@@ -2203,6 +2676,21 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text}\n" if checkpoint_text else ""
     followup_section = f"；追问：{followup}" if followup else ""
 
+    # v9.31：本次待处理症状白名单（代码计算，忠于原问题）
+    # 由症状解析规则结果给出；为空时回退到问题文本里的症状词匹配，仍为空则整体为空串。
+    # 白名单是唯一允许逐一作答的症状集合，外部症状由 L2 校验器在输出边界兜底剔除。
+    symptom_whitelist = _get_question_symptom_whitelist(question, symptoms)
+    if symptom_whitelist:
+        symptom_whitelist_section = (
+            "【本次待处理症状（系统计算，忠于原问题，禁止增删）】\n"
+            + "、".join(symptom_whitelist)
+            + "\n\n"
+            "严格遵守：只对上面列表里的症状逐一给出处理建议，"
+            "列表外任何症状（含临床快照/历史里既往出现的）一律不当作本次待处理项单独列建议。"
+        )
+    else:
+        symptom_whitelist_section = ""
+
     # 使用 ChatPromptTemplate 构建
     messages = RAG_ANSWER_PROMPT.format_messages(
         frozen_profile_section=frozen_profile_section,
@@ -2211,6 +2699,7 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         checkpoint_section=checkpoint_section,
         history_section=history_section,
         question=question,
+        symptom_whitelist_section=symptom_whitelist_section,
         followup_section=followup_section,
     )
     return messages
@@ -2298,18 +2787,48 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
 
         llm = get_llm(streaming=True)
         start_time = time.time()
-        full_answer = ""
         chunks = []
 
-        # 显式传入 config，确保 Python < 3.11 下也能被 messages 模式捕获 token
-        async for chunk in llm.astream(prompt, config=config):
+        # v9.33 按段先校验后流出：打 TAG_NOSTREAM 压制 messages 模式对原始 token 的中继，
+        # 由 `_SegmentedEmitter` 把生成的文本攒成一个逻辑块，用 `_sanitize_answer` 校验该块
+        # 干净后才经 get_stream_writer(custom) 放出。首 token 回到流式，同时越界症状小节/
+        # 文档外用药的幻觉块照样被挡在前端之外。
+        whitelist = _get_question_symptom_whitelist(prompt_question, state.get("symptoms"))
+        external = _get_checkpoint_symptoms(state.get("clinical_checkpoint"))
+        docs_text = "\n".join(
+            d.page_content for d in (retrieved_docs or []) if getattr(d, "page_content", None)
+        )
+
+        def emit_stream_seg(seg: str) -> None:
+            if not seg:
+                return
+            try:
+                writer = get_stream_writer()
+                for i in range(0, len(seg), _EMIT_CHUNK):
+                    writer({"answer_chunk": seg[i:i + _EMIT_CHUNK]})
+            except Exception:
+                pass  # 非流式上下文下 get_stream_writer 为 no-op
+
+        emitter = _SegmentedEmitter(
+            whitelist, external, docs_text, emit=emit_stream_seg, logger=logger,
+        )
+        async for chunk in llm.astream(prompt, config={"tags": [TAG_NOSTREAM]}):
             chunks.append(chunk)
             token = chunk.content if isinstance(chunk.content, str) else ""
             if token:
-                full_answer += token
+                emitter.feed(token)
 
-        answer = strip_source_markers(full_answer.strip())
+        answer = emitter.finish()
+        # v9.29 兜底：对组好的完整答案再剥一次文末连续 JSON，防止模型尾随复述临床快照
+        answer = _strip_trailing_json_block(_strip_leading_json_block(strip_source_markers(answer.strip())))
         generation_time = (time.time() - start_time) * 1000
+
+        if emitter.removed_sections or emitter.removed_meds:
+            logger.warning(
+                f"L2 分段校验剔除 {len(emitter.removed_sections)} 个越界症状、"
+                f"{len(emitter.removed_meds)} 个文档外用药："
+                f"sections={emitter.removed_sections}, meds={emitter.removed_meds}"
+            )
 
         # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
         try:
@@ -3093,7 +3612,7 @@ async def direct_answer_node(state: MedicalAssistantState, config: RunnableConfi
             if token:
                 full_answer += token
 
-        answer = strip_source_markers(full_answer.strip())
+        answer = _strip_trailing_json_block(_strip_leading_json_block(strip_source_markers(full_answer.strip())))
 
         # v9.0: Token 用量自动采集（流式最后一个 chunk 含 usage）
         try:
@@ -4048,18 +4567,38 @@ async def stream_answer_generation(state: MedicalAssistantState):
     prompt_est_tokens = prompt_chars // 2  # 中文约2字/token的粗略估算
     logger.info(f"RAG Prompt 大小：{prompt_chars}字符，估算约{prompt_est_tokens} tokens")
 
+    # v9.33 与 answer_generation_node 同一套"按段先校验后流出"（_SegmentedEmitter），
+    # 避免 L2 语义缓存命中走本生成器时把幻觉段裸传。打 TAG_NOSTREAM 压制消息通道中继
+    # （此处本不在图中，仅为与主路径行为一致）。
     llm = get_llm(streaming=True)
-    full_answer = ""
 
     try:
-        async for chunk in llm.astream(prompt):
-            token = chunk.content
+        question = state.get("final_question") or state.get("rewritten_query") or state.get("question", "")
+        whitelist = _get_question_symptom_whitelist(question, state.get("symptoms"))
+        external = _get_checkpoint_symptoms(state.get("clinical_checkpoint"))
+        docs_text = "\n".join(
+            d.page_content for d in (retrieved_docs or []) if getattr(d, "page_content", None)
+        )
+        emitter = _SegmentedEmitter(whitelist, external, docs_text, logger=logger)
+
+        async for chunk in llm.astream(prompt, config={"tags": [TAG_NOSTREAM]}):
+            token = chunk.content if isinstance(chunk.content, str) else ""
             if token:
-                full_answer += token
-                yield token
+                emitter.feed(token)
+
+        answer = emitter.finish()
+        answer = _strip_trailing_json_block(_strip_leading_json_block(strip_source_markers(answer.strip())))
+        if emitter.removed_sections or emitter.removed_meds:
+            logger.warning(
+                f"[L2-缓存生成] 剔除 {len(emitter.removed_sections)} 个越界症状、"
+                f"{len(emitter.removed_meds)} 个文档外用药"
+            )
+
+        for i in range(0, len(answer), _EMIT_CHUNK):
+            yield answer[i:i + _EMIT_CHUNK]
 
         elapsed_time = (time.time() - start_time) * 1000
-        logger.info(f"流式生成完成，总长度：{len(full_answer)}字符，耗时：{elapsed_time:.2f}ms")
+        logger.info(f"流式生成完成，总长度：{len(answer)}字符，耗时：{elapsed_time:.2f}ms")
 
     except Exception as e:
         logger.error(f"流式生成失败：{str(e)}")

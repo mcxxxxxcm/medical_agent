@@ -28,6 +28,7 @@ from app.graph.nodes import (
     memory_load_node,
     router_node,
     safety_check_node,
+    sanitize_cached_answer,
     stream_answer_generation,
     strip_source_markers,
 )
@@ -36,6 +37,109 @@ logger = get_logger(__name__)
 
 # L0 答案缓存 TTL（秒）
 _ANSWER_CACHE_TTL = 1800  # 30 分钟
+
+
+def _json_prefix_end(text: str) -> int:
+    """返回 text 中连续前导 JSON 对象块（形如 {...}{...}）的结束位置（下一正文的起始）。
+    若 text 通篇仍是 JSON 前缀（尚未出现正文），返回 -1。
+
+    目的（v9.28）：模型有时会在处理建议正文前先输出一段用户档案 / 问题拆解的
+    结构化 JSON（如 {"name":...}{"问题拆解结果":...}），前端把流式 token
+    直接拼入答案会造成显示污染。此函数用花括号深度而非正则匹配 JSON，
+    以兼容含中文、含嵌套数组的 JSON。
+    """
+    i, n, depth, started = 0, len(text), 0, False
+    while i < n:
+        c = text[i]
+        if started:
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+            elif depth == 0:
+                if c.isspace():
+                    pass
+                elif c == '{':
+                    depth += 1  # 已闭合一个对象，继续下一个 JSON 对象
+                else:
+                    return i  # 完整对象已闭合，此后为正文起点
+            i += 1
+        else:
+            if c.isspace():
+                i += 1
+            elif c == '{':
+                started = True
+                depth = 1
+                i += 1
+            else:
+                return i  # 非 '{' 开头，无 JSON 前缀
+    return -1
+
+
+def _strip_leading_json_block(text: str) -> str:
+    """整段剥离开头的连续 JSON 对象块（供非流式 / 消息/完整答案使用）。"""
+    end = _json_prefix_end(text)
+    return text[end:] if end != -1 else text
+
+
+def _object_start_at(text: str, end: int) -> int:
+    """返回 text[0:end] 中与闭合于 end-1 的花括号匹配的顶层 '{' 下标；无法匹配则返回 -1。"""
+    depth = 0
+    idx = end - 1
+    while idx >= 0:
+        c = text[idx]
+        if c == '}':
+            depth += 1
+        elif c == '{':
+            depth -= 1
+            if depth == 0:
+                return idx
+        idx -= 1
+    return -1
+
+
+def _trailing_json_block_start(text: str) -> int:
+    """返回 text 末尾连续 JSON 对象块（形如 ...{...}{...}）的起始下标；不存在则返回 -1。
+
+    (v9.29) 模型有时在正文写完后再尾随复述一段结构化 JSON（如临床快照
+    {"chief_complaint":...}），v9.28 仅剥离开头 JSON 前缀，此处兜底清理文末 JSON 后缀。
+    从右向左用括号深度逐个匹配完整对象，支持连续多个对象；并要求末尾块含引号
+    （JSON 键值形态）才认定是 JSON，避免误伤正文中普通花括号文本。
+    """
+    t = text.rstrip()
+    if not t or t[-1] != '}':
+        return -1
+    end = len(t)
+    earliest = None
+    while True:
+        if end <= 0 or t[end - 1] != '}':
+            break
+        s = _object_start_at(t, end)
+        if s == -1:
+            break
+        earliest = s if earliest is None else s
+        j = s - 1
+        while j >= 0 and t[j].isspace():
+            j -= 1
+        if j >= 0 and t[j] == '}':
+            end = j + 1
+            continue
+        break
+    if earliest is None:
+        return -1
+    if '"' not in t[earliest:]:
+        return -1
+    return earliest
+
+
+def _strip_trailing_json_block(text: str) -> str:
+    """整段剥离开头/文末连续 JSON 对象块（供非流式 / 消息/完整答案使用）。"""
+    start = _trailing_json_block_start(text)
+    if start == -1:
+        return text
+    if start == 0:
+        return ""
+    return text[:start].rstrip()
 
 
 def _answer_cache_key(question: str) -> str:
@@ -111,6 +215,9 @@ class StreamingOrchestrator:
         }
         # 流式剥离 [来源:...] 标记的跨 token 缓冲（每轮请求开始时清空）
         self._source_marker_buffer = ""
+        # 剥离答案开头"连续 JSON 对象块"的跨 token 缓冲（模型可能在正文前输出结构化 JSON）
+        self._json_prefix_done = False
+        self._json_prefix_buf = ""
 
     async def _emit(self, payload) -> str:
         """生成 SSE data 行，记录首 token 延迟"""
@@ -276,6 +383,26 @@ class StreamingOrchestrator:
         if sources:
             return f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
         return ""
+
+    def _strip_leading_json_token(self, token: str) -> str:
+        """跨 token 剥离答案开头的连续 JSON 对象块。
+
+        模型有时会在处理建议正文前先输出用户档案/问题拆解的结构化 JSON。
+        前端把流式 token 直接拼进答案会造成显示污染，故在此丢弃该前缀：
+        累积缓冲直到检测到正文起点才放行；通篇纯 JSON（无正文）则整体丢弃。
+        """
+        if not token:
+            return ""
+        if self._json_prefix_done:
+            return token
+        self._json_prefix_buf += token
+        end = _json_prefix_end(self._json_prefix_buf)
+        if end == -1:
+            return ""  # 仍是 JSON 前缀，继续缓冲等待正文
+        self._json_prefix_done = True
+        rest = self._json_prefix_buf[end:]
+        self._json_prefix_buf = ""
+        return rest
 
     def _strip_source_markers_stream(self, token: str) -> str:
         """剥离流式 token 中的 [来源:文档名] 标记，兼容标记被拆到多个 token
@@ -519,7 +646,10 @@ class StreamingOrchestrator:
                     continue
                 token = chunk.content if isinstance(chunk.content, str) else ""
                 if token:
-                    # 剥离正文中的 [来源:文档名] 标记（完整答案同样走剥离后的内容）
+                    # 先剥离开头的结构化 JSON 前缀，再剥离 [来源:...] 标记
+                    token = self._strip_leading_json_token(token)
+                    if not token:
+                        continue
                     token = self._strip_source_markers_stream(token)
                     if not token:
                         continue
@@ -527,8 +657,15 @@ class StreamingOrchestrator:
                     yield await self._emit(token)
 
             elif mode == "custom":
-                # data = get_stream_writer 传入的值（图片分析摘要等）
-                if isinstance(data, str) and data:
+                # data = get_stream_writer 传入的值
+                #   - 图片分析摘要预览等普通字符串：仅展示，不进累计
+                #   - {"answer_chunk": text}：L2 清洗后的答案段文本，需累计进 _full_answer
+                if isinstance(data, dict):
+                    chunk = data.get("answer_chunk")
+                    if chunk and isinstance(chunk, str):
+                        self._full_answer += chunk
+                        yield await self._emit(chunk)
+                elif isinstance(data, str) and data:
                     yield await self._emit(data)
 
             elif mode == "updates":
@@ -552,6 +689,14 @@ class StreamingOrchestrator:
         # 无 token 流出时（快速问候 / 澄清追问 / 拒答 / 无检索文档），直接发送最终答案
         if not self._full_answer and final_answer:
             final_answer = strip_source_markers(final_answer)
+            final_answer = _strip_leading_json_block(final_answer)
+            final_answer = _strip_trailing_json_block(final_answer)
+            # L3：降级全量答案同样过白名单校验，防止历史缓存/拒答文本带出越界症状
+            final_answer = sanitize_cached_answer(
+                final_answer, self.question,
+                symptoms=self._state.get("symptoms"),
+                checkpoint=self._state.get("clinical_checkpoint"),
+            )
             self._full_answer = final_answer
             yield await self._emit(final_answer)
 
@@ -597,8 +742,16 @@ class StreamingOrchestrator:
 
             # 阶段 3：按缓存/路由结果分发处理
             if cached_answer:
-                # L0 答案缓存命中（历史缓存可能含 [来源:] 标记，统一剥离）
+                # L0 答案缓存命中（历史缓存可能含 [来源:] 标记/结构化 JSON 前后缀，统一剥离）
                 cached_answer = strip_source_markers(cached_answer)
+                cached_answer = _strip_leading_json_block(cached_answer)
+                cached_answer = _strip_trailing_json_block(cached_answer)
+                # L3：旧缓存（修复前生成）可能带有多症状幻觉，同样过白名单清洗
+                cached_answer = sanitize_cached_answer(
+                    cached_answer, self.question,
+                    symptoms=self._state.get("symptoms"),
+                    checkpoint=self._state.get("clinical_checkpoint"),
+                )
                 self._full_answer = cached_answer
                 yield await self._emit(cached_answer)
                 # P2-8：缓存命中不经过 graph，主动写入对话历史
@@ -617,6 +770,9 @@ class StreamingOrchestrator:
                     yield sources_event
                 self._full_answer = ""
                 async for token in stream_answer_generation(self._state):
+                    token = self._strip_leading_json_token(token)
+                    if not token:
+                        continue
                     token = self._strip_source_markers_stream(token)
                     if not token:
                         continue

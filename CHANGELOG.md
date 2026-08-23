@@ -1,13 +1,80 @@
 # 系统优化更新日志
 
-## v9.27 - 检索剥离"对X过敏"背景，让核心诉求主导检索（Bug 修复）
+## v9.33 - 首 token 提速：答案生成改为"按段先校验后流出"（性能优化）
 
-基于 errorLog 分析（"我对花粉过敏，现在有点肚子疼怎么办？"）：v9.26 修复后复合问题改走单问题链路，但单问题检索用整句 query（"我对花粉过敏…肚子疼怎么办？"），"花粉过敏"这一背景把 Dense/Reranker 检索方向带偏，命中过敏/皮肤文档，真正的诉求症状（腹痛/发热）文档进不了 Top，答案仍只围绕过敏给处理建议。
+背景：v9.31 为根治幻觉段，把答案生成改成"整段缓冲 → `_sanitize_answer` 清洗 → 一次性发出"，代价是生成期前端全程空白（感知首 token ≈ 20s）。经 metrics 定位：`answer_generation` 平均 14s，其内 LLM 生成期因整段缓冲而零流出，成了首 token 的隐形大头。v9.32 确认此慢**不是** L1 上下文压缩（`context_manager.py` 的 L1/L2/L3/L4 压缩在 RAG 流程里运行，但都是廉价字符串操作，L4 LLM 仅超阈值触发）。
 
-- **新增 `_strip_allergic_background`**（`app/graph/nodes/nodes.py`）：匹配并剥离查询中的"对X过敏"背景结构（X=过敏原，如花粉/芒果）。
-- **接入知识检索**：预处理后、检索词增强前，对检索用的 `search_query` 剥离过敏背景（"我对花粉过敏，现在有点肚子疼怎么办？" → "现在有点肚子疼怎么办？"），让核心诉求症状主导检索；**仅改检索 query，答案 prompt 仍用完整原问题**（过敏背景不丢失，生成端仍给出过敏注意事项）。
-- 空查询保护：剥离为空时维持原查询，避免纯背景问题检索退化。
-- 说明：上一轮"过敏+发烧"两例无法由 LLM 拆解、只能规则兜底，且拆解后合成答案时 LLM 默认把主动提及的"对X过敏"当主体。本轮让诉求症状主导检索，是更硬件层面的根治；生成端是否需进一步"背景 vs 诉求"提示仍在评估（低置信声明式处理 v9.26 已标注暂缓）。
+- **新增 `_SegmentedEmitter` 分段发射器**（`nodes.py`）：在 LangGraph 流式下一边生成一边攒，攒成一个**逻辑块**就以纯规则走同一套 `_sanitize_answer` 校验，干净才放行：
+  - 逻辑块 = 一个 bullet 及其续行（至下一 bullet / 空行 / 标题），散文按句末符（。！？）分段保证响应。
+  - 越界症状小节（白名单外）整块剔除、文档外药物整句剔除——**"幻觉段不流出前端"**这一 v9.31 承诺以更细粒度保留。
+  - 非流式（ainvoke）下 emit 为 no-op，`clean_parts` 仍累计出清洗后的完整答案。
+- **`answer_generation_node` 与 L2 缓存路径 `stream_answer_generation` 统一改用 `_SegmentedEmitter`**：首 token（首个逻辑块）进入流式即流出，不必等全量；同时两路径行为一致。LLM 流式仍打 `TAG_NOSTREAM` 压制消息通道中继，最终文案统一经 `_emit_chunk` 分小段打字机发出。
+- **回归测试**：`tests/test_nodes.py` 新增 `TestOffDocMedicationStrip`（文档外用药整句剔除、无残句、文档内药保留、混句摘药魔、用药整行删除）与 `TestSegmentedEmitter`（首 bullet 未等整段即流出、白名单外小节剔除、同义词保留、bullet+散文保留、空白名单不动）。
+- 语义不变：幻觉段兜底剔除、多症状白名单约束、安全/分诊/用药三套规则 skill 全部保留，只是把"清洗时点"从"全量之后"前移到"每个逻辑块之后"。
+
+## v9.32 - RAG 回答结构放开：保留逐点 bullet、小节变可选，不再固定三段式（体验优化）
+
+用户反馈：回答每次都固定套用「处理建议 / 须立即就医的情况 / 当前资料未提及的关键方面」三段模板，机械。希望允许适当自由发挥、按点论述，但不要每次都出现这三节。
+
+- **`prompts.py` `RAG_ANSWER_PROMPT` 组织指令重写**：
+  - 正文一律用 bullet（"- "）逐条论述、观点分明；小节标题与先后顺序交给模型自由设计，不再强制固定模板；相关才写、无关略去，不为其凑结构硬写。
+  - 「**需立即就医**」与「**当前资料未提及的关键方面**」降为**可选小节**：仅当文档确实提到红旗征/危险信号、或确实缺少关键信息时才用小节简述，否则省略。
+  - 自由发挥仅限**组织与措辞**，事实性底线不变：每条护理/用药措施仍须逐字出自【文档】，禁止凭常识补数字/时长/步骤。
+  - 多症状部分仍强制**bullet（"- 症状名：…"）**形式——这是 L1 白名单指令与 L2 白名单清洗器（`_extract_bullet_symptom_token`/`_strip_out_of_scope_symptom_sections`）能识别并兜底剔除越界症状小节的格式前提，未因自由化而丢失。
+- **不变量**：仅改组织方式，事实约束、L1 白名单、安全/分诊/用药三套规则 skill 全部不变。
+
+## v9.31 - 用工程化三层防线彻底根治"多症状幻觉"（Prompt 约束 → 确定性校验 → 全链路清洗）
+
+背景：v9.27/v9.30 只是**提示词约束"多症状逐一作答只针对本次问题"**，LLM 是概率性的，总有一次交互会忽略约束、把【L2 临床快照】里的既往症状（头痛/腹痛/头晕…）当成"本次诉求"逐一作答——用户要求以工程思维**彻底避免**这类幻觉，而非再叠一层 prompt。方案：确定性校验（纯字符串，不依赖 LLM）取代概率性约束作为兜底层。
+
+- **L1·输入侧白名单提纯**（`nodes.py`）：新增 `_SYMPTOM_WHITELIST_WORDS`（内置常见症状词）与 `_get_question_symptom_whitelist()`。白名单 = 症状解析规则结果 `symptoms["symptoms"]`，为空则回退问题文本症状词匹配。白名单由**代码确定**、注入 prompt（`build_rag_prompt` → `{symptom_whitelist_section}`，`prompts.py` `RAG_ANSWER_PROMPT` 新增占位符），限定"本次唯一允许逐一作答的症状集合"，从输入侧压掉根因。
+- **L2·生成端确定性校验**（`nodes.py`）：
+  - `_norm_symptom` + `_SYMPTOM_CANONICAL`（发烧↔发热、头疼↔头痛、肚子疼↔腹痛…）：统一"问题措辞"与"模型措辞"。
+  - `_extract_bullet_symptom_token`：识别"多症状逐一作答"里每个 `- 症状：` 小节标题。
+  - `_strip_out_of_scope_symptom_sections`：确定性剔除白名单外（临床快照/历史近年既往、或内置症状词里非本次）的症状小节及其续行；**白名单为空则整段保留**，不冒险误删。
+  - `_strip_off_doc_medications`：确定性剔除**检索文档中未出现**的药物（仅当文档可比对时）。
+  - `_sanitize_answer` 串起上述两步，返回 `(cleaned, removed_sections, removed_meds)` 供日志/bad-case。
+  - **`answer_generation_node` 改造为先校验后发出**：LLM 流式打 `TAG_NOSTREAM`（LangGraph 官方抑制 `stream_mode="messages"` 中继的原语，见 `langgraph/_messages.py StreamMessagesHandler.on_chat_model_start`）→ 原始 token 不再实时流到前端；缓冲全量 → `_sanitize_answer` 清洗 → 清洗后的文本经 `get_stream_writer()`（custom 事件）分小段发出（打字机效果）。前端看到的永远是**校验通过**的内容。自定义事件用 `{"answer_chunk": text}` 包裹，与图片摘要预览（不进累计）区分。
+  - `streaming.py` custom 分支识别 `answer_chunk`：累计进 `_full_answer`（供持久化/缓存/后置审查），并逐段 SSE 发出。
+  - **L2 语义缓存命中路径同步加固**（`nodes.py` `stream_answer_generation`）：该生成器此前逐 token 裸流 → 改为与 `answer_generation_node` 同一套"缓冲→`_sanitize_answer`→分小段发出"，使 L2 缓存命中走此生成器时同样不会把幻觉段传出。
+- **L3·缓存/非流式全链路统一清洗**（`streaming.py` + `nodes.py`）：新增 `sanitize_cached_answer`——L0 答案缓存命中与无 token 兜底 final 同过白名单症状校验；因其无检索文档，**跳过文档外用药剔除**（避免把用户合法用药当幻觉误删，`_strip_off_doc_medications` 需 docs 才能判定）。旧的（修复前）缓存答案同样被清洗。
+- **回归测试**：`tests/test_nodes.py` 新增 `TestSymptomWhitelistSanitizer`，覆盖词匹配白名单、同义词归一化、越界小节剔除、同名高频发热保留、空白名单不动、无文档不误删用药。
+- 语义不变：真实"多症状当前问题"白名单含多个症状，仍逐一作答；单症状问题只答该症状。
+
+## v9.30 - 单症状问题不再被临床快照带偏成"多症状逐一作答"（Bug 修复）
+
+基于 errorLog 分析（多轮线程 `thread_test_user` 中仅问"发烧了怎么办？"，答案却按"多症状逐一作答"列出头痛/发热/腹痛/头晕四条）：`build_rag_prompt` 会把整张【L2 临床快照】注入 prompt，罗列该线程累计的所有症状；v9.27 的"多症状逐一作答"指令让模型把这些既往背景症状也当成"本次要处理的多症状"逐一给建议。检索端无问题（该请求查询自包含、跳过重写，单凭症状"发热"命中缓存）。
+
+- **生成端限定范围**（`prompts.py` `RAG_ANSWER_PROMPT`）：明确"多症状逐一作答"只针对【问题】里这次明确提到的症状；若本次只提一个症状，就只答该症状；【L2 临床快照】【L3 对话历史】里记录的既往症状只是背景（供判断用药/禁忌/相互关注），不得伪装成本次诉求逐条列处理建议。
+- 真实的"多症状当前问题"不受影响，仍逐一作答。
+
+## v9.29 - 隐藏答案文末的临床快照 JSON 后缀 + 答案禁止输出 JSON（Bug 修复）
+
+基于 errorLog 分析：v9.28 只解决了模型在正文**前**输出 JSON 前缀，但模型偶尔会在正文写完、免责声明之后**尾随复述一段临床快照结构化 JSON**（`{"chief_complaint":...}`，甚至重复两次），v9.28 的前缀剥离对文末 JSON 无能为力，导致答案末尾裸露 JSON。
+
+- **生成端根治**（`prompts.py` `RAG_ANSWER_PROMPT` / `DIRECT_ANSWER_PROMPT`）：严格禁止清单新增"只输出自然语言，禁止任何 JSON/结构化数据/代码块，禁止复述【L2 临床快照】等结构化数据"→ 新生成答案不再携带尾部 JSON；prompt 版本绑定失效 L0/L2 旧缓存。
+  - 注意：模板是 `ChatPromptTemplate.format_messages()` 渲染，prompt 内一律不要出现字面 `{}` 花括号（如 `{"key":...}`），否则会被当占位符解析抛 `KeyError('"key"')`、触发"答案生成时错误"。禁令用纯文字措辞规避。
+  - 复查同类隐患：`ROUTER_PROMPT` 的 `{"question_type":...}` 也是未转义字面花括号，导致 `_llm_route`（`ROUTER_PROMPT.format_messages`）每次抛 `KeyError`、被外层 except 吞掉恒降级 general（仅规则/上下文路由命中的查询不受影响）→ 已改为 `{{...}}` 转义，模型看到的 JSON 示例文本不变，LLM 路由恢复正常。凡需在模板里展示 JSON 示例，一律用 `{{`/`}}` 转义。
+- **兜底·尾部剥离**（`streaming.py` + `nodes.py`）：新增 `_trailing_json_block_start`/`_strip_trailing_json_block`（从右向左用花括号深度逐个匹配完整对象，支持连续多个尾部 JSON 对象；要求末尾块含引号键值形态方认定是 JSON，避免误伤正文普通花括号文本），与 v9.28 的前缀剥离成对使用。
+- **接线**：answer_generation_node / direct_answer_node 非流式 final、L0 答案缓存读取、流式无 token 兜底 final，均改为先剥前缀再剥后缀。
+- 说明：流式 live token 受"已发送不可回收"限制，主要靠生成端 prompt 根治；缓存/非流式/历史答案已全覆盖。
+
+## v9.28 - 隐藏答案开头的结构化 JSON 前缀（流式 + 兜底，Bug 修复）
+
+用户反馈"每次系统回答时都会出现 json 字符串，隐藏它们"。模型在输出处理建议正文前，有时会先输出一段结构化 JSON（用户档案提取结果如 `{"name":...}`、问题拆解结果如 `{"问题拆解结果":...}`）。前端 index.html 只把流式 token 直接拼接进答案，这些 JSON 前缀会原样显示在正文上方造成污染。
+
+- **streaming.py·逐 token 剥离 `_strip_leading_json_token`**：跨 token 累积缓冲，新增 `_json_prefix_done`/`_json_prefix_buf` 字段；用花括号深度扫描（非正则）识别连续前导 JSON 块，检测到正文起点才放行，通篇纯 JSON 则整体丢弃。接线到 native graph 流式 token 出口与 L2 语义缓存 token 出口（先剥 JSON 前缀、再剥 [来源] 标记）。
+- **streaming.py·整段剥离 `_strip_leading_json_block`**：L0 `cached_answer` 命中与 final_answer 无 token 兜底路径，对整个答案做同样剥离。
+- **nodes.py·非流式兜底**：新增同名纯函数 `_json_prefix_end`/`_strip_leading_json_block`（避免循环 import），接线到两处生成后的 `answer = _strip_leading_json_block(strip_source_markers(full_answer.strip()))`。
+- 用花括号深度而非正则匹配 JSON，兼容含中文、含嵌套数组的 JSON；独立单元测试覆盖"双 JSON 前缀 + 正文""无前缀正文""通篇纯 JSON（罕见，保留）"等用例，全部通过。
+
+## v9.27 - 复合问题多症状不漏答（检索 + 生成两端，Bug 修复）
+
+基于 errorLog 分析（"我对花粉过敏，现在有点肚子疼怎么办？"）：v9.26 修复后复合问题改走单问题链路，但单问题检索用整句 query，背景症状或偏强的症状会把 Dense/Reranker 检索方向带偏，另一诉求症状文档进不了候选，答案只围绕其一处理（"只答花粉过敏"）。这是复合问题的通用缺陷，不局限于过敏。
+
+- **检索端·剥离过敏背景 `_strip_allergic_background`**（`nodes.py`）：匹配并剥离查询中的"对X过敏"背景结构（X=过敏原，如花粉/芒果），预处理后、增强前接入检索 `search_query`；空查询时回退原句。仅改检索词，答案 prompt 仍用完整原问题（过敏背景不丢失）。
+- **检索端·按诉求症状分别检索 `_build_symptom_sub_queries`**：多症状且未拆成多子问题时，把每个诉求症状构造成独立检索 query（并剔除过敏类背景症状），走并行检索，保证每个症状都有对应文档进候选，而非整句检索只偏其中一个。
+- **生成端·强制逐一作答**（`prompts.py` `RAG_ANSWER_PROMPT`）：新增"多症状逐一作答"指令——问题涉及多个症状时对每个症状分别给处理建议（各成一条/一节）；某症状在文档找不到对应处理时明确写"文档未提供该症状的具体处理建议"，绝不只挑一个回答而遗漏其他。通用兜底，覆盖所有漏答场景；prompt 版本绑定失效缓存，L0/L2 旧缓存自动作废。
 
 ## v9.26 - 修复长问题拆解残句吞症状 + 多子问题置信度失真（Bug 修复）
 

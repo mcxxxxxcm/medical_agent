@@ -275,3 +275,134 @@ class TestGradeDocuments:
             result = grade_documents_node(state)
             # 由于 score_delta < 0.05 且 doc_delta < 1，应该跳过重试
             assert result.goto == "answer_generation"
+
+
+class TestSymptomWhitelistSanitizer:
+    """L2/L3 白名单症状清洗纯函数测试（v9.31）"""
+
+    from app.graph.nodes.nodes import (
+        _norm_symptom,
+        _get_question_symptom_whitelist,
+        _strip_out_of_scope_symptom_sections,
+        sanitize_cached_answer,
+    )
+
+    def test_question_wordmatch_whitelist(self):
+        assert self._get_question_symptom_whitelist("发烧了怎么办", None) == ["发烧"]
+
+    def test_greeting_no_whitelist(self):
+        assert self._get_question_symptom_whitelist("你好", None) == []
+
+    def test_synonym_normalization(self):
+        assert self._norm_symptom("发烧") == "发热"
+        assert self._norm_symptom("头疼") == "头痛"
+
+    def test_strip_off_whitelist_sections(self):
+        answer = (
+            "- 发热：多喝水。\n"
+            "- 头痛：休息。\n"
+            "- 腹痛：留意。\n"
+        )
+        out = self._strip_out_of_scope_symptom_sections(
+            answer, ["发热"], ["头痛", "腹痛"], None
+        )
+        assert "发热" in out
+        assert "头痛" not in out
+        assert "腹痛" not in out
+
+    def test_question_says_fever_model_writes_fever_kept(self):
+        # 问题写"发烧"，模型写"发热"，同义词归一化后应保留
+        out = self.sanitize_cached_answer(
+            "- 发热：多喝水。\n- 头痛：休息。\n", "发烧了怎么办", None, None
+        )
+        assert "发热" in out
+        assert "头痛" not in out
+
+    def test_empty_whitelist_untouched(self):
+        assert self.sanitize_cached_answer("- 你好。\n", "你好", None, None) == "- 你好。\n"
+
+    def test_medication_preserved_without_docs(self):
+        # 无检索文档时只做症状清洗，不误删用药
+        assert "布洛芬" in self.sanitize_cached_answer("- 发热：可服用布洛芬。\n", "发烧了怎么办", None, None)
+
+
+class TestOffDocMedicationStrip:
+    """v9.32 文档外用药整句剔除（含残句修复）"""
+
+    from app.graph.nodes.nodes import _strip_off_doc_medications
+
+    def test_whole_sentence_removed_no_residual(self):
+        # errorLog 复现：奥司他韦不在文档中 → 整句连同剂量括号一起删，不残留"（每次75mg…）"
+        text = "如有需要，可考虑使用奥司他韦（每次75mg，每日2次，连服5天）来缓解流感症状"
+        out = self._strip_off_doc_medications(text, docs_text="")
+        assert "奥司他韦" not in out
+        assert "（每次75mg" not in out
+        assert "连服5天" not in out
+
+    def test_on_doc_drug_preserved(self):
+        text = "建议服用奥司他韦（每次75mg）缓解流感。"
+        out = self._strip_off_doc_medications(text, docs_text="奥司他韦用于流感治疗")
+        assert "奥司他韦" in out
+        assert "每次75mg" in out
+
+    def test_mixed_sentence_keeps_on_doc_off_doc(self):
+        # 同一句既有文档内药又有文档外药：保留句，仅摘离文档外药
+        docs = "布洛芬用于缓解发热"
+        text = "建议交替使用布洛芬和对乙酰氨基酚（每次500mg）退热。"
+        out = self._strip_off_doc_medications(text, docs_text=docs)
+        assert "布洛芬" in out
+        # 对乙酰氨基酚不在文档 → 药名与紧邻剂量括号被摘除
+        assert "对乙酰氨基酚" not in out
+        assert "500mg" not in out
+
+    def test_off_doc_medication_line_dropped(self):
+        text = "- 发热：布洛芬可退热。\n- 用药：奥司他韦，每次75mg，每日2次。\n"
+        docs = "布洛芬用于缓解发热"
+        out = self._strip_off_doc_medications(text, docs_text=docs)
+        assert "布洛芬" in out
+        assert "奥司他韦" not in out
+        assert "每次75mg" not in out
+
+
+class TestSegmentedEmitter:
+    """v9.33 按段先校验后流出"""
+
+    from app.graph.nodes.nodes import _SegmentedEmitter, _sanitize_answer
+
+    def test_first_bullet_flows_before_finish(self):
+        # 关键断言：首个 bullet 一旦完整（遇到下一 bullet 起点）即经 emit 流出，
+        # 不必等整段生成完 —— 首 token 因此回到流式
+        em = self._SegmentedEmitter(["发热"], ["头痛"], "")
+        em.feed("- 发热：多喝水。\n- ")
+        assert em.clean_parts, "首个 bullet 完成后应立即流出"
+        assert em.clean_parts[0] == "- 发热：多喝水。"
+
+    def test_off_whitelist_bullet_dropped_from_output(self):
+        em = self._SegmentedEmitter(["发热"], ["头痛"], "")
+        em.feed("- 发热：多喝水。\n- 头痛：休息。")
+        out = em.finish()
+        assert "发热" in out
+        assert "头痛" not in out
+        assert "- 头痛" not in out
+        assert any("头痛" in s for s in em.removed_sections)
+
+    def test_synonym_kept(self):
+        # 问题说"发烧"，模型写"发热"：同义词归一化后保留
+        em = self._SegmentedEmitter(["发烧"], [], "")
+        em.feed("- 发热：多喝水。\n- 头痛：休息。")
+        out = em.finish()
+        assert "发热" in out
+        assert "头痛" not in out
+
+    def test_bullet_followed_by_prose_kept(self):
+        em = self._SegmentedEmitter(["发热"], [], "发热要多喝水。")
+        em.feed("- 发热：建议休息。注意补充水分，多喝水可帮助退热。")
+        out = em.finish()
+        assert "建议休息" in out
+        assert "多喝水" in out
+
+    def test_no_whitelist_returns_as_is(self):
+        # 白名单为空时不清洗（无法判断哪些症状该答）
+        em = self._SegmentedEmitter([], [], "")
+        em.feed("- 你好，祝您健康。")
+        assert em.finish() == "- 你好，祝您健康。"

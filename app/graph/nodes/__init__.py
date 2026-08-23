@@ -79,6 +79,7 @@ from .nodes import (
     query_rewrite_node,
     router_node,
     safety_check_node,
+    sanitize_cached_answer,
     should_update_snapshot,
     stream_answer_generation,
     strip_rag_documents_from_history,
