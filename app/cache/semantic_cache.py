@@ -89,9 +89,6 @@ class SemanticCache:
         # 保留旧 Set 的引用，用于兼容
         self._keys_set = f"{prefix}keys"
 
-        # 本地 embedding 缓存，避免重复计算
-        self._embedding_cache: Dict[str, List[float]] = {}
-
         self._stats = {
             "hits": 0,
             "misses": 0,

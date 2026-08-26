@@ -67,7 +67,10 @@
       "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m py_compile app/graph/nodes/nodes.py app/graph/nodes/prompts.py app/graph/nodes/__init__.py app/graph/streaming.py)",
       "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py::TestOffDocMedicationStrip tests/test_nodes.py::TestSegmentedEmitter -q)",
       "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m py_compile app/graph/nodes/nodes.py tests/test_nodes.py)",
-      "Bash(rm -f /tmp/_seg_check.py)"
+      "Bash(rm -f /tmp/_seg_check.py)",
+      "Bash(ls -la data/evaluation/)",
+      "Bash(python -c \"import sqlite3;c=sqlite3.connect\\('metrics.db'\\);[print\\(r[0]\\) for r in c.execute\\(\\\\\"select name from sqlite_master where type='table'\\\\\"\\)]\")",
+      "Bash(python -c \"import sqlite3;c=sqlite3.connect\\('data/metrics/metrics.db'\\);print\\(list\\(c.execute\\('select count\\(*\\) from request_metrics'\\) if c.execute\\(\\\\\"select count\\(*\\) from sqlite_master where type='table' and name='request_metrics'\\\\\"\\).fetchone\\(\\) else []\\)\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,

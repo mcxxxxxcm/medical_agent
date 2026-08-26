@@ -8,7 +8,9 @@
 import os
 import pickle
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import jieba
 from functools import lru_cache
@@ -60,37 +62,65 @@ class _EmbeddingLRUCache:
     _TTL_SECONDS = 1800  # 30 分钟
 
     def __init__(self):
+        self._lock = threading.Lock()  # 并发访问/写入保护（多请求共享该模块级单例）
         self._cache: OrderedDict[str, tuple] = OrderedDict()  # query -> (embedding, timestamp)
 
     def get(self, query: str) -> Optional[List[float]]:
-        if query in self._cache:
-            embedding, ts = self._cache[query]
-            if time.time() - ts < self._TTL_SECONDS:
-                # 命中，移到队尾（LRU）
-                self._cache.move_to_end(query)
-                return embedding
-            else:
-                # 过期，删除
-                del self._cache[query]
+        with self._lock:
+            if query in self._cache:
+                embedding, ts = self._cache[query]
+                if time.time() - ts < self._TTL_SECONDS:
+                    # 命中，移到队尾（LRU）
+                    self._cache.move_to_end(query)
+                    return embedding
+                else:
+                    # 过期，删除
+                    del self._cache[query]
         return None
 
     def put(self, query: str, embedding: List[float]):
-        if query in self._cache:
-            self._cache.move_to_end(query)
-        self._cache[query] = (embedding, time.time())
-        # 淘汰最老的
-        while len(self._cache) > self._MAX_SIZE:
-            self._cache.popitem(last=False)
+        with self._lock:
+            if query in self._cache:
+                self._cache.move_to_end(query)
+            self._cache[query] = (embedding, time.time())
+            # 淘汰最老的
+            while len(self._cache) > self._MAX_SIZE:
+                self._cache.popitem(last=False)
 
     def clear(self):
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
 
     @property
     def size(self) -> int:
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
 
 _embedding_cache = _EmbeddingLRUCache()
+
+
+# 共享稀疏检索线程池：BM25 与主线程 Dense 检索并行（线程复用，避免每请求创建线程）
+_SPARSE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="bm25-sparse")
+
+
+def _isolate_docs(docs: List[Document]) -> List[Document]:
+    """为下游元数据写入生成隔离副本，避免污染共享源与并发 data race。
+
+    检索返回的 Document 可能引用共享对象（如 BM25Retriever 内部的 documents，
+    这些对象跨请求复用）。Reranker 会写 doc.metadata["rerank_score"]、来源多样性/
+    版本去重也会改 metadata，直接修改会污染共享源，并在多请求并发时竞争。
+    这里浅拷贝 metadata 字典、共享 page_content（只读），下游改动全部落到副本上。
+    """
+    out = []
+    for d in docs:
+        meta = d.metadata
+        if isinstance(meta, dict):
+            meta = dict(meta)
+        else:
+            meta = {}
+        out.append(Document(page_content=d.page_content, metadata=meta))
+    return out
 
 
 def _tokenize(text: str) -> List[str]:
@@ -487,6 +517,12 @@ class HybridRetriever(BaseRetriever):
             except Exception as l2_err:
                 logger.warning(f"L2缓存检查异常，跳过：{l2_err}")
 
+        # 检索并行化：提前把 BM25 稀疏检索提交到后台线程，
+        # 与随后的 Embedding 计算（网络 200~400ms）和 Dense 检索重叠执行，
+        # 将二者由串行变为并行，降低检索链路耗时（原 dense→sparse 串行）。
+        sparse_start = time.time()
+        _sparse_future = _SPARSE_EXECUTOR.submit(self._sparse_search, sparse_query)
+
         # L2 缓存为空或未开启时，仍需计算 query_embedding 供 Dense 检索复用
         if query_embedding is None:
             # 优先查 Embedding LRU 缓存（命中时 0ms vs API 200~400ms）
@@ -513,9 +549,6 @@ class HybridRetriever(BaseRetriever):
                         # 写入 LRU 缓存
                         if query_embedding is not None:
                             _embedding_cache.put(dense_query, query_embedding)
-                            # v9.16: 同步写入语义缓存的本地embedding缓存，避免重复计算
-                            if semantic_cache is not None:
-                                semantic_cache._embedding_cache[dense_query] = query_embedding
                         emb_cb.record_success()
                     except Exception as e:
                         logger.warning(f"查询向量预计算失败，将回退到文本检索：{e}")
@@ -528,13 +561,17 @@ class HybridRetriever(BaseRetriever):
         dense_docs, top1_dense_score = self._dense_search(dense_query, query_embedding=query_embedding)
         dense_ms = (time.time() - dense_start) * 1000
 
-        sparse_start = time.time()
-        sparse_docs = self._sparse_search(sparse_query)
+        # sparse 已在后台线程并行执行，此处同步等待其完成
+        sparse_docs = _sparse_future.result()
         sparse_ms = (time.time() - sparse_start) * 1000
 
         fusion_start = time.time()
         candidates = self._reciprocal_rank_fusion(dense_docs, sparse_docs)
         fusion_ms = (time.time() - fusion_start) * 1000
+
+        # 隔离文档副本：下游 Reranker/来源多样性/版本去重会写 doc.metadata，
+        # 统一作用到副本，避免污染 BM25 共享源和并发 data race
+        candidates = _isolate_docs(candidates)
 
         rerank_ms = 0.0
         # Reranker 跳过判断：基于 Dense Top-1 置信度，而非候选数量

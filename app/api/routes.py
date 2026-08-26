@@ -17,6 +17,7 @@ API接口：
 import asyncio
 import json
 import shutil
+import threading
 import time
 import uuid
 from collections import defaultdict
@@ -216,17 +217,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     仅对 /api/chat 开头的接口生效，健康检查等不受限制。
     """
 
+    MAX_TRACKED_IPS = 20000
+
     def __init__(self, app, max_requests: int = 20, window_seconds: int = 60):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         # {client_ip: [timestamp1, timestamp2, ...]}
         self._requests: Dict[str, List[float]] = defaultdict(list)
+        self._lock = threading.Lock()  # 保护 _requests 的并发读写（check-then-append 非原子）
+        self._last_cleanup_all = 0.0   # 全量清理时间闸门，避免每次请求 O(n)
 
-    def _cleanup(self, ip: str, now: float):
-        """清理过期的请求记录"""
+    def _cleanup_all(self, now: float):
+        """全量清理过期的请求记录，并限制 IP 表数量。
+
+        原实现仅清理当前请求的 IP（_requests[ip]），其它来源 IP 的旧记录常驻内存，
+        在来源 IP 持续增多的场景会无界膨胀（内存泄漏）。改为定期全量清理 + 上限保护：
+            1) 移除所有已无有效请求的 IP
+            2) 超过 MAX_TRACKED_IPS 时，淘汰最近访问时间最早的 IP
+        """
         cutoff = now - self.window_seconds
-        self._requests[ip] = [t for t in self._requests[ip] if t > cutoff]
+        stale_ips = [ip for ip, ts in self._requests.items() if not ts or ts[-1] <= cutoff]
+        for ip in stale_ips:
+            del self._requests[ip]
+        while len(self._requests) > self.MAX_TRACKED_IPS:
+            oldest_ip = min(self._requests, key=lambda ip: (self._requests[ip] or [0])[-1])
+            del self._requests[oldest_ip]
 
     async def dispatch(self, request: Request, call_next):
         # 仅限制聊天接口
@@ -235,16 +251,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
-        self._cleanup(client_ip, now)
 
-        if len(self._requests[client_ip]) >= self.max_requests:
-            logger.warning(f"速率限制触发：{client_ip} 在 {self.window_seconds}s 内超过 {self.max_requests} 次请求")
-            return JSONResponse(
-                status_code=429,
-                content={"detail": f"请求过于频繁，请 {self.window_seconds} 秒后重试"}
-            )
+        with self._lock:
+            # 定期全量清理（每 5 秒一次），其余时刻仅修剪当前 IP 记录保证限速判断准确
+            if now - self._last_cleanup_all >= 5.0:
+                self._cleanup_all(now)
+                self._last_cleanup_all = now
+            else:
+                cutoff = now - self.window_seconds
+                self._requests[client_ip] = [t for t in self._requests[client_ip] if t > cutoff]
 
-        self._requests[client_ip].append(now)
+            if len(self._requests[client_ip]) >= self.max_requests:
+                logger.warning(f"速率限制触发：{client_ip} 在 {self.window_seconds}s 内超过 {self.max_requests} 次请求")
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": f"请求过于频繁，请 {self.window_seconds} 秒后重试"}
+                )
+
+            self._requests[client_ip].append(now)
+
         return await call_next(request)
 
 

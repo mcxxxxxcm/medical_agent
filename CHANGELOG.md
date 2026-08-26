@@ -1,5 +1,21 @@
 # 系统优化更新日志
 
+## v9.34 - 成熟度专项：检索并行化 + 高并发数据竞争修复 + 限流泄漏 + PG 降级（性能/健壮性）
+
+背景：对照 RAG 系统成熟度分析（回答准确率 / 响应速率 / 高并发 / 健壮性）落地的第一批 no-regret 修复。聚焦四块：降低检索链路耗时、消除共享可变单例被多请求并发改写的数据竞争、修复限流中间件 IP 表无界膨胀的内存泄漏、补齐 PostgreSQL 不可用时的降级（此前 Redis 有降级而 PG 无，不对称）。
+
+- **检索链路并行化**（`hybrid_retriever.py`）：BM25 稀疏检索提前提交到共享线程池 `_SPARSE_EXECUTOR`（`max_workers=4`），与随后的 Embedding 计算（网络 200~400ms）及 Dense 检索重叠执行，替代原先 dense→sparse 的严格串行，降低检索链路耗时、缩短 TTFB。检索结果由 `_sparse_future.result()` 汇总，语义等价只改时序。
+- **共享态数据竞争修复**（`hybrid_retriever.py` + `semantic_cache.py`）：
+  - 新增 `_isolate_docs()`：RRF 融合后对候选文档做 metadata 浅拷贝隔离。下游 Reranker（写 `rerank_score`）、来源多样性、版本去重改写的都是副本，不再污染 BM25 复用文档、消除多请求并发 data race。
+  - `_EmbeddingLRUCache` 补上 `threading.Lock`（原 docstring 声明"线程安全"但实现无锁），get/put/clear 全部互斥，多请求共享该模块级单例时安全。
+  - 移除对 `semantic_cache._embedding_cache`（无界无锁 dict）的写入，并删除该已弃用字段的定义，消除本地 embedding 缓存的无界增长点。
+- **限流中间件内存泄漏修复**（`routes.py` `RateLimitMiddleware`）：原 `_cleanup` 仅清理当前请求 IP，其它来源 IP 的旧记录常驻内存、随来源 IP 增多无界膨胀。改为 `_cleanup_all` 定期全量清理（5s 闸门避免每请求 O(n)）+ `MAX_TRACKED_IPS=20000` 上限保护（超限淘汰最久未访问 IP），并用 `threading.Lock` 保护 `_requests` 的 check-then-append 并发。
+- **PostgreSQL 检查点内存降级**（`checkpointer.py`）：`get_checkpointer` 的 PG `AsyncPostgresSaver` 初始化包进 try/except，连接失败时降级为 `InMemorySaver`（内存检查点）并打 error 日志，保证对话服务不因数据库故障整体不可用（与 Redis 降级策略对称）；代价是重启后历史会话状态丢失。降级初始化拆出独立 `_init_postgres_checkpointer()`。
+
+语义不变：并行只改检索时序不改变检索结果；文档隔离只隔离对象不改变内容；限流阈值/窗口不变；PG 正常时行为与原先完全一致（降级仅在连接失败时触发）。
+
+<footer>性能与健壮性专项 · 改动文件：`app/rag/hybrid_retriever.py`、`app/cache/semantic_cache.py`、`app/api/routes.py`、`app/memory/checkpointer.py`</footer>
+
 ## v9.33 - 首 token 提速：答案生成改为"按段先校验后流出"（性能优化）
 
 背景：v9.31 为根治幻觉段，把答案生成改成"整段缓冲 → `_sanitize_answer` 清洗 → 一次性发出"，代价是生成期前端全程空白（感知首 token ≈ 20s）。经 metrics 定位：`answer_generation` 平均 14s，其内 LLM 生成期因整段缓冲而零流出，成了首 token 的隐形大头。v9.32 确认此慢**不是** L1 上下文压缩（`context_manager.py` 的 L1/L2/L3/L4 压缩在 RAG 流程里运行，但都是廉价字符串操作，L4 LLM 仅超阈值触发）。

@@ -51,21 +51,39 @@ async def get_checkpointer():
     if _checkpointer is None:
         async with _init_lock:
             if _checkpointer is None:
-                from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-                from app.core.config import get_config
-
-                config = get_config()
-                db_url = config.DATABASE_URL
-                if not db_url:
-                    raise ValueError("DATABASE_URL未配置，无法使用PostgreSQL检查点保存器")
-                logger.info(f"初始化PostgreSQL检查点保存器")
-
-                _checkpointer_context = AsyncPostgresSaver.from_conn_string(db_url)
-                _checkpointer = await _checkpointer_context.__aenter__()
-
-                await _checkpointer.setup()
-                logger.info(f"PostgreSQL检查点保存器初始化完成")
+                try:
+                    _checkpointer = await _init_postgres_checkpointer()
+                except Exception as e:
+                    # PG 不可用时降级为内存检查点（与 Redis 降级策略对称），
+                    # 保证对话服务不因数据库故障整体不可用；代价是重启后会话状态丢失
+                    logger.error(
+                        f"PostgreSQL检查点初始化失败，降级为内存检查点：{e}\n"
+                        f"降级后对话状态仅在进程内存中保留，服务重启后历史会话将丢失。"
+                    )
+                    _checkpointer = InMemorySaver()
+                    _checkpointer_context = None
     return _checkpointer
+
+
+async def _init_postgres_checkpointer():
+    """初始化 PostgreSQL 检查点（单独封装，便于降级分支复用）"""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from app.core.config import get_config
+
+    global _checkpointer_context
+
+    config = get_config()
+    db_url = config.DATABASE_URL
+    if not db_url:
+        raise ValueError("DATABASE_URL未配置，无法使用PostgreSQL检查点保存器")
+    logger.info(f"初始化PostgreSQL检查点保存器")
+
+    _checkpointer_context = AsyncPostgresSaver.from_conn_string(db_url)
+    cp = await _checkpointer_context.__aenter__()
+
+    await cp.setup()
+    logger.info(f"PostgreSQL检查点保存器初始化完成")
+    return cp
 
 
 async def close_checkpointer():
