@@ -2858,7 +2858,9 @@ async def answer_generation_node(state: MedicalAssistantState, config: RunnableC
         return result
 
     except Exception as e:
-        logger.error(f"答案生成失败：{str(e)}")
+        # exc_info=True 记录完整 traceback：此前仅打 str(e)，偶发的 KeyError('key')
+        # 等异常只留下孤零零的 'key' 字串，完全无法定位根因。带栈后可直接 grep 定位。
+        logger.error(f"答案生成失败：{str(e)}", exc_info=True)
         return {
             "final_answer": "抱歉，生成答案时出现错误。",
             "error": str(e),

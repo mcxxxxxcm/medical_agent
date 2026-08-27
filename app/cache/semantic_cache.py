@@ -382,6 +382,18 @@ class SemanticCache:
             logger.warning(f"语义缓存写入失败，跳过：{e}")
             return False
 
+    def has_any_key(self) -> bool:
+        """O(1) 判断语义缓存是否已有任意条目（供检索链路决定是否计算 Embedding）
+
+        用 Redis 索引键计数：LRU Sorted Set（新版本）+ 旧 Set（兼容老数据）。
+        zcard/scard 都是 O(1)，替代此前 HybridRetriever 里为判空做的全量 SCAN（O(n)）。
+        """
+        try:
+            return bool(self._cache._redis.zcard(self._keys_zset)
+                        or self._cache._redis.scard(self._keys_set))
+        except Exception:
+            return False
+
     def get_stats(self) -> Dict:
         """获取统计信息"""
         total = self._stats["total_requests"]

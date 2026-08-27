@@ -480,16 +480,9 @@ class HybridRetriever(BaseRetriever):
             logger.info(f"L2语义缓存检查：{cache_query[:30]}...")
 
             # 优化：先快速检查L2是否有数据，为空则跳过Embedding API（省600ms+）
+            # 用 O(1) 的索引计数判空（zcard/scard），替代此前的全量 SCAN（O(n)）
             try:
-                # 使用 SCAN 替代 KEYS，避免阻塞 Redis
-                l2_keys = []
-                cursor = 0
-                while True:
-                    cursor, batch = cache._redis.scan(cursor, match=f"{semantic_cache.prefix}*", count=100)
-                    l2_keys.extend(batch)
-                    if cursor == 0:
-                        break
-                if not l2_keys:
+                if not semantic_cache.has_any_key():
                     logger.info("L2语义缓存为空，跳过Embedding计算")
                 else:
                     embedding_start = time.time()

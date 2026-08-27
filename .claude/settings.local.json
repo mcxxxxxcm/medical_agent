@@ -87,7 +87,10 @@
       "Bash(/c/Users/86176/miniconda3/condabin/conda env *)",
       "Bash(grep -vE \"UserWarning|pkg_resources|import pkg_resources|httpx - INFO|vector_store - INFO|\\\\.py:.*\\\\.bin|OK$\")",
       "Bash(rm -rf data/chroma_db_zdtest)",
-      "Bash(rm -rf data/chroma_db/medical_kb_v20260826_215953)"
+      "Bash(rm -rf data/chroma_db/medical_kb_v20260826_215953)",
+      "Bash(ls CLAUDE.md)",
+      "Bash(tail -40 errorLog.txt)",
+      "Bash(tail -25 logs/error.log)"
     ]
   },
   "enableAllProjectMcpServers": true,

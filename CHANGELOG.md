@@ -1,5 +1,13 @@
 # 系统优化更新日志
 
+## v9.35 - L2 语义缓存判空改为 O(1) + 答案生成异常补栈（性能/健壮性）
+
+- **L2 语义缓存判空 O(1) 化**（`hybrid_retriever.py` + `semantic_cache.py`）：此前每次检索请求都为了「判断 L2 是否为空」对 Redis 前缀做**全量 SCAN**（`while cursor: scan(count=100)` 多批往返，缓存键多时 O(n)）。写入侧本就维护 LRU Sorted Set 与旧 Set，改为新增 `SemanticCache.has_any_key()`（`zcard + scard`，O(1)）在进入 Embedding API 前判空，大幅削减每次检索的 Redis 开销。
+- **答案生成异常补 traceback**（`nodes.py` `answer_generation_node`）：顶层 `except` 打日志加 `exc_info=True`，记录完整堆栈。此前仅 `logger.error(str(e))`，偶发的 `KeyError('key')` 只在日志留下孤零零的 `'key'` 字串、完全无法定位根因；带栈后再次出现可直接 grep 定位。
+- 语义不变：判空逻辑等价（空则跳过 Embedding 计算）；异常改日志仅加栈、不改行为；`has_any_key()` 在 Redis 不可用时安全降级返回 False（视为空，与旧 SCAN 结果等价）。
+
+<footer>性能与健壮性小项 · 改动文件：`app/rag/hybrid_retriever.py`、`app/cache/semantic_cache.py`、`app/graph/nodes/nodes.py`</footer>
+
 ## v9.34 - 成熟度专项：检索并行化 + 高并发数据竞争修复 + 限流泄漏 + PG 降级（性能/健壮性）
 
 背景：对照 RAG 系统成熟度分析（回答准确率 / 响应速率 / 高并发 / 健壮性）落地的第一批 no-regret 修复。聚焦四块：降低检索链路耗时、消除共享可变单例被多请求并发改写的数据竞争、修复限流中间件 IP 表无界膨胀的内存泄漏、补齐 PostgreSQL 不可用时的降级（此前 Redis 有降级而 PG 无，不对称）。
