@@ -1,0 +1,7 @@
+{
+  "active_collection": "medical_kb_default",
+  "active_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db",
+  "previous_collection": "medical_kb_v20260826_215953",
+  "previous_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db\\medical_kb_v20260826_215953",
+  "switched_at": "2026-08-26T13:59:53.669691Z"
+}
