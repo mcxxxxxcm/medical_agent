@@ -52,6 +52,16 @@ from app.core.app_logging import get_logger
 logger = get_logger(__name__)
 
 
+def route_after_rewrite(state) -> str:
+    """改写后条件路由：主动澄清（refusal_type=clarify）→ 直接 END；其余 → 子问题拆解。
+
+    澄清短路复用现有 refusal 语义：query_rewrite_node 命中低置信度时
+    已写入 final_answer + refusal_type="clarify"，此处让流程提前终止，
+    避免误进入 question_decompose/knowledge_retrieval/answer_generation 二次生成。
+    """
+    return "clarify_end" if state.get("refusal_type") == "clarify" else "question_decompose"
+
+
 def build_graph() -> StateGraph:
     """构建工作流图
 
@@ -92,7 +102,13 @@ def build_graph() -> StateGraph:
 
     # symptom 路径：router -> symptom_analysis -> query_rewrite -> question_decompose -> knowledge_retrieval
     builder.add_edge("symptom_analysis", "query_rewrite")
-    builder.add_edge("query_rewrite", "question_decompose")
+    # 改写后条件路由：refusal_type=clarify（主动澄清）→ END；其余 → 子问题拆解
+    # symptom 与 knowledge 路径都经过 query_rewrite，此处统一拦截澄清
+    builder.add_conditional_edges(
+        "query_rewrite",
+        route_after_rewrite,
+        {"clarify_end": END, "question_decompose": "question_decompose"},
+    )
     builder.add_edge("question_decompose", "knowledge_retrieval")
 
     # knowledge 路径：router -> query_rewrite -> question_decompose -> knowledge_retrieval

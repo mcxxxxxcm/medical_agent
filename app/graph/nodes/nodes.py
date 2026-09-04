@@ -3762,6 +3762,46 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
             final_question = question
             rewritten_query = question
 
+    # ===== 步骤1.5：主动澄清（改写后低置信度 · 最保守） =====
+    # 仅在 追问(含指代/省略) + 改写补不出实体(结果与原文一致) + 历史/快照确无实体
+    # 三重条件同时满足时，拦截短路为澄清、不再硬检索（医疗场景宁可澄清也不误导）。
+    history_summary = _build_rewrite_context(messages) if messages else ""
+    if (
+        _anaphora_detected
+        and is_same_query(final_question, question)
+        and not _context_has_entity(history_summary, state)
+    ):
+        clarify_text = _build_clarify_answer(question)
+        # Bad Case 闭环：记录澄清触发，便于回归审查触发是否恰当
+        try:
+            memory = get_long_term_memory()
+            memory.append_bad_case(
+                case_type="clarify_triggered",
+                original_query=question,
+                rewritten_query=rewritten_query,
+                final_question=final_question,
+                history_summary=history_summary,
+                user_id=user_id,
+                thread_id=thread_id,
+                metadata={"anaphora_detected": _anaphora_detected},
+            )
+        except Exception as e:
+            logger.warning(f"Bad case 记录失败：{e}")
+        topic_update = _update_topic_trajectory(
+            state, _detect_topic(state, question, rewritten_query)
+        )
+        logger.info(f"改写后主动澄清：{question[:30]}")
+        return {
+            "final_answer": clarify_text,
+            "refusal_type": "clarify",
+            "messages": [HumanMessage(content=question), AIMessage(content=clarify_text)],
+            "rewritten_query": question,
+            "final_question": question,
+            "hyde_answer": None,
+            "sub_questions": None,
+            **topic_update,
+        }
+
     # ===== 步骤2：HyDE 假想答案生成 =====
     # v8.5 决策：基于 A/B 测试数据，HyDE 在当前架构下为负收益组件，默认关闭
     # 测试结果：10 条查询，Recall -13.3%，耗时 +1574ms，4 条负向仅 2 条正向
@@ -3804,6 +3844,8 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         # M1 修复：自纠正重试时强制清空旧子问题，让 question_decompose
         # 基于重写后的 final_question 重新拆解，避免用旧子问题检索丢弃新关键词
         "sub_questions": None,
+        # 显式话题轨迹：正常路径每轮更新（读旧栈、覆盖写回）
+        **_update_topic_trajectory(state, _detect_topic(state, question, rewritten_query)),
     }
 
 
@@ -4147,6 +4189,96 @@ def _record_bad_case_if_needed(
                 )
             except Exception as e:
                 logger.warning(f"Bad case 记录失败：{e}")
+
+
+# ===== 主动澄清（改写后低置信度 · 最保守触发） =====
+
+def _context_has_entity(history_summary: str, state: MedicalAssistantState) -> bool:
+    """判断改写上下文（历史/临床快照/症状/档案）中是否已存在领域实体。
+
+    澄清只在"确实无实体可补"时触发——若系统已能凭任何来源拼出实体，
+    继续硬检索比打断用户澄清更好。返回 True 表示有实体（不应澄清）。
+    """
+    if history_summary:
+        if any(kw in history_summary for kw in _DOMAIN_ENTITY_KEYWORDS):
+            return True
+    cp = state.get("clinical_checkpoint") or {}
+    if cp.get("symptom_timeline"):
+        return True
+    if cp.get("medication_history"):
+        return True
+    if state.get("symptoms"):
+        return True
+    profile = state.get("user_profile") or {}
+    if profile.get("allergies") or profile.get("confirmed_facts"):
+        return True
+    return False
+
+
+def _build_clarify_answer(question: str) -> str:
+    """构建主动澄清文案（与拒答风格一致，不编造事实、不透传 LLM 原文）"""
+    return (
+        f"抱歉，我暂时无法确定您问的“{question}”具体指向哪里，"
+        "当前信息还不足以定位到明确主题。\n"
+        "为了给您更准确的建议，麻烦补充一点信息，比如：\n"
+        "1. 具体是哪个症状/部位（如头痛、腹痛）或哪方面问题；\n"
+        "2. 相关的药物名称或症状持续时间；\n"
+        "3. 是否有明确的既往病史或特殊人群情况（如孕哺、过敏）。\n"
+        "\n⚠️ 若症状明显加重或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
+    )
+
+
+# ===== 显式话题轨迹（跨轮结构化状态） =====
+_TOPIC_TRAJECTORY_MAX = 8
+
+
+def _detect_topic(state: MedicalAssistantState, question: str, rewritten_query: str) -> str:
+    """识别本轮话题 id。
+
+    优先级：症状实体(from 症状解析/快照) > 药物实体 > 疾病实体 > 路由类型 > general。
+    symptom 路径必然先跑 symptom_analysis、symptoms 已填充，故走第一支；
+    其余路径用实体字典字符串匹配兜底。
+    """
+    symptoms = state.get("symptoms") or {}
+    cp = state.get("clinical_checkpoint") or {}
+    symptom_names = set(symptoms.keys())
+    symptom_names.difference_update([None, ""])
+    for name in (cp.get("symptom_timeline") or {}):
+        if name:
+            symptom_names.add(name)
+    if symptom_names:
+        return f"symptom:{sorted(symptom_names)[0]}"
+
+    text = f"{question} {rewritten_query or ''}"
+    for kw in _DRUG_KEYWORDS:
+        if kw and kw in text:
+            return f"med:{kw}"
+    for kw in _DOMAIN_ENTITY_KEYWORDS:
+        if kw and kw in question:
+            return f"disease:{kw}"
+
+    qtype = state.get("question_type")
+    if qtype and qtype != "knowledge":
+        return f"route:{qtype}"
+    return "general"
+
+
+def _update_topic_trajectory(state: MedicalAssistantState, topic_id: str) -> Dict[str, Any]:
+    """维护话题轨迹栈（每轮读旧栈、覆盖写回，与临床快照同生命周期）。
+
+    栈顶同话题 → turns+1；否则 push 新条目；clip 最近 _TOPIC_TRAJECTORY_MAX 条。
+    返回供 query_rewrite_node 一并写入 state 的 current_topic + topic_trajectory。
+    """
+    traj = state.get("topic_trajectory") or []
+    now = time.time()
+    if traj and traj[-1].get("topic_id") == topic_id:
+        last = dict(traj[-1])
+        last["turns"] = last.get("turns", 1) + 1
+        last["ts"] = now
+        traj = traj[:-1] + [last]
+    else:
+        traj = (traj + [{"topic_id": topic_id, "ts": now, "turns": 1}])[-_TOPIC_TRAJECTORY_MAX:]
+    return {"current_topic": topic_id, "topic_trajectory": traj}
 
 
 def _build_rewrite_context(messages: list, max_rounds: int = 2) -> str:

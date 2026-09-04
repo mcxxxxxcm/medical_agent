@@ -100,6 +100,11 @@ class MedicalAssistantState(TypedDict):
     # ===== 临床状态快照（结构化JSON）=====
     clinical_checkpoint: Optional[Dict[str, Any]]
 
+    # ===== 显式话题轨迹（对话级结构化状态，跨轮保留）=====
+    # 与临床快照同一生命周期模式：每轮由 query_rewrite_node 读旧栈、覆盖写回，而非追加纯文本
+    current_topic: Optional[str]                              # 本轮话题 id（如 "symptom:头痛"）
+    topic_trajectory: Optional[List[Dict[str, Any]]]          # 会话轨迹栈 [{topic_id, ts, turns}...]，最近 8 条
+
     # ===== v9.15: 三层拒答机制 =====
     retrieval_confidence: Optional[float]  # v9.15: 检索置信度（0~1.0）
     refusal_type: Optional[str]            # v9.15: 拒答类型（no_match/incomplete/conflict/out_of_scope/low_confidence/None）
@@ -175,6 +180,8 @@ def create_initial_state(question: str, user_id: Optional[str] = None, image_bas
         "sub_questions": None,
         "retrieval_attempts": 0,
         "clinical_checkpoint": None,
+        "current_topic": None,
+        "topic_trajectory": None,
         "retrieval_confidence": None,
         "refusal_type": None,
     }

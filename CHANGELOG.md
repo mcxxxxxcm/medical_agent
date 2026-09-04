@@ -1,5 +1,18 @@
 # 系统优化更新日志
 
+## v9.36 - RAG 多轮增量：改写后主动澄清 + 显式话题轨迹（多轮对话）
+
+背景：对照"RAG 多轮对话四层策略"分析，补齐两个真缺口——改写层缺"检索前拦截式澄清"，状态层缺"跨轮显式话题轨迹"。按**最保守**门槛落地，绝不骚扰已确立话题的正常对话。
+
+- **改写后主动澄清**（`nodes.py` `query_rewrite_node` + `graph.py`）：改写完成后，仅当「追问(含指代/省略) + 改写结果与原文一致(补不出实体) + 历史/临床快照/症状确无领域实体」三重条件**同时**满足时，拦截短路为澄清，返回 `refusal_type="clarify"` + 澄清文案 + `messages`，复用现有 refusal 短路语义。`graph.py` 将 `query_rewrite → question_decompose` 固定边改为 `route_after_rewrite` 条件路由，命中澄清直接 `END`，不误进 answer_generation 二次生成（symptom 与 knowledge 路径都经过 query_rewrite，统一覆盖）。澄清文案由新增 `_build_clarify_answer` 生成，不透传 LLM 原文、不编造事实。
+  - 触发不依赖大改 schema：`models.py` 的 `QueryRewriteOutput` 不变，判断基于改写结果 + 现有 `_has_anaphora_pattern`/`is_same_query`/`_build_rewrite_context`/`_DOMAIN_ENTITY_KEYWORDS`/`clinical_checkpoint`。
+  - Bad Case 闭环：澄清触发处新增 `case_type="clarify_triggered"` 记录，供回归审查触发是否恰当。
+- **显式话题轨迹**（`state.py` + `nodes.py`）：新增跨轮 state 字段 `current_topic` + `topic_trajectory`（轨迹栈 `[{topic_id, ts, turns}...]`，最近 8 条）。生命周期对齐 `clinical_checkpoint`——每轮由 `query_rewrite_node` 读旧栈、覆盖写回，而非追加纯文本。话题 id 由新增 `_detect_topic` 判定（优先级 症状实体 > 药物(helpers `_DRUG_KEYWORDS`) > 疾病(`_DOMAIN_ENTITY_KEYWORDS`) > 路由类型 > general）。该字段本轮作为对话级结构化基础设施落地，并为将来"会话内检索复用"打底。
+- **语义不变**：澄清为额外短路，非澄清查询流程与原先完全一致；话题轨迹为新增旁路字段，不修改检索/改写结果；general/direct 路径不经 query_rewrite，不触发澄清、不更新轨迹。
+- **回归测试**：`tests/test_nodes.py` 新增 `TestTopicTrajectory`（话题 id 判定、栈 turns/push/clip）与 `TestProactiveClarify`（追问澄清触发、首轮含实体不澄清、纯指代无历史不澄清、`_context_has_entity` 拦截、`route_after_rewrite` 路由），共 14 例全绿。
+
+<footer>RAG 多轮增量 · 改动文件：`app/graph/state.py`、`app/graph/nodes/nodes.py`、`app/graph/graph.py`、`tests/test_nodes.py`</footer>
+
 ## v9.35 - L2 语义缓存判空改为 O(1) + 答案生成异常补栈（性能/健壮性）
 
 - **L2 语义缓存判空 O(1) 化**（`hybrid_retriever.py` + `semantic_cache.py`）：此前每次检索请求都为了「判断 L2 是否为空」对 Redis 前缀做**全量 SCAN**（`while cursor: scan(count=100)` 多批往返，缓存键多时 O(n)）。写入侧本就维护 LRU Sorted Set 与旧 Set，改为新增 `SemanticCache.has_any_key()`（`zcard + scard`，O(1)）在进入 Embedding API 前判空，大幅削减每次检索的 Redis 开销。

@@ -12,7 +12,13 @@ from app.graph.nodes.nodes import (
     _extract_symptoms_by_rules,
     _detect_route_from_context,
     is_same_query,
+    query_rewrite_node,
+    _detect_topic,
+    _update_topic_trajectory,
+    _context_has_entity,
+    _build_clarify_answer,
 )
+from app.graph.graph import route_after_rewrite
 
 
 class TestDetectRuleBasedRoute:
@@ -362,6 +368,116 @@ class TestOffDocMedicationStrip:
         assert "布洛芬" in out
         assert "奥司他韦" not in out
         assert "每次75mg" not in out
+
+
+class TestTopicTrajectory:
+    """显式话题轨迹（v9.36）"""
+
+    def test_detect_topic_symptom_precedence(self):
+        # 症状优先于字符串匹配（symptoms 已填充）
+        assert _detect_topic({"symptoms": {"头痛": {}}, "clinical_checkpoint": None,
+                              "question_type": "symptom"}, "头痛怎么办", "") == "symptom:头痛"
+
+    def test_detect_topic_med_fallback(self):
+        assert _detect_topic({"symptoms": None, "clinical_checkpoint": None, "question_type": None},
+                             "布洛芬怎么吃", "布洛芬") == "med:布洛芬"
+
+    def test_detect_topic_disease_fallback(self):
+        assert _detect_topic({"symptoms": None, "clinical_checkpoint": None, "question_type": None},
+                             "高血压怎么办", "") == "disease:高血压"
+
+    def test_detect_topic_general(self):
+        assert _detect_topic({"symptoms": None, "clinical_checkpoint": None, "question_type": None},
+                             "你好", "") == "general"
+
+    def test_update_same_topic_increments_turns(self):
+        traj = [{"topic_id": "disease:头痛", "ts": 1.0, "turns": 1}]
+        out = _update_topic_trajectory({"topic_trajectory": traj}, "disease:头痛")
+        assert len(out["topic_trajectory"]) == 1
+        assert out["topic_trajectory"][0]["turns"] == 2
+        assert out["current_topic"] == "disease:头痛"
+
+    def test_update_topic_switch_pushes(self):
+        traj = [{"topic_id": "disease:头痛", "ts": 1.0, "turns": 1}]
+        out = _update_topic_trajectory({"topic_trajectory": traj}, "med:布洛芬")
+        assert len(out["topic_trajectory"]) == 2
+        assert out["topic_trajectory"][-1]["topic_id"] == "med:布洛芬"
+        assert out["topic_trajectory"][-1]["turns"] == 1
+
+    def test_update_trajectory_clips_to_max(self):
+        traj = [{"topic_id": f"t{i}", "ts": i, "turns": 1} for i in range(8)]
+        out = _update_topic_trajectory({"topic_trajectory": traj}, "new_topic")
+        assert len(out["topic_trajectory"]) == 8
+        assert out["topic_trajectory"][0]["topic_id"] == "t1"   # t0 被挤出
+
+    def test_update_from_none(self):
+        out = _update_topic_trajectory({"topic_trajectory": None}, "general")
+        assert len(out["topic_trajectory"]) == 1
+        assert out["topic_trajectory"][0]["topic_id"] == "general"
+
+
+class TestProactiveClarify:
+    """改写后主动澄清（v9.36，最保守触发）"""
+
+    def test_clarify_trigger_on_followup(self):
+        # 追问场景：上一轮无实体 + 本轮"还有吗"指代不明 + 改写补不出实体 → 澄清
+        # 澄清只针对追问（_anaphora_detected 仅在有历史时置位），符合最保守门槛
+        from unittest.mock import MagicMock
+        state = {"question": "还有吗",
+                 "messages": [HumanMessage(content="你好"), AIMessage(content="您好，请问有什么可以帮您？")],
+                 "symptoms": None, "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        result_mock = MagicMock()
+        result_mock.final_question = "还有吗"    # 改写结果与原文一致 → 补不出实体
+        result_mock.search_keywords = "还有吗"
+        # _record_bad_case_if_needed 走局部 import，澄清分支走模块级引用，两处都需 mock
+        with patch("app.memory.get_long_term_memory"), \
+             patch("app.graph.nodes.structured_output.invoke_structured", return_value=result_mock), \
+             patch("app.graph.nodes.nodes.get_local_llm_json"), \
+             patch("app.graph.nodes.nodes.get_long_term_memory"):
+            result = query_rewrite_node(state)
+        assert result["refusal_type"] == "clarify"
+        assert "还有吗" in result["final_answer"]
+        # 澄清走短路返回（带 messages），而非进入后续检索
+        assert len(result["messages"]) == 2
+        assert result["messages"][0].content == "还有吗"
+
+    def test_no_clarify_first_round_pure_anaphora(self):
+        # 无历史时即使含指代也不澄清（_anaphora_detected 仅在有历史时置位）
+        # 首轮纯指代查询交由正常检索/拒答，澄清不越界
+        state = {"question": "还有吗", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        result = query_rewrite_node(state)
+        assert "refusal_type" not in result
+
+    def test_no_clarify_first_round_with_entity(self):
+        # 首轮含实体自包含查询 → 不澄清，走正常路径并更新话题轨迹
+        state = {"question": "我头痛怎么办", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        result = query_rewrite_node(state)
+        assert "refusal_type" not in result
+        assert result.get("final_answer") is None
+        assert result["current_topic"] == "disease:头痛"   # 轨迹已接线
+        assert result["topic_trajectory"][-1]["topic_id"] == "disease:头痛"
+
+    def test_context_has_entity_blocks_clarify(self):
+        # 历史里已出现实体 → 不应澄清（负向防回归）
+        assert _context_has_entity("用户：我头痛", {"clinical_checkpoint": None,
+                                                   "symptoms": None, "user_profile": None}) is True
+        assert _context_has_entity("", {"clinical_checkpoint": None,
+                                         "symptoms": None, "user_profile": None}) is False
+
+    def test_build_clarify_answer_asks_for_detail(self):
+        ans = _build_clarify_answer("还有别的药吗")
+        assert "无法确定" in ans
+        assert "补充" in ans
+
+    def test_route_after_rewrite_clarify_ends(self):
+        assert route_after_rewrite({"refusal_type": "clarify"}) == "clarify_end"
+        assert route_after_rewrite({"refusal_type": None}) == "question_decompose"
+        assert route_after_rewrite({}) == "question_decompose"
 
 
 class TestSegmentedEmitter:
