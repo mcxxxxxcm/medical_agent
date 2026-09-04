@@ -113,7 +113,8 @@
       "Bash(curl -s -m 3 http://127.0.0.1:8000/admin)",
       "Bash(conda run -n my_medical_env python -c ' *)",
       "Bash(cmd.exe /c \"where conda\")",
-      "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")"
+      "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")",
+      "Bash(grep -c \"\\\\.pyc$\")"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -4,3 +4,13 @@ bge-reranker-onnx/
 QA 
 日志1.txt
 母崇徐简历 (2).pdf
+
+# ---- 运行时产物 / 多余内容 ----
+# 日志
+errorLog.txt
+logs/
+# 测试缓存
+.pytest_cache/
+# Python 字节码缓存
+__pycache__/
+*.pyc
