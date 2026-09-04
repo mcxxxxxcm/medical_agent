@@ -103,7 +103,11 @@ class QueryRewriteOutput(BaseModel):
     @field_validator("search_keywords", mode="before")
     @classmethod
     def strip_search_prefix(cls, v):
-        """移除 LLM 可能残留的 SEARCH: 前缀"""
+        """容错：qwen 可能输出数组/字典或残留 SEARCH: 前缀，归一为空格分隔字符串"""
+        if isinstance(v, list):
+            return " ".join(str(x) for x in v if str(x))
+        if isinstance(v, dict):
+            return " ".join(str(x) for x in v.values() if str(x))
         if isinstance(v, str):
             v = v.strip()
             if v.upper().startswith("SEARCH:"):

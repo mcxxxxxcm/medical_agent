@@ -114,7 +114,13 @@
       "Bash(conda run -n my_medical_env python -c ' *)",
       "Bash(cmd.exe /c \"where conda\")",
       "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")",
-      "Bash(grep -c \"\\\\.pyc$\")"
+      "Bash(grep -c \"\\\\.pyc$\")",
+      "Bash(ollama ps *)",
+      "Bash(D:/Agent/software/envs/my_medical_env/python.exe -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 \"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -k \"rewrite or QueryRewrite\")",
+      "Bash(ollama list *)",
+      "Bash(PYTHONIOENCODING=utf-8 \"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q)",
+      "Bash(PYTHONIOENCODING=utf-8 \"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py::TestOffDocMedicationStrip::test_off_doc_medication_line_dropped -q)"
     ]
   },
   "enableAllProjectMcpServers": true,

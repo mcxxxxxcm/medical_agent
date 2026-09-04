@@ -3746,6 +3746,12 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
             if rewritten_query != question:
                 rewritten_query = _rewrite_guard_check(question, rewritten_query)
 
+            # v9.40 实体锚定：弱模型改写常漏掉历史实体（如"二甲双胍"），
+            # 追问类问题强制并入，保证检索召回不偏
+            final_question, rewritten_query = _inject_context_entities(
+                question, rewritten_query, final_question, messages
+            )
+
             # ===== Bad Case 自动采集 =====
             _record_bad_case_if_needed(
                 original=question,
@@ -3759,8 +3765,15 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
 
         except Exception as e:
             logger.error(f"查询重写失败：{str(e)}")
-            final_question = question
-            rewritten_query = question
+            # v9.40 兜底：改写失败也不裸用残缺问题，从历史补实体（如"二甲双胍"）进检索词
+            final_question, rewritten_query = _inject_context_entities(
+                question, question, question, messages
+            )
+            if final_question != question or rewritten_query != question:
+                logger.info(
+                    f"改写失败规则兜底生效：{question[:30]} -> "
+                    f"FINAL={final_question[:40]} | SEARCH={rewritten_query[:40]}"
+                )
 
     # ===== 步骤1.5：主动澄清（改写后低置信度 · 最保守） =====
     # 仅在 追问(含指代/省略) + 改写补不出实体(结果与原文一致) + 历史/快照确无实体
@@ -3847,6 +3860,55 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         # 显式话题轨迹：正常路径每轮更新（读旧栈、覆盖写回）
         **_update_topic_trajectory(state, _detect_topic(state, question, rewritten_query)),
     }
+
+
+def _inject_context_entities(
+    question: str,
+    rewritten_query: str,
+    final_question: str,
+    messages: list,
+) -> List[str]:
+    """实体锚定：追问类问题强制保证检索词/完整问题含历史实体。
+
+    多轮对话里"这个药/它/需要注意啥"等追问，弱改写模型（qwen2.5:1.5b/3b）
+    经常把已确立实体（如"二甲双胍"）漏进检索词，导致检索召回无关文档产生幻觉。
+    此处复用 AC 自动机从历史提取药物/症状实体，缺失则并入检索词 rewritten_query；
+    若改写结果与原问题一致（模型判定无需改写，实为没识别出），也在 final_question
+    补全实体。只并入不覆盖，仅对指代/追问类问题触发，其余保持原样。
+
+    Args:
+        question: 原始追问
+        rewritten_query: LLM 或规则给出的检索词
+        final_question: LLM 或规则给出的完整问题
+        messages: 对话历史
+
+    Returns:
+        [final_question, rewritten_query]（可能已并入历史实体）
+    """
+    from app.core.keyword_matcher import get_drug_matcher, get_symptom_matcher
+
+    if not messages or not _has_anaphora_pattern(question):
+        return [final_question, rewritten_query]
+
+    history_entities = set()
+    for msg in messages[-6:]:
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        for matcher in (get_drug_matcher(), get_symptom_matcher()):
+            for ent in matcher.get_matched_originals(content, use_boundary=True):
+                if ent:
+                    history_entities.add(ent)
+
+    search_missing = [e for e in sorted(history_entities) if e not in rewritten_query]
+    if search_missing:
+        rewritten_query = f"{rewritten_query} {' '.join(search_missing)}".strip()
+
+    # 改写被判"与原问题一致"时（弱模型常没识别出该补全），补全 final_question
+    if is_same_query(final_question, question):
+        final_missing = [e for e in sorted(history_entities) if e not in final_question]
+        if final_missing:
+            final_question = f"{final_question}（历史提到{'、'.join(final_missing[:3])}）"
+
+    return [final_question, rewritten_query]
 
 
 def _rewrite_guard_check(original: str, rewritten: str) -> str:

@@ -105,19 +105,21 @@ ROUTER_PROMPT = ChatPromptTemplate.from_messages([
 
 QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages([
     ("system", "你是一个查询改写助手，负责将追问补全为自包含问题。"),
-    ("human", """将追问补全为自包含问题，从历史中提取症状/药物补入。输出严格两行：
+    ("human", """将追问补全为自包含问题，从历史中提取症状/药物补入。必须输出合法的 JSON 对象，只输出 JSON：
 
 历史：
 {history_summary}
 
 追问：{question}
 
-FINAL: <含上下文补全的完整问题>
-SEARCH: <检索关键词 空格分隔>
+JSON 结构：
+- "final_question"：补全上下文的完整自包含问题（字符串）
+- "search_keywords"：BM25 检索关键词，空格分隔（字符串）
 
 示例：追问"还有其他什么可以吃吗？"（历史提到头痛用布洛芬）
-→ FINAL: 缓解头痛除了布洛芬还有什么药？
-SEARCH: 头痛 缓解 药物"""),
+→ {{"final_question": "缓解头痛除了布洛芬还有什么药？", "search_keywords": "头痛 缓解 布洛芬 药物"}}
+
+只输出 JSON："""),
 ])
 
 # ===========================================================================

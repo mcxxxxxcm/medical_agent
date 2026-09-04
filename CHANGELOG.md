@@ -1,5 +1,16 @@
 # 系统优化更新日志
 
+## v9.40 - 修复本地模型查询改写全失败导致的多轮对话幻觉（多个文件）
+
+背景：多轮对话第二轮追问（如"服用这个药需要注意啥？"）总是检索出冠心病/糖尿病等无关文档并生成幻觉答案。`logs/error.log` 每轮都刷 `查询重写失败：QueryRewriteOutput 结构化输出失败（2次尝试 × 3种策略），最后错误：None`。根因是**设计矛盾**：`QUERY_REWRITE_PROMPT` 要求模型输出 `FINAL:`/`SEARCH:` 两行纯文本，但 `query_rewrite_node` 却用 `get_local_llm_json()` —— 该函数强制 `response_format={"type":"json_object"}`。本地 qwen2.5:1.5b 被夹在矛盾指令中间，输出的 JSON 键名永远是 `FINAL`/`SEARCH`，与 `QueryRewriteOutput` 期望的 `final_question`/`search_keywords` 对不上，三层降级策略全部校验失败（最后错误为 None 说明是解析/校验失败而非请求失败）。except 分支随后把 `rewritten_query=final_question=原残缺问题` 拿去检索，缺实体（无"二甲双胍"）召回无关文档，幻觉由此产生。
+
+- **对齐 Prompt 与 JSON Schema**：`QUERY_REWRITE_PROMPT`（app/graph/nodes/prompts.py）改为要求输出合法 JSON 对象，键名与 Pydantic 模型完全一致（`final_question`/`search_keywords`），并保留 Ollama json_object 识别所需的 "JSON" 字样；示例中的 JSON 字面量用 `{{}}` 转义避免 `str.format` 展开报错。模型从此不再收到矛盾的输出格式指令。
+- **search_keywords 输入容错**：`QueryRewriteOutput`（app/graph/nodes/models.py）的 `strip_search_prefix` 校验器扩展为兼容 list/dict 输入——qwen 若把关键词输出成数组或字典，统一归一为空格分隔字符串，避免 `model_validate` 因类型不符而失败。
+- **改写失败时的上下文规则兜底**：`query_rewrite_node` 的 except 分支（app/graph/nodes/nodes.py）不再裸用残缺问题，改为 `_context_fallback_rewrite`——复用 AC 自动机（`get_drug_matcher`/`get_symptom_matcher`）从最近 6 条历史提取药物/症状实体（如"二甲双胍"），拼进 `final_question`（"…（历史提到二甲双胍）"）与 `rewritten_query`（"… 二甲双胍"），保证至少能召回历史实体对应的文档，杜绝检索无关内容。仅当问题含指代词/省略结构且历史能补出实体时触发，否则保持原题（语义不变）。
+- 语义不变：不改检索环节其他逻辑；改写走通时完全走原路径，兜底仅在最坏情况下介入。
+
+<footer>查询改写修复 · 改动文件：`app/graph/nodes/prompts.py`、`app/graph/nodes/models.py`、`app/graph/nodes/nodes.py`</footer>
+
 ## v9.39 - 修复元数据交叉校验总体置信度统计异常（app/rag/metadata_extractor.py）
 
 背景：入库时日志反复刷 `文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'`（每篇文档一条）。虽然被外层 `loader.py` 的 try/except 降级接住不影响入库，但 `overall_confidence` 永远算不出来，属于跨战评审时无法给出整体可信度的隐性 bug。
