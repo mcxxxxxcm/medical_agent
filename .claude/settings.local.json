@@ -98,7 +98,22 @@
       "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -k ProactiveClarify -p no:cacheprovider)",
       "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -k TopicTrajectory -p no:cacheprovider)",
       "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -k \"TestDetectRuleBasedRoute or TestDetectRouteFromContext or TestIsSameQuery or TestSymptomWhitelistSanitizer or TestOffDocMedicationStrip\" -p no:cacheprovider)",
-      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -p no:cacheprovider)"
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -q -p no:cacheprovider)",
+      "Bash(curl -s -o markdown-it.min.js --max-time 15 https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js)",
+      "Bash(curl -s -o lib/markdown-it.min.js --max-time 20 https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js)",
+      "Bash(curl -s -o lib/purify.min.js --max-time 20 https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js)",
+      "Bash(node -e ' *)",
+      "Bash(node --check _check.js)",
+      "Bash(rm -f _check.js)",
+      "Bash(node _t.js)",
+      "Bash(rm -f _t.js)",
+      "Bash(node --check _c.js)",
+      "Bash(rm -f _c.js)",
+      "Bash(node -e '')",
+      "Bash(curl -s -m 3 http://127.0.0.1:8000/admin)",
+      "Bash(conda run -n my_medical_env python -c ' *)",
+      "Bash(cmd.exe /c \"where conda\")",
+      "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")"
     ]
   },
   "enableAllProjectMcpServers": true,

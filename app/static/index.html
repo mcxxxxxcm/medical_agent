@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>医疗助手</title>
+    <script src="/static/lib/markdown-it.min.js"></script>
+    <script src="/static/lib/purify.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -91,6 +93,97 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
+        /* ===== AI 回复结构化排版 ===== */
+        .message.assistant p { margin: 0 0 10px; line-height: 1.7; }
+        .message.assistant p:last-child { margin-bottom: 0; }
+        .message.assistant ol,
+        .message.assistant ul { line-height: 1.7; }
+        .message.assistant .md-h1,
+        .message.assistant .md-h2,
+        .message.assistant .md-h3,
+        .message.assistant .md-h4 {
+            font-weight: 600;
+            color: #2b2b2b;
+            margin: 14px 0 8px;
+            line-height: 1.4;
+        }
+        .message.assistant .md-h1:first-child,
+        .message.assistant .md-h2:first-child,
+        .message.assistant .md-h3:first-child,
+        .message.assistant .md-h4:first-child { margin-top: 0; }
+        .message.assistant .md-h1 { font-size: 18px; padding-bottom: 6px; border-bottom: 2px solid #eef0f6; }
+        .message.assistant .md-h2 { font-size: 16px; padding-left: 8px; border-left: 3px solid #764ba2; }
+        .message.assistant .md-h3 { font-size: 15px; color: #4b4b4b; }
+        .message.assistant .md-h4 { font-size: 14px; color: #555; }
+        .message.assistant ol,
+        .message.assistant ul {
+            margin: 6px 0 10px;
+            padding-left: 22px;
+        }
+        .message.assistant ol { list-style: decimal; }
+        .message.assistant ul { list-style: disc; }
+        .message.assistant li { margin: 3px 0; }
+        .message.assistant li::marker { color: #764ba2; font-weight: 600; }
+        .message.assistant strong { color: #333; font-weight: 600; }
+        .message.assistant em { color: #555; }
+        .message.assistant code {
+            background: #f4f5f7;
+            color: #c7254e;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+            font-size: 12.5px;
+        }
+        .message.assistant pre {
+            background: #2d2d33;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 8px 0;
+            overflow-x: auto;
+        }
+        .message.assistant pre code {
+            background: none;
+            color: #e6e6e6;
+            padding: 0;
+        }
+        .message.assistant .md-alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin: 12px 0;
+            padding: 10px 14px;
+            border: 1px solid #ffe7a3;
+            border-left: 4px solid #faad14;
+            background: linear-gradient(90deg, #fffbe6, #fffdf5);
+            color: #7a5b00;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .message.assistant .md-alert:first-child { margin-top: 0; }
+        .message.assistant blockquote {
+            margin: 8px 0;
+            padding: 8px 12px;
+            border-left: 3px solid #d0d5e0;
+            color: #666;
+            background: #fafbfc;
+            border-radius: 4px;
+        }
+        .message.assistant a { color: #4285f4; text-decoration: none; }
+        .message.assistant a:hover { text-decoration: underline; }
+        .message.assistant table {
+            border-collapse: collapse;
+            margin: 8px 0;
+            width: 100%;
+            font-size: 13px;
+        }
+        .message.assistant th, .message.assistant td {
+            border: 1px solid #e0e0e0;
+            padding: 6px 10px;
+            text-align: left;
+        }
+        .message.assistant th { background: #f8f9fa; font-weight: 600; }
+
         .message.assistant .warning {
             margin-top: 12px;
             padding: 8px 12px;
@@ -101,23 +194,50 @@
         }
 
         .message.assistant .sources {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
             margin-top: 12px;
-            padding: 8px 12px;
-            background: #f8f9fa;
-            border-left: 3px solid #4285f4;
-            border-radius: 6px;
+            padding-top: 10px;
+            border-top: 1px dashed #e0e0e0;
             font-size: 12px;
-            color: #666;
         }
-
+        .message.assistant .sources-label {
+            color: #999;
+            margin-right: 4px;
+            white-space: nowrap;
+        }
         .source-item {
-            display: inline-block;
-            margin: 2px 6px 2px 0;
-            padding: 1px 6px;
-            background: #e8f0fe;
-            border-radius: 3px;
-            color: #4285f4;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 12px 3px 6px;
+            background: #f0f3ff;
+            border: 1px solid #cbd5ff;
+            border-radius: 999px;
+            color: #4338ca;
+            font-size: 12px;
+            transition: all 0.15s;
         }
+        .source-item:hover {
+            background: #4f46e5;
+            border-color: #4f46e5;
+            color: #fff;
+        }
+        .source-item .src-index {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            background: #4f46e5;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .source-item:hover .src-index { background: #fff; color: #4f46e5; }
 
         .input-container {
             background: white;
@@ -676,12 +796,74 @@
         scrollToBottom();
     }
 
-    // 格式化答案
+    // ===== Markdown 渲染（markdown-it + DOMPurify） =====
+    let md = null;
+    try {
+        md = markdownit({
+            html: false,      // 不渲染原始 HTML，杜绝注入
+            breaks: true,     // 单个换行 → <br>，适配聊天流式文本
+            linkify: true,
+            typographer: false
+        });
+    } catch (e) { md = null; }
+
+    // markdown 前处理：修复 AI 抹平的格式（粘连列表项 / 内联免责声明）
+    function normalizeMarkdown(raw) {
+        if (!raw) return raw;
+        let s = raw;
+        // 1) 列表粘连修复：句末标点后紧跟 "- "/"1. " 而无换行时补换行，
+        //    使 "…新陈代谢。- 饮食：…" 变成 段落 + 列表项（[^\S\n]* 不跨行，避免误伤正常换行列表）
+        s = s.replace(/([。；!?！？:：][^\S\n]*)(-\s+|[0-9]+[.、]\s+)/g, '$1\n\n$2');
+        // 2) ⚠️ 免责/警示：先剥离包裹 ⚠️ 的 ** 粗体标记（避免换行后正文残留孤立 **），
+        //    若内联在句子后补换行使其独立成段，便于提取为 Alert 框
+        s = s.replace(/\*\*\s*(⚠️)/g, '$1');
+        s = s.replace(/(⚠️[^*\n]*)\*\*(?=\s*$|\n)/g, '$1');
+        s = s.replace(/([^\n][^\S\n]*)(⚠️)/g, '$1\n\n$2');
+        // 3) 列表行后若紧跟非列表正文，补空行分隔，避免 markdown 惰性续行把后续段落并进列表项
+        const isListLine = /^\s*(?:[-*•]|[0-9]+[.、])\s+/;
+        const lines = s.split('\n');
+        const out = [];
+        for (let i = 0; i < lines.length; i++) {
+            out.push(lines[i]);
+            const nxt = lines[i + 1];
+            if (nxt === undefined) continue;
+            if (isListLine.test(lines[i]) && nxt.trim() !== '' && !isListLine.test(nxt) && !/^\s*(#|>)/.test(nxt)) {
+                out.push('');
+            }
+        }
+        return out.join('\n');
+    }
+
+    // 行内文本转义，用于直接拼入 alert 块（免责声明为固定文案，不透传 HTML）
+    function escText(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // 格式化答案：先在原文阶段切走独立的 ⚠️ 免责/警示块，markdown-it 只渲染正文，再回填 alert。
+    // 在渲染前处理可规避"⚠️ 被 ** 加粗包裹"导致渲染后 HTML 正则失配的问题。
     function formatAnswer(text) {
-        return text
-            .replace(/\n/g, '<br>')
-            .replace(/### (.*)/g, '<strong>$1</strong>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        if (!text) return '';
+        const normalized = normalizeMarkdown(text);
+        if (!md) return normalized.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+        const alerts = [];
+        const body = normalized.split('\n').map((ln) => {
+            const t = ln.trim();
+            if (/^⚠️/.test(t)) {
+                const i = alerts.length;
+                alerts.push('<div class="md-alert">' + escText(t.replace(/^⚠️\s*/, '').replace(/^\*\*\s*|\s*\*\*$/g, '')) + '</div>');
+                return '' + i + '';   // 私有区占位符，标记 alert 位置
+            }
+            return ln;
+        }).join('\n');
+
+        let html = md.render(body);
+        // 剥掉 markdown 给占位符包上的 <p> 标签，再回填 alert 块
+        html = html
+            .replace(/<p>(\d+)<\/p>/g, '$1')
+            .replace(/(\d+)/g, (m, i) => alerts[+i]);
+        if (window.DOMPurify) html = DOMPurify.sanitize(html);
+        return html;
     }
 
     // 渲染文档来源（按来源文档名去重，父子索引/兄弟章节扩展会产生多个同源条目）
@@ -696,9 +878,9 @@
         });
         const items = unique.map((s, i) => {
             const name = s.source || s.file_path || '未知来源';
-            return `<span class="source-item">[${i + 1}] ${name}</span>`;
-        }).join(' ');
-        return `📚 参考来源：${items}`;
+            return `<span class="source-item"><span class="src-index">${i + 1}</span>${name}</span>`;
+        }).join('');
+        return `<div class="sources"><span class="sources-label">📚 参考来源</span><span class="sources-pills">${items}</span></div>`;
     }
 
     // 滚动到底部

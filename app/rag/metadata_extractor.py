@@ -490,7 +490,7 @@ def cross_validate_metadata(
 
     # 总体置信度
     high_count = sum(1 for k, v in result.items() if k.endswith("_confidence") and v == "high")
-    total_fields = sum(1 for k in result.items() if k.endswith("_confidence"))
+    total_fields = sum(1 for k in result if k.endswith("_confidence"))
     if total_fields > 0 and high_count == total_fields:
         result["overall_confidence"] = "high"
     elif total_fields > 0 and high_count >= total_fields * 0.6:

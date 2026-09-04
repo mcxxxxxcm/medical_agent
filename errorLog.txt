@@ -1,196 +1,433 @@
-发烧了怎么办？
-- 发烧处理：
-- 使用温水擦浴（水温32-34℃）进行物理降温。
-- 减少衣物，以帮助身体散热。
-- 多饮温水，保持水分平衡。
-- 禁止使用酒精擦浴、冰水降温或捂汗。
-- 如有需要，可考虑使用（每次75mg，每日2次，连服5天）来缓解流感症状，但需注意该药物适用于流感症状出现时间在48小时内的情况。
-- 文档未提供、鼻用糖皮质激素、抗组胺药或鼻用抗组胺药的具体使用建议，如需使用这些药物，请遵循医生指导。
-- 注意观察症状变化，如症状加重或出现新的症状，如头痛进行性加重、伴发热、颈项强直、伴意识障碍、抽搐、伴局灶性神经功能缺损等，应立即就医。
-- ⚠️ 以上建议仅供参考，如有疑问请及时就医。
-📚 参考来源：[1] 儿童常见疾病护理指南.txt [2] 发热诊断与家庭护理指南.txt
-
-
-
 D:\Agent\software\envs\my_medical_env\python.exe D:\Agent\medical_assistant_agent\app\api\routes.py 
 D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   import pkg_resources
 INFO:     Will watch for changes in these directories: ['D:\\Agent\\medical_assistant_agent\\app\\api']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [1652] using WatchFiles
+INFO:     Started reloader process [5216] using WatchFiles
 D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   import pkg_resources
-INFO:     Started server process [5924]
+INFO:     Started server process [33744]
 INFO:     Waiting for application startup.
-2026-08-23 02:32:29 - app.api.routes - INFO - 应用启动中...
-2026-08-23 02:32:29 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
+2026-09-04 22:38:29 - app.api.routes - INFO - 应用启动中...
+2026-09-04 22:38:29 - app.memory.checkpointer - INFO - 初始化PostgreSQL检查点保存器
+2026-09-04 22:38:29 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
+2026-09-04 22:38:29 - app.api.routes - INFO - 检查点保存器初始化完成
+2026-09-04 22:38:29 - app.api.routes - INFO - 预加载 jieba 分词器...
 Building prefix dict from the default dictionary ...
 Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
-2026-08-23 02:32:29 - app.memory.checkpointer - INFO - PostgreSQL检查点保存器初始化完成
-2026-08-23 02:32:29 - app.api.routes - INFO - 检查点保存器初始化完成
-2026-08-23 02:32:29 - app.api.routes - INFO - 预加载 jieba 分词器...
-Loading model cost 0.496 seconds.
+2026-09-04 22:38:30 - app.api.routes - INFO - jieba 分词器预加载完成
+2026-09-04 22:38:30 - app.api.routes - INFO - 预加载 Reranker 模型...
+Loading model cost 0.491 seconds.
 Prefix dict has been built successfully.
-2026-08-23 02:32:30 - app.api.routes - INFO - jieba 分词器预加载完成
-2026-08-23 02:32:30 - app.api.routes - INFO - 预加载 Reranker 模型...
-2026-08-23 02:32:32 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
-2026-08-23 02:32:34 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
-2026-08-23 02:32:34 - app.api.routes - INFO - Reranker 模型预加载完成
-2026-08-23 02:32:34 - app.api.routes - INFO - 预热 Reranker 推理...
-2026-08-23 02:32:34 - app.rag.reranker - INFO - Reranker 输入：docs=1, valid_docs=1, top_k=1, max_doc_chars=200
+2026-09-04 22:38:32 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
 The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
-2026-08-23 02:32:34 - app.rag.reranker - INFO - 重排序完成：1 -> 1 （最高分：0.8766）
-2026-08-23 02:32:34 - app.rag.reranker - INFO - Reranker 预热完成
-2026-08-23 02:32:34 - app.api.routes - INFO - Reranker 预热完成
-2026-08-23 02:32:34 - app.api.routes - INFO - 预热混合检索器...
+2026-09-04 22:38:34 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+2026-09-04 22:38:34 - app.api.routes - INFO - Reranker 模型预加载完成
+2026-09-04 22:38:34 - app.api.routes - INFO - 预热 Reranker 推理...
+2026-09-04 22:38:34 - app.rag.reranker - INFO - Reranker 输入：docs=1, valid_docs=1, top_k=1, max_doc_chars=200
+2026-09-04 22:38:34 - app.rag.reranker - INFO - 重排序完成：1 -> 1 （最高分：0.8766）
+2026-09-04 22:38:34 - app.rag.reranker - INFO - Reranker 预热完成
+2026-09-04 22:38:34 - app.api.routes - INFO - Reranker 预热完成
+2026-09-04 22:38:34 - app.api.routes - INFO - 预热混合检索器...
 向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db
 从D:\Agent\medical_assistant_agent\data\chroma_db加载现有向量库。
-2026-08-23 02:32:34 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
-2026-08-23 02:32:34 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：386
-2026-08-23 02:32:35 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
-2026-08-23 02:32:35 - app.api.routes - INFO - 混合检索器预热完成
-2026-08-23 02:32:35 - app.api.routes - INFO - 预热缓存连接...
-2026-08-23 02:32:35 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
-2026-08-23 02:32:35 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
-2026-08-23 02:32:35 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.92
-2026-08-23 02:32:35 - app.api.routes - INFO - 语义缓存预热成功
-2026-08-23 02:32:35 - app.api.routes - INFO - 缓存预热完成
-2026-08-23 02:32:35 - app.api.routes - INFO - 预热本地模型...
-2026-08-23 02:32:39 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-23 02:32:39 - app.api.routes - INFO - 本地模型预热完成
-2026-08-23 02:32:39 - app.memory.fallback_buffer - INFO - L1 本地缓冲后台 flush 已启动（间隔 300s）
+2026-09-04 22:38:35 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-09-04 22:38:35 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：386
+2026-09-04 22:38:35 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-09-04 22:38:35 - app.api.routes - INFO - 混合检索器预热完成
+2026-09-04 22:38:35 - app.api.routes - INFO - 预热缓存连接...
+2026-09-04 22:38:35 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-09-04 22:38:35 - app.api.routes - INFO - Redis缓存预热成功：redis://localhost:6379/0
+2026-09-04 22:38:35 - app.cache.semantic_cache - INFO - 语义缓存初始化成功，相似度阈值：0.92
+2026-09-04 22:38:35 - app.api.routes - INFO - 语义缓存预热成功
+2026-09-04 22:38:35 - app.api.routes - INFO - 缓存预热完成
+2026-09-04 22:38:35 - app.api.routes - INFO - 预热本地模型...
+2026-09-04 22:38:39 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:39 - app.api.routes - INFO - 本地模型预热完成
+2026-09-04 22:38:39 - app.memory.fallback_buffer - INFO - L1 本地缓冲后台 flush 已启动（间隔 300s）
 INFO:     Application startup complete.
-2026-08-23 02:32:53 - app.rag.vector_store - INFO - 知识库版本指纹：b0203cab（386 篇文档）
-2026-08-23 02:32:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
-2026-08-23 02:32:53 - app.api.routes - INFO - 请求完成：request_id=aff194a4-545b-47f5-912e-696fde216e75, path=/api/admin/kb/status, status=200, elapsed_ms=549.03
-INFO:     127.0.0.1:54427 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
-2026-08-23 02:32:53 - app.api.routes - INFO - 收到流式聊天请求：request_id=9ae42013-ef3f-40e4-944c-4534f360fe27, thread_id=thread_test_user, user_id=test_user
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
-2026-08-23 02:32:53 - app.memory.long_term_memory - INFO - 长期记忆存储器表结构检查/创建完成
-2026-08-23 02:32:53 - app.memory.long_term_memory - INFO - 长期记忆管理器已初始化
-2026-08-23 02:32:53 - app.memory.long_term_memory - INFO - 长期记忆管理器单例已创建
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 已加载用户档案：user_id=test_user
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 用户档案信息：
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 从L1加载症状首发时间：['流鼻血', '感冒']
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - L1→L2 症状首发时间已合并：['流鼻血', '感冒']
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：68.77ms
-2026-08-23 02:32:53 - app.graph.graph - INFO - 工作流图构建完成
-2026-08-23 02:32:53 - app.graph.graph - INFO - 长期记忆store已加载
-2026-08-23 02:32:53 - app.graph.graph - INFO - 工作流图编译完成
-2026-08-23 02:32:53 - app.api.routes - INFO - 请求完成：request_id=9ae42013-ef3f-40e4-944c-4534f360fe27, path=/api/chat/stream, status=200, elapsed_ms=681.35
-INFO:     127.0.0.1:49568 - "POST /api/chat/stream HTTP/1.1" 200 OK
-2026-08-23 02:32:53 - app.graph.streaming - INFO - 从 checkpointer 加载对话历史：22 条消息
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [路由] 开始执行
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 路由节点开始执行
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 问题类型：symptom（路由层：rule）
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：8.04ms
-2026-08-23 02:32:53 - app.graph.streaming - INFO - 流式请求路由完成：request_id=9ae42013-ef3f-40e4-944c-4534f360fe27, thread_id=thread_test_user, route=symptom_analysis
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [长期记忆加载] 开始执行
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 长期记忆加载节点开始执行
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 已加载用户档案：user_id=test_user
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 用户档案信息：
-2026-08-23 02:32:53 - app.graph.nodes.nodes - INFO - 从L1加载症状首发时间：['流鼻血', '感冒']
-2026-08-23 02:32:53 - app.graph.nodes.helpers - INFO - [长期记忆加载] 执行完成，耗时：2.59ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [用户档案提取] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 用户档案提取节点开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 问题不包含个人信息，跳过档案提取
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [用户档案提取] 执行完成，耗时：0.00ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [路由] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 路由节点开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 规则路由命中：question_type=symptom
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 问题类型：symptom（路由层：rule）
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [路由] 执行完成，耗时：4.96ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [症状解析] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 症状解析节点开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 规则提取症状成功，跳过LLM：{'symptoms': ['发烧'], 'severity': None, 'body_parts': None, 'duration': '今天', 'onset_date': '2026-08-23T02:32:54', 'onset_ts': 1787423574, 'time_precision': 'default', 'additional_info': None}
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [症状解析] 执行完成，耗时：4.42ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [查询重写] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 查询重写节点开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 查询自包含（无指代词/省略结构），跳过重写：发烧了怎么办？
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [查询重写] 执行完成，耗时：0.00ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [问题拆解] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 问题拆解：未检测到复合标记（1 个问号，无连接词，症状数=1），不拆解
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [问题拆解] 执行完成，耗时：1.00ms
-2026-08-23 02:32:54 - app.graph.nodes.helpers - INFO - [知识检索] 开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 知识检索节点开始执行
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 查询预处理：'发烧了怎么办？' → '发热了怎么办？'
-2026-08-23 02:32:54 - app.graph.nodes.nodes - INFO - 检索词增强：'发热了怎么办？' → '发热了怎么办？ 物理降温 散热 减少衣物 温水擦浴 退热药 布洛芬 对乙酰氨基酚'
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：386
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - L2语义缓存检查：发热了怎么办？ 物理降温 散热 减少衣物 温水擦浴 退热药 ...
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - L2语义缓存为空，跳过Embedding计算
-2026-08-23 02:32:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
-2026-08-23 02:32:54 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3523
-2026-08-23 02:32:54 - app.core.adaptive_threshold - INFO - 自适应阈值 [HIGH_CONFIDENCE_THRESHOLD] 注册：默认值=0.08, 策略=percentile, 百分位=5.0
-2026-08-23 02:32:54 - app.core.adaptive_threshold - INFO - 自适应阈值 [RERANKER_THRESHOLD] 注册：默认值=0.005, 策略=percentile, 百分位=5.0
-2026-08-23 02:32:54 - app.core.adaptive_threshold - INFO - 自适应阈值 [SEMANTIC_CACHE_THRESHOLD] 注册：默认值=0.92, 策略=percentile, 百分位=95.0
-2026-08-23 02:32:54 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
-2026-08-23 02:32:56 - app.rag.reranker - INFO - 重排序完成：10 -> 8 （最高分：0.9663）
-2026-08-23 02:32:56 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 8
-2026-08-23 02:32:56 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：8 -> 4（max_per_source=3）
-2026-08-23 02:32:56 - app.rag.parent_child_store - INFO - Parent store 从磁盘加载成功：D:\Agent\medical_assistant_agent\data\parent_store.pkl（267 条）
-2026-08-23 02:32:56 - app.rag.parent_child_store - INFO - 邻域扩展索引已加载：13 个文档，267 个章节
-2026-08-23 02:32:56 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
-2026-08-23 02:32:56 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 10 个（+6 个兄弟章节），总字符数=1362
-2026-08-23 02:32:56 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 10 个完整父文档
-2026-08-23 02:32:56 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2353.45ms（query_embedding=208.09ms, semantic_lookup=0.00ms, dense=5.23ms, sparse=2.00ms, fusion=0.00ms, rerank=2343.21ms, parent_lookup=0.00ms, top1_dense_dist=0.3523）
-2026-08-23 02:32:56 - app.cache.semantic_cache - INFO - 语义缓存已写入：'发热了怎么办？ 物理降温 散热 减少衣物...' (10 个文档)
-2026-08-23 02:32:56 - app.rag.hybrid_retriever - INFO - L2语义缓存已写入：发热了怎么办？ 物理降温 散热 减少衣物 温水擦浴 退热药 ...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 检索到10个相关文档，耗时：2569.66ms，第 1 次检索
-2026-08-23 02:32:56 - app.graph.nodes.helpers - INFO - [知识检索] 执行完成，耗时：2695.31ms
-2026-08-23 02:32:56 - app.graph.nodes.helpers - INFO - [文档评分] 开始执行
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档评分节点开始执行
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：【表格上下文】
-文档：发热诊断与家庭护理指南.txt
-表格：对乙酰氨基酚 vs 布洛芬对比
-字段：项...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：【表格上下文】
-文档：发热诊断与家庭护理指南.txt
-表格：对乙酰氨基酚 vs 布洛芬对比
-字段：项...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 退热药物选择
-1. 2-6月龄：对乙酰氨基酚（每次10-15mg/kg），4-6小时一次，2...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：### 热性惊厥
-1. 表现：发热时突然全身抽搐，双眼上翻，口唇发青
-2. 多见于6月-5岁儿童
-3...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：## 发热概述  
-### 定义
-- 正常体温：腋下36.0-37.0℃
-- 低热：37.3-38....
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：【表格概览】
-文档：发热诊断与家庭护理指南.txt
-表格：对乙酰氨基酚 vs 布洛芬对比
-字段：项目...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：【表格上下文】
-文档：发热诊断与家庭护理指南.txt
-表格：对乙酰氨基酚 vs 布洛芬对比
-字段：项...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序靠后+无重叠）：【表格上下文】
-文档：发热诊断与家庭护理指南.txt
-表格：对乙酰氨基酚 vs 布洛芬对比
-字段：项...
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤结果：10 -> 2 相关
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 检索置信度：0.3360 (rerank=0.9663, gap=0.2071, docs=2, overlap=0.00, timeliness=0.80, authority=0.60)
-2026-08-23 02:32:56 - app.graph.nodes.helpers - INFO - [文档评分] 执行完成，耗时：8.00ms
-2026-08-23 02:32:56 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
-2026-08-23 02:32:56 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
-2026-08-23 02:32:56 - app.graph.nodes.context_manager - INFO - L1 中间输出清除：20 条消息，1824 → 565 字符（节省 69%）
-2026-08-23 02:32:56 - app.graph.nodes.context_manager - INFO - 上下文压缩完成：20 → 20 条消息，1824 → 565 字符（节省 69%）
-2026-08-23 02:32:58 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：307字符，耗时：15960.02ms
-2026-08-23 02:33:12 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：15991.62ms
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 消息数量24超过阈值8，触发快照更新
-2026-08-23 02:33:12 - app.graph.streaming - INFO - 首个 token 已发送：request_id=9ae42013-ef3f-40e4-944c-4534f360fe27, thread_id=thread_test_user, latency_ms=19471.79
-2026-08-23 02:33:12 - app.graph.nodes.helpers - INFO - [临床状态快照] 开始执行
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 临床状态快照节点开始执行
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 上下文占用率未达压缩阈值，跳过快照
-2026-08-23 02:33:12 - app.graph.nodes.helpers - INFO - [临床状态快照] 执行完成，耗时：0.00ms
-2026-08-23 02:33:12 - app.graph.nodes.helpers - INFO - [安全检查] 开始执行
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 医疗合规安全审查节点开始执行
-2026-08-23 02:33:12 - app.graph.nodes.nodes - INFO - 规则引擎审查完成：status=pass, risk_tags=[], 耗时=1.0ms
-2026-08-23 02:33:12 - app.graph.nodes.helpers - INFO - [安全检查] 执行完成，耗时：1.00ms
-2026-08-23 02:33:12 - app.graph.streaming - INFO - 流式请求完成：request_id=9ae42013-ef3f-40e4-944c-4534f360fe27, thread_id=thread_test_user, total_elapsed_ms=19495.13
+2026-09-04 22:38:43 - app.api.routes - INFO - 请求完成：request_id=6bb8e520-9e0c-4897-b789-79c3ccde7f89, path=/admin, status=200, elapsed_ms=59.30
+INFO:     127.0.0.1:55485 - "GET /admin HTTP/1.1" 200 OK
+2026-09-04 22:38:43 - app.rag.vector_store - INFO - 知识库版本指纹：b0203cab（386 篇文档）
+2026-09-04 22:38:43 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:38:43 - app.api.routes - INFO - 请求完成：request_id=dd2e88f1-186e-4750-8458-88b5b8968f49, path=/api/admin/kb/status, status=200, elapsed_ms=505.19
+INFO:     127.0.0.1:55485 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:43 - app.api.routes - INFO - 请求完成：request_id=25fa8c67-5154-423f-a067-a4f2fc0fb87d, path=/api/admin/kb/audit-log, status=200, elapsed_ms=506.20
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/audit-log?limit=30 HTTP/1.1" 200 OK
+2026-09-04 22:38:43 - app.api.routes - INFO - 请求完成：request_id=e441de72-3214-4862-b71a-9acabbd1e522, path=/.well-known/appspecific/com.chrome.devtools.json, status=404, elapsed_ms=1.01
+INFO:     127.0.0.1:64226 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+2026-09-04 22:38:43 - app.api.routes - INFO - 请求完成：request_id=1aa376a1-204b-4cc9-8ba7-35f25006f799, path=/favicon.ico, status=404, elapsed_ms=1.01
+INFO:     127.0.0.1:62058 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+2026-09-04 22:38:45 - app.rag.vector_store - INFO - 创建影子集合：medical_kb_v20260904_223845，目录：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260904_223845
+2026-09-04 22:38:45 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：儿童常见疾病护理指南.txt
+2026-09-04 22:38:45 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:38:45 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:46 - app.api.routes - INFO - 请求完成：request_id=b474376a-9c63-44aa-8b88-3fa38a23704c, path=/api/admin/kb/status, status=200, elapsed_ms=42.45
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:47 - app.api.routes - INFO - 请求完成：request_id=27553a4e-2d75-4ad3-8db2-8a7dd03d46ed, path=/api/admin/kb/status, status=200, elapsed_ms=39.76
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:48 - app.api.routes - INFO - 请求完成：request_id=62418561-bfd7-4305-b87b-241cf4a88f04, path=/api/admin/kb/status, status=200, elapsed_ms=41.19
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:49 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:49 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:49 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:49 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:49 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：发热诊断与家庭护理指南.txt
+2026-09-04 22:38:49 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:49 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:49 - app.api.routes - INFO - 请求完成：request_id=b5a40ca8-61bf-405d-8a81-0023e09b5e58, path=/api/admin/kb/status, status=200, elapsed_ms=40.19
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:50 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:50 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：呼吸系统疾病诊疗指南.txt
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:50 - app.api.routes - INFO - 请求完成：request_id=83d60c99-502e-43ce-84b7-a520414f1767, path=/api/admin/kb/status, status=200, elapsed_ms=40.07
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:50 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:50 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：外伤急救与处理指南.txt
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:50 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:51 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:51 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:51 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:51 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:51 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：常见药物使用指南.txt
+2026-09-04 22:38:51 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:51 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:51 - app.api.routes - INFO - 请求完成：request_id=7df6dd9f-f0b3-47a5-a411-7eefc8652bac, path=/api/admin/kb/status, status=200, elapsed_ms=39.87
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:52 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:52 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:52 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:52 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:52 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：急诊常见症状识别与处理指南.txt
+2026-09-04 22:38:52 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:52 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:52 - app.api.routes - INFO - 请求完成：request_id=573ca575-2561-4e43-b9eb-2e028417d14d, path=/api/admin/kb/status, status=200, elapsed_ms=40.15
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:53 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:53 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:53 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:53 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:53 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：慢性病管理与用药指南.txt
+2026-09-04 22:38:53 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:53 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:53 - app.api.routes - INFO - 请求完成：request_id=a7f849e2-85c5-4d31-b7e3-f26fc247c386, path=/api/admin/kb/status, status=200, elapsed_ms=47.63
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:54 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:54 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 5 个字段
+2026-09-04 22:38:54 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:54 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:54 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：消化系统疾病诊疗指南.txt
+2026-09-04 22:38:54 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:54 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:54 - app.api.routes - INFO - 请求完成：request_id=233808de-29bd-4074-baad-9985091471ef, path=/api/admin/kb/status, status=200, elapsed_ms=40.03
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:55 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:55 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：皮肤疾病诊疗指南.txt
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:55 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:55 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：神经系统症状鉴别指南.txt
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:55 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:55 - app.api.routes - INFO - 请求完成：request_id=adf4c760-5478-447a-b19e-4db9495a2a0c, path=/api/admin/kb/status, status=200, elapsed_ms=47.89
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:56 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:56 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:56 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:56 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:56 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：骨科常见疾病诊疗指南.txt
+2026-09-04 22:38:56 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:38:56 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:38:57 - app.api.routes - INFO - 请求完成：request_id=fe5e1891-7548-47f2-a573-4734beb6b856, path=/api/admin/kb/status, status=200, elapsed_ms=749.05
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:58 - app.api.routes - INFO - 请求完成：request_id=8108047e-88c7-4862-879e-fc18e9bad327, path=/api/admin/kb/status, status=200, elapsed_ms=49.11
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:58 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:38:58 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:38:58 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:38:58 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:38:59 - app.api.routes - INFO - 请求完成：request_id=a5d9df7a-9bd2-4f44-ac47-651447fb0c72, path=/api/admin/kb/status, status=200, elapsed_ms=35.82
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:38:59 - httpx - INFO - HTTP Request: POST https://mineru.net/api/v1/agent/parse/file "HTTP/1.1 200 OK"
+2026-09-04 22:39:00 - app.api.routes - INFO - 请求完成：request_id=aec914ad-dd09-4041-9de4-890548fde916, path=/api/admin/kb/status, status=200, elapsed_ms=35.08
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:00 - httpx - INFO - HTTP Request: PUT https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-09-04/agent/db4a80fe-8875-45fb-9da6-65210edb7d91.pdf?Expires=1788619139&OSSAccessKeyId=LTAI5t8fSGMgiRhQn4mpp926&Signature=%2FGFHSI0h5iJx%2BC9MvIM62M5AgYg%3D "HTTP/1.1 200 OK"
+2026-09-04 22:39:00 - httpx - INFO - HTTP Request: GET https://mineru.net/api/v1/agent/parse/db4a80fe-8875-45fb-9da6-65210edb7d9108 "HTTP/1.1 200 OK"
+2026-09-04 22:39:01 - app.api.routes - INFO - 请求完成：request_id=a56a04f2-97cb-42eb-87fd-f4f9de68906a, path=/api/admin/kb/status, status=200, elapsed_ms=37.09
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:02 - app.api.routes - INFO - 请求完成：request_id=13c74d70-0ed5-4554-ac10-92e82b46d583, path=/api/admin/kb/status, status=200, elapsed_ms=36.92
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:02 - httpx - INFO - HTTP Request: GET https://mineru.net/api/v1/agent/parse/db4a80fe-8875-45fb-9da6-65210edb7d9108 "HTTP/1.1 200 OK"
+2026-09-04 22:39:03 - app.api.routes - INFO - 请求完成：request_id=14bca0e6-edb1-419f-915b-fa1506c5a8c9, path=/api/admin/kb/status, status=200, elapsed_ms=38.35
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:04 - app.api.routes - INFO - 请求完成：request_id=f03c47c3-944c-44f3-9de4-b0ff9dc86247, path=/api/admin/kb/status, status=200, elapsed_ms=40.52
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:04 - app.api.routes - INFO - 请求完成：request_id=2c315e63-a9e5-4222-875c-04134d0ad235, path=/api/admin/kb/status, status=200, elapsed_ms=42.14
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:05 - app.api.routes - INFO - 请求完成：request_id=b694d945-bb1e-4089-b2b0-fdbf8bbfa8dd, path=/api/admin/kb/status, status=200, elapsed_ms=37.22
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:06 - httpx - INFO - HTTP Request: GET https://mineru.net/api/v1/agent/parse/db4a80fe-8875-45fb-9da6-65210edb7d9108 "HTTP/1.1 200 OK"
+2026-09-04 22:39:06 - app.api.routes - INFO - 请求完成：request_id=db398270-e7e4-4831-9061-69928ca27281, path=/api/admin/kb/status, status=200, elapsed_ms=38.58
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:07 - app.api.routes - INFO - 请求完成：request_id=5305073f-3333-471c-a713-a7b36a615308, path=/api/admin/kb/status, status=200, elapsed_ms=37.77
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:08 - app.api.routes - INFO - 请求完成：request_id=5c78e654-4403-446d-9909-90e5f8594775, path=/api/admin/kb/status, status=200, elapsed_ms=38.55
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:09 - app.api.routes - INFO - 请求完成：request_id=59f042c8-866e-47f1-b6b0-3f9943556f26, path=/api/admin/kb/status, status=200, elapsed_ms=37.05
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:10 - app.api.routes - INFO - 请求完成：request_id=00775256-9f51-4d5f-ac2b-1f99ee391f99, path=/api/admin/kb/status, status=200, elapsed_ms=35.57
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:11 - app.api.routes - INFO - 请求完成：request_id=f7480fb1-eb6c-4d96-bd48-4101e701dd88, path=/api/admin/kb/status, status=200, elapsed_ms=37.27
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:12 - app.api.routes - INFO - 请求完成：request_id=4603d2ff-c03b-48f8-b706-151d269fa416, path=/api/admin/kb/status, status=200, elapsed_ms=36.75
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:13 - app.api.routes - INFO - 请求完成：request_id=2eb06710-370b-491f-8886-092536b9bdae, path=/api/admin/kb/status, status=200, elapsed_ms=36.59
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:14 - httpx - INFO - HTTP Request: GET https://mineru.net/api/v1/agent/parse/db4a80fe-8875-45fb-9da6-65210edb7d9108 "HTTP/1.1 200 OK"
+2026-09-04 22:39:14 - app.api.routes - INFO - 请求完成：request_id=66a72c6f-ba0f-49de-b0dd-49733883ce17, path=/api/admin/kb/status, status=200, elapsed_ms=38.53
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:15 - httpx - INFO - HTTP Request: GET https://cdn-mineru.openxlab.org.cn/pdf/2026-09-04/bdb6a87d-7082-42cb-ad96-72f4d6fc6e8f/full.md "HTTP/1.1 200 OK"
+2026-09-04 22:39:15 - app.rag.loader - INFO - MinerU 解析 PDF 成功：常见疾病症状与家庭护理指南.webdoc.pdf，生成 1 个文档
+2026-09-04 22:39:15 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：常见疾病症状与家庭护理指南.webdoc.pdf
+2026-09-04 22:39:15 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:39:15 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:16 - app.api.routes - INFO - 请求完成：request_id=ca56e6e1-a10c-40d7-8787-ef6b8ba4346e, path=/api/admin/kb/status, status=200, elapsed_ms=37.04
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:17 - app.api.routes - INFO - 请求完成：request_id=792d08cd-ee40-4219-a056-a2d1b898c0d2, path=/api/admin/kb/status, status=200, elapsed_ms=35.01
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:18 - app.api.routes - INFO - 请求完成：request_id=9abad203-b393-4708-bfa7-7c13dcf79412, path=/api/admin/kb/status, status=200, elapsed_ms=39.18
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:18 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：冠心病防治与家庭管理指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：尿常规报告解读指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：常用退热镇痛药安全使用对照表_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：急性心肌梗死识别与急救指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：急性脑卒中识别与急救指南_FAST_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：抗生素正确使用指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：特殊人群用药安全指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：窒息与气道异物急救指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：糖尿病日常管理与用药指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：肝肾功能生化报告解读指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：药物相互作用与禁忌对照表_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 2 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：血常规报告解读指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：血糖血脂报告解读指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：过敏性休克识别与急救指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：高脂血症饮食与用药管理指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：高血压管理与用药指南_20260826.md
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 3 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 跳过（源1/2已有足够信息）
+2026-09-04 22:39:18 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:18 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:19 - app.api.routes - INFO - 请求完成：request_id=35b68c39-5b71-48ea-94a1-77d9d7126ed1, path=/api/admin/kb/status, status=200, elapsed_ms=36.58
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:20 - app.rag.loader - INFO - Excel 加载完成：常见药物表.xlsx，1 个 Sheet
+2026-09-04 22:39:20 - app.rag.metadata_extractor - INFO - 开始提取文档元数据：常见药物表.xlsx
+2026-09-04 22:39:20 - app.rag.metadata_extractor - INFO -   [源1-文件名] 提取到 1 个字段
+2026-09-04 22:39:20 - app.rag.metadata_extractor - INFO -   [源2-文件属性] 提取到 0 个字段
+2026-09-04 22:39:20 - app.api.routes - INFO - 请求完成：request_id=d65d17e3-6c14-4653-87cf-834bc3d1068c, path=/api/admin/kb/status, status=200, elapsed_ms=40.60
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:21 - app.api.routes - INFO - 请求完成：request_id=7c2cfaac-fca6-4a0a-a9b0-17647ecf37ab, path=/api/admin/kb/status, status=200, elapsed_ms=39.26
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:21 - httpx - INFO - HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-04 22:39:21 - app.rag.metadata_extractor - INFO -   [源3-LLM正文] 提取到 6 个字段
+2026-09-04 22:39:21 - app.rag.metadata_extractor - INFO -   [源4-文件系统] 提取到 4 个字段
+2026-09-04 22:39:21 - app.rag.loader - WARNING - 文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'
+2026-09-04 22:39:21 - app.rag.loader - INFO - Markdown 结构感知切分完成：29 个文档 → 619 个块
+2026-09-04 22:39:21 - app.rag.parent_child_store - INFO - 父子索引构建完成：619 个父文档 → 901 个子文档，覆盖 29 个原始文档
+2026-09-04 22:39:21 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:22 - app.api.routes - INFO - 请求完成：request_id=3eb2d697-59e8-473c-9a62-f340e513dfa0, path=/api/admin/kb/status, status=200, elapsed_ms=38.26
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:22 - app.rag.vector_store - INFO - 影子集合写入：60/901
+2026-09-04 22:39:22 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:23 - app.api.routes - INFO - 请求完成：request_id=4bce1c64-c2af-4da4-ad30-f033a376f255, path=/api/admin/kb/status, status=200, elapsed_ms=37.61
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:23 - app.rag.vector_store - INFO - 影子集合写入：120/901
+2026-09-04 22:39:23 - app.api.routes - INFO - 请求完成：request_id=8fee812b-9637-4a0c-a7f8-51367a747151, path=/api/admin/kb/status, status=200, elapsed_ms=39.97
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:24 - app.rag.vector_store - INFO - 影子集合写入：180/901
+2026-09-04 22:39:24 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:24 - app.api.routes - INFO - 请求完成：request_id=eba76631-43d8-4cbe-939c-83ccf3a072ce, path=/api/admin/kb/status, status=200, elapsed_ms=37.70
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:25 - app.rag.vector_store - INFO - 影子集合写入：240/901
+2026-09-04 22:39:25 - app.api.routes - INFO - 请求完成：request_id=c39fe5e0-8ee1-47c5-827d-0d287fad3ae8, path=/api/admin/kb/status, status=200, elapsed_ms=37.36
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:26 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:26 - app.rag.vector_store - INFO - 影子集合写入：300/901
+2026-09-04 22:39:26 - app.api.routes - INFO - 请求完成：request_id=cfba3ee4-3555-473f-97be-82b0954d1eac, path=/api/admin/kb/status, status=200, elapsed_ms=36.57
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:27 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:27 - app.rag.vector_store - INFO - 影子集合写入：360/901
+2026-09-04 22:39:27 - app.api.routes - INFO - 请求完成：request_id=8669dc7f-9d86-48d8-b4ad-94ee1c39a11c, path=/api/admin/kb/status, status=200, elapsed_ms=36.76
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:28 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:28 - app.rag.vector_store - INFO - 影子集合写入：420/901
+2026-09-04 22:39:29 - app.api.routes - INFO - 请求完成：request_id=47244a29-75fd-4b37-8a56-65287189b19f, path=/api/admin/kb/status, status=200, elapsed_ms=38.35
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:29 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:30 - app.rag.vector_store - INFO - 影子集合写入：480/901
+2026-09-04 22:39:30 - app.api.routes - INFO - 请求完成：request_id=6f04096e-c810-40fa-aaa0-74cb85ec94e2, path=/api/admin/kb/status, status=200, elapsed_ms=247.63
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:30 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:31 - app.rag.vector_store - INFO - 影子集合写入：540/901
+2026-09-04 22:39:31 - app.api.routes - INFO - 请求完成：request_id=e28d8354-72d7-4ee2-9383-d5e72d488b45, path=/api/admin/kb/status, status=200, elapsed_ms=39.57
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:31 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:31 - app.rag.vector_store - INFO - 影子集合写入：600/901
+2026-09-04 22:39:32 - app.api.routes - INFO - 请求完成：request_id=cc1a26c1-0d19-4b4c-9080-98cb664867da, path=/api/admin/kb/status, status=200, elapsed_ms=40.08
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:32 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:33 - app.rag.vector_store - INFO - 影子集合写入：660/901
+2026-09-04 22:39:33 - app.api.routes - INFO - 请求完成：request_id=8b837fae-1098-4dd7-b066-7dc52f822204, path=/api/admin/kb/status, status=200, elapsed_ms=39.78
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:33 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:34 - app.rag.vector_store - INFO - 影子集合写入：720/901
+2026-09-04 22:39:34 - app.api.routes - INFO - 请求完成：request_id=818ae74a-510b-4ac1-a7d9-0c086b270b95, path=/api/admin/kb/status, status=200, elapsed_ms=39.23
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:34 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:35 - app.rag.vector_store - INFO - 影子集合写入：780/901
+2026-09-04 22:39:35 - app.api.routes - INFO - 请求完成：request_id=7da444af-99f0-4abf-9ae3-80200835d24e, path=/api/admin/kb/status, status=200, elapsed_ms=45.37
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:35 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:36 - app.rag.vector_store - INFO - 影子集合写入：840/901
+2026-09-04 22:39:36 - app.api.routes - INFO - 请求完成：request_id=2d36ee2a-6438-466b-811c-34e86a9031a6, path=/api/admin/kb/status, status=200, elapsed_ms=40.15
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:36 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:37 - app.rag.vector_store - INFO - 影子集合写入：900/901
+2026-09-04 22:39:37 - app.api.routes - INFO - 请求完成：request_id=bb34b29f-cfcd-49e5-832f-f98492e2bb8e, path=/api/admin/kb/status, status=200, elapsed_ms=39.89
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:37 - app.rag.vector_store - INFO - 影子集合写入：901/901
+2026-09-04 22:39:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:37 - app.api.routes - INFO - 请求完成：request_id=dc94019c-e9e5-49ab-8666-0ec31a13261d, path=/api/admin/kb/status, status=200, elapsed_ms=42.08
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:38 - app.api.routes - INFO - 请求完成：request_id=e751d45f-9ab4-4345-a48c-255258f28a9b, path=/api/admin/kb/status, status=200, elapsed_ms=41.80
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:39 - app.rag.vector_store - INFO - kb_version 已失效（旧值：b0203cab），下次调用将重新计算
+2026-09-04 22:39:39 - app.rag.vector_store - INFO - 集合切换完成：medical_kb_default → medical_kb_v20260904_223845 (persist_dir=D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260904_223845)
+2026-09-04 22:39:39 - app.rag.parent_child_store - INFO - Parent store 已缓存到：D:\Agent\medical_assistant_agent\data\parent_store.pkl（619 条，29 个文档索引）
+2026-09-04 22:39:39 - app.rag.hybrid_retriever - INFO - HybridRetriever 已重置，下次检索将重建 BM25 索引
+2026-09-04 22:39:39 - app.cache.redis_cache - INFO - 清空缓存：0 条
+2026-09-04 22:39:39 - app.cache.semantic_cache - INFO - 清空语义缓存：8 条
+2026-09-04 22:39:39 - app.rag.vector_store - INFO - 旧集合清理：300s 后清理 medical_kb_default
+2026-09-04 22:39:39 - app.api.routes - INFO - 知识库重建完成（双集合）：medical_kb_v20260904_223845，29 个文档 → 619 个 chunks → 901 个 child chunks，耗时 53.1s
+2026-09-04 22:39:39 - app.api.routes - INFO - 请求完成：request_id=8b573d7a-00c6-42f6-8164-f1dbfed192e9, path=/api/admin/kb/rebuild, status=200, elapsed_ms=53120.36
+INFO:     127.0.0.1:62058 - "POST /api/admin/kb/rebuild HTTP/1.1" 200 OK
+2026-09-04 22:39:39 - app.rag.vector_store - INFO - 向量库加载活跃集合：medical_kb_v20260904_223845（D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260904_223845）
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260904_223845
+从D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260904_223845加载现有向量库。
+2026-09-04 22:39:39 - app.rag.vector_store - INFO - 知识库版本指纹：43801be6（901 篇文档）
+2026-09-04 22:39:39 - app.api.routes - INFO - 请求完成：request_id=608bba8e-eaa1-41a5-a4b8-b409c42b4d00, path=/api/admin/kb/status, status=200, elapsed_ms=99.86
+INFO:     127.0.0.1:62058 - "GET /api/admin/kb/status HTTP/1.1" 200 OK
+2026-09-04 22:39:39 - app.api.routes - INFO - 请求完成：request_id=954e3524-c499-41cb-8670-4df274b0fdbf, path=/api/admin/kb/audit-log, status=200, elapsed_ms=98.85
+INFO:     127.0.0.1:50806 - "GET /api/admin/kb/audit-log?limit=30 HTTP/1.1" 200 OK
+2026-09-04 22:39:55 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-04 22:39:55 - app.api.routes - INFO - 请求完成：request_id=4cd0b4fd-35b4-45c6-a920-e7f235645bea, path=/api/admin/kb/reconcile, status=200, elapsed_ms=377.96
+INFO:     127.0.0.1:63405 - "GET /api/admin/kb/reconcile HTTP/1.1" 200 OK
+2026-09-04 22:39:55 - app.api.routes - INFO - 请求完成：request_id=b1d6506d-1596-430d-9d48-1889ada9f894, path=/api/admin/kb/stale-detect, status=200, elapsed_ms=84.21
+INFO:     127.0.0.1:53579 - "GET /api/admin/kb/stale-detect?hours=24 HTTP/1.1" 200 OK
+2026-09-04 22:39:55 - app.api.routes - INFO - 请求完成：request_id=ad7e93da-89a4-4930-9c9a-3c4dce628d7f, path=/api/admin/kb/reconcile, status=200, elapsed_ms=96.60
+INFO:     127.0.0.1:53579 - "GET /api/admin/kb/reconcile HTTP/1.1" 200 OK
+2026-09-04 22:39:55 - app.api.routes - INFO - 请求完成：request_id=a6ea05a2-5c1b-402a-b1ef-eef70df02a0f, path=/api/admin/kb/stale-detect, status=200, elapsed_ms=77.10
+INFO:     127.0.0.1:53579 - "GET /api/admin/kb/stale-detect?hours=24 HTTP/1.1" 200 OK
+2026-09-04 22:39:56 - app.api.routes - INFO - 请求完成：request_id=c1d4013a-9805-4876-94d8-85bb0d8f2b12, path=/api/admin/kb/reconcile, status=200, elapsed_ms=73.74
+INFO:     127.0.0.1:53579 - "GET /api/admin/kb/reconcile HTTP/1.1" 200 OK

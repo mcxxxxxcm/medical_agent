@@ -1,7 +1,7 @@
 {
-  "active_collection": "medical_kb_default",
-  "active_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db",
-  "previous_collection": "medical_kb_v20260826_215953",
-  "previous_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db\\medical_kb_v20260826_215953",
-  "switched_at": "2026-08-26T13:59:53.669691Z"
+  "active_collection": "medical_kb_v20260904_223845",
+  "active_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db\\medical_kb_v20260904_223845",
+  "previous_collection": "medical_kb_default",
+  "previous_persist_dir": "D:\\Agent\\medical_assistant_agent\\data\\chroma_db",
+  "switched_at": "2026-09-04T14:39:39.010605Z"
 }

@@ -71,6 +71,7 @@
         .upload-progress.show { display: block; }
         .progress-bar { height: 4px; background: #e8e8e8; border-radius: 2px; overflow: hidden; }
         .progress-bar .fill { height: 100%; background: linear-gradient(135deg, #667eea, #764ba2); transition: width 0.3s; }
+        @keyframes indeterminate { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
         .progress-text { font-size: 12px; color: #666; margin-top: 4px; }
 
         .log-list { max-height: 400px; overflow-y: auto; }
@@ -169,10 +170,14 @@
         <h2>📁 文档列表</h2>
         <div class="actions" style="margin-bottom: 16px;">
             <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">上传文档</button>
-            <button class="btn btn-warning" onclick="confirmRebuild()">重建知识库（零停机）</button>
+            <button class="btn btn-warning" id="rebuildBtn" onclick="confirmRebuild()">重建知识库（零停机）</button>
             <button class="btn btn-outline" onclick="rollbackCollection()">紧急回滚</button>
             <button class="btn btn-outline" onclick="showCollectionInfo()">集合信息</button>
             <button class="btn btn-outline" onclick="refreshStatus()">刷新</button>
+        </div>
+        <div class="upload-progress" id="rebuildProgress">
+            <div class="progress-bar"><div class="fill" id="rebuildFill" style="width:0%"></div></div>
+            <div class="progress-text" id="rebuildText">准备开始...</div>
         </div>
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleUpload(this.files)" accept=".txt,.pdf,.docx,.md,.xlsx,.xls,.csv,.png,.jpg,.jpeg">
         <div class="upload-progress" id="uploadProgress">
@@ -458,21 +463,89 @@ function confirmDelete(filename) {
 
 // ===== 重建知识库（双集合零停机） =====
 let rebuildPolling = null;
+let rebuildBtnEl = null;
+
+// 把后端进度字符串映射为进度条百分比（写入影子集合阶段带 done/total，可精确计算）
+function rebuildProgressPct(text) {
+    const m = text && text.match(/（(\d+)\/(\d+)）/);
+    if (m && Number(m[2]) > 0) return Math.round(Number(m[1]) / Number(m[2]) * 100);
+    return null;  // 其他阶段用不确定动画
+}
+
+// 轮询状态接口，更新进度条与文案
+function pollRebuildProgress() {
+    fetch(`${API}/api/admin/kb/status`)
+        .then(res => res.json())
+        .then(data => {
+            const st = data.update_status || {};
+            showRebuildProgress(true);
+            const text = st.progress || '更新中...';
+            document.getElementById('rebuildText').textContent = text;
+            const pct = rebuildProgressPct(text);
+            const fill = document.getElementById('rebuildFill');
+            if (pct != null) {
+                fill.style.width = pct + '%';
+                fill.style.animation = 'none';
+            } else {
+                fill.style.width = '35%';
+                fill.style.animation = 'indeterminate 1.2s infinite ease-in-out';
+            }
+            if (!st.updating) {
+                stopRebuildPolling();
+                document.getElementById('rebuildText').textContent = st.error ? ('重建失败：' + st.error) : '重建完成';
+                fill.style.width = '100%';
+                fill.style.animation = 'none';
+                setTimeout(() => showRebuildProgress(false), 3000);
+            }
+        })
+        .catch(() => { /* 状态接口偶发失败不打断，下轮再试 */ });
+}
+
+function showRebuildProgress(show) {
+    const el = document.getElementById('rebuildProgress');
+    if (show) el.classList.add('show'); else el.classList.remove('show');
+}
+
+function stopRebuildPolling() {
+    if (rebuildPolling) { clearInterval(rebuildPolling); rebuildPolling = null; }
+    const btn = rebuildBtnEl;
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
 
 function confirmRebuild() {
+    console.log('[rebuild] confirmRebuild 被点击');
     showConfirm('重建知识库', '重建期间服务不中断（双集合零停机），用户查询始终走完整版本。确定继续？', async () => {
+        console.log('[rebuild] 用户点击了确认，准备触发重建');
         try {
-            showToast('知识库重建中（影子集合构建），请稍候...', 'info');
+            rebuildBtnEl = document.getElementById('rebuildBtn');
+            if (!rebuildBtnEl) { console.error('[rebuild] 找不到 #rebuildBtn，页面可能是旧缓存'); showToast('页面可能为旧缓存，请 Ctrl+Shift+R 强刷', 'error'); return; }
+            rebuildBtnEl.disabled = true;
+            rebuildBtnEl.style.opacity = '0.5';
+            showRebuildProgress(true);
+            document.getElementById('rebuildFill').style.width = '0%';
+            document.getElementById('rebuildText').textContent = '正在启动重建...';
+            // 重建接口会阻塞到跑完，期间并行轮询 status 拿实时进度
+            showToast('知识库重建中（影子集合构建）...', 'info');
+            if (rebuildPolling) clearInterval(rebuildPolling);
+            rebuildPolling = setInterval(pollRebuildProgress, 1000);
+
             const res = await fetch(`${API}/api/admin/kb/rebuild`, { method: 'POST' });
             const data = await res.json();
+            stopRebuildPolling();
             if (res.ok) {
+                showRebuildProgress(false);
                 showToast(`重建完成：${data.document_count} 文档，集合 ${data.collection_name}，耗时 ${data.elapsed_seconds}s`, 'success');
                 refreshStatus();
                 loadAuditLog();
             } else {
+                showRebuildProgress(false);
                 showToast('重建失败: ' + (data.detail || '未知错误'), 'error');
             }
-        } catch (e) { showToast('重建出错: ' + e.message, 'error'); }
+        } catch (e) {
+            stopRebuildPolling();
+            showRebuildProgress(false);
+            showToast('重建出错: ' + e.message, 'error');
+        }
     });
 }
 
@@ -591,7 +664,7 @@ function showConfirm(title, msg, action) {
     _confirmAction = action;
 }
 function closeConfirm() { document.getElementById('confirmOverlay').classList.remove('show'); _confirmAction = null; }
-function executeConfirm() { closeConfirm(); if (_confirmAction) _confirmAction(); }
+function executeConfirm() { const action = _confirmAction; closeConfirm(); if (action) action(); }
 
 // ===== Toast =====
 function showToast(msg, type = 'info') {

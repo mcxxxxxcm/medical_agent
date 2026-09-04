@@ -1,5 +1,42 @@
 # 系统优化更新日志
 
+## v9.39 - 修复元数据交叉校验总体置信度统计异常（app/rag/metadata_extractor.py）
+
+背景：入库时日志反复刷 `文档元数据自动提取失败（不影响入库）：'tuple' object has no attribute 'endswith'`（每篇文档一条）。虽然被外层 `loader.py` 的 try/except 降级接住不影响入库，但 `overall_confidence` 永远算不出来，属于跨战评审时无法给出整体可信度的隐性 bug。
+
+- **根因**：`cross_validate_metadata` 统计置信度字段数时，第 `493` 行误写成 `for k in result.items()`，迭代出来的是 `(key, value)` 元组，再对其调 `.endswith("_confidence")` 抛 `'tuple' object has no attribute 'endswith'`。同段第 `492` 行是正确的双变量解包 `for k, v in result.items()`。
+- **修复**：改为 `for k in result`（迭代 dict 的 key），置信度统计恢复正常。
+- 全仓已扫描无其他 `for x in dict.items()` 单变量误用。
+- 语义不变：仅修正统计逻辑，提取规则与字段写入完全不动。
+
+<footer>元数据修复 · 改动文件：`app/rag/metadata_extractor.py`</footer>
+
+## v9.37 - 前端 AI 回复结构化排版美化（app/static/index.html）
+
+背景：此前 `formatAnswer` 仅把换行转 `<br>`、把 `###`/`**` 转 `<strong>`，AI 回复里常见的分级标题、有序/无序列表、代码块、引用块全部堆成纯文本；且直接拼接 `innerHTML`、未做 HTML 转义，若回复含标签存在 XSS 隐患。
+
+- **引入标准 Markdown 渲染库 markdown-it + DOMPurify**：库文件**内置到本地** `app/static/lib/`（`markdown-it.min.js` + `purify.min.js`，合计约 145KB），head 引入，运行时**不依赖外网 CDN**。`formatAnswer` 用 `markdownit({html:false, breaks:true, linkify:true})` 渲染完整 CommonMark（标题、有序/无序列表、代码块、引用、表格、粗斜体、行内代码、链接），再经 `DOMPurify.sanitize` 二次加固；渲染库加载失败时降级为换行+粗体。`html:false` + 转义双保险杜绝注入。
+- **免责声明（⚠️）提取为 Alert 框**：在**原文阶段**（markdown-it 渲染前）就按行切走独立的 `⚠️ ...` 段，单独渲染为 `<div class="md-alert">`，再用私有区占位符回填原位置。相比在渲染后 HTML 上做正则，此方案**彻底规避"⚠️ 被 `**` 加粗包裹"导致失配**的问题（多数模型会加粗免责声明）。内联靠句尾的免责声明（如"…退烧药。⚠️ 以上建议仅供参考"）经 `normalizeMarkdown` 补换行自动独立成块，始终切入警示框。
+- **AI 涂抹格式的前端兜底**：新增 `normalizeMarkdown()`，在渲染前修复模型常见的冒格式问题——① 句末标点后紧跟 `- `/`1. ` 而未换行时（如"…促进新陈代谢。- 饮食：…"）补空行，使粘连的列表项正确渲染为 `ul/li`；② 列表行后紧跟非列表正文时补空行，避免 markdown 惰性续行把后续段落并进列表项；③ 内联 ⚠️ 补换行独立成块，并先剥离 `** ⚠️ **` 的粗体标记（防止正文残留孤立的 `**`）。全部用 `[^\S\n]*` 不跨行，避免误伤本就正确的换行结构。
+- **参考来源改为胶囊标签**：`renderSources` 改为「📚 参考来源」标签 + 一条胶囊条目（`border-radius:999px`、紫色底、数字圆角徽章），hover 反色，替代原来的细长条形引用。
+- **排版润色**：正文 `line-height:1.7`、段落间 `margin-bottom:10px`、正文色 `#333`、标题/列表/表格/引用/链接统一风格化。
+- **顺带修复既有 XSS**：此前 LLM/用户内容直接拼 `innerHTML`，现一律经 markdown-it 转义 + DOMPurify 清洗。
+- 语义不变：纯前端渲染层增强，服务端回复内容与接口完全不动。
+
+<footer>前端渲染美化 · 改动文件：`app/static/index.html`（新增 `app/static/lib/`）</footer>
+
+## v9.38 - 知识库重建增加实时进度反馈（app/static/admin.html）
+
+背景：重建接口 `kb_rebuild` 是同步跑完才返回的（`async def` 所有步骤做完才 return），前端此前点「重建知识库」只发一次 POST 就静默挂起——期间 `_kb_update_status.progress` 明明在更新，却没有刷新入口。用户点击后完全不知道是否触发、跑到哪一步。
+
+- **轮询进度**（`confirmRebuild` → 新增 `pollRebuildProgress`）：点重建时立即开 `setInterval(1s)` 并行轮询 `/api/admin/kb/status`，读取 `update_status.updating/progress/error`，实时刷新进度条与文案；POST 返回后 `stopRebuildPolling()` 停止轮询。
+- **进度条 UI**：在文档列表操作区下新增 `#rebuildProgress` 进度条（复用 `.upload-progress/.progress-bar` 样式）。能解析出「（done/total）」的阶段（写入影子集合）精确填充百分比；其余阶段（加载/切分/构建索引/校验/切换/清理）用 `indeterminate` 不确定动画。按钮在运行期间置灰防重复触发（后端本有 409 兜底）。
+- **完成/失败态**：后端 `finally` 保留 `progress="完成"/"失败：…"`,轮询据此展示「重建完成/失败:…」后隐藏进度条;POST 返回后叠加成功/失败 toast 与 `refreshStatus()`。
+- 语义不变：纯前端反馈增强,重建流程与后端逻辑零改动。
+- **修复确认弹窗回调被吞的既有 bug**：`executeConfirm()` 原为 `closeConfirm(); if (_confirmAction) _confirmAction();`,而 `closeConfirm()` 先把 `_confirmAction` 置 `null`,导致**所有确认弹窗操作（重建/回滚/删除）点「确认」后回调永不执行**、不发任何请求。改为先捕获 action 再关闭弹窗。此前"点击重建无响应、Network 无新增请求"正是此 bug 所致。
+
+<footer>进度反馈优化 · 改动文件：`app/static/admin.html`</footer>
+
 ## v9.36 - RAG 多轮增量：改写后主动澄清 + 显式话题轨迹（多轮对话）
 
 背景：对照"RAG 多轮对话四层策略"分析，补齐两个真缺口——改写层缺"检索前拦截式澄清"，状态层缺"跨轮显式话题轨迹"。按**最保守**门槛落地，绝不骚扰已确立话题的正常对话。

@@ -1146,3 +1146,44 @@ SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on l
 2026-08-23 01:26:20 - app.graph.nodes.nodes - ERROR - 答案生成失败：'"key"'
 2026-08-23 01:28:33 - app.graph.nodes.nodes - ERROR - 答案生成失败：'"key"'
 2026-08-23 01:28:53 - app.graph.nodes.nodes - ERROR - 答案生成失败：'"key"'
+2026-09-04 18:10:07 - app.graph.nodes.helpers - ERROR - [查询重写] 执行失败，耗时：1.02ms，错误：unhashable type: 'dict'
+2026-09-04 18:10:07 - app.graph.streaming - ERROR - 流式处理失败：request_id=2dc856df-a748-472c-846e-ae9c8e877b80, error=unhashable type: 'dict'
+Traceback (most recent call last):
+  File "D:\Agent\medical_assistant_agent\app\graph\streaming.py", line 798, in run
+    async for sse_event in self._run_native_graph(route_type):
+  File "D:\Agent\medical_assistant_agent\app\graph\streaming.py", line 634, in _run_native_graph
+    async for mode, data in graph.astream(
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\pregel\main.py", line 2997, in astream
+    async for _ in runner.atick(
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\pregel\_runner.py", line 410, in atick
+    _panic_or_proceed(
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\pregel\_runner.py", line 520, in _panic_or_proceed
+    raise exc
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\pregel\_retry.py", line 163, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 705, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langchain_core\runnables\config.py", line 636, in run_in_executor
+    return await asyncio.get_running_loop().run_in_executor(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\software\envs\my_medical_env\Lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\software\envs\my_medical_env\Lib\site-packages\langchain_core\runnables\config.py", line 627, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\helpers.py", line 48, in wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\nodes.py", line 3848, in query_rewrite_node
+    **_update_topic_trajectory(state, _detect_topic(state, question, rewritten_query)),
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Agent\medical_assistant_agent\app\graph\nodes\nodes.py", line 4248, in _detect_topic
+    symptom_names.add(name)
+TypeError: unhashable type: 'dict'
+During task with name 'query_rewrite' and id 'cd5c74b4-7659-32fa-871a-06b1d942e6c6'

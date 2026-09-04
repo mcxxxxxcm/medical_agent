@@ -4243,7 +4243,8 @@ def _detect_topic(state: MedicalAssistantState, question: str, rewritten_query: 
     cp = state.get("clinical_checkpoint") or {}
     symptom_names = set(symptoms.keys())
     symptom_names.difference_update([None, ""])
-    for name in (cp.get("symptom_timeline") or {}):
+    for item in (cp.get("symptom_timeline") or []):
+        name = item.get("symptom") if isinstance(item, dict) else item
         if name:
             symptom_names.add(name)
     if symptom_names:
