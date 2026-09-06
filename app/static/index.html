@@ -893,10 +893,22 @@
     let _feedbackActiveMsgEl = null;
     let _feedbackCtx = { requestId: '', question: '', answerText: '' };
     let _selectedReason = '';
+    // v9.44 已反馈一次的 requestId 集合：会话内锁定，消息重渲染不会重置 / 重复投票。
+    // 一次回答（一个 request_id）只算一次反馈；提交后不可取消、不可改判。
+    const _votedRequests = new Set();
 
     function addFeedbackButtons(msgDiv, answerText, requestId, question) {
         const existing = msgDiv.querySelector('.feedback-btns');
         if (existing) existing.remove();
+
+        // v9.44 已反馈过这条回答 → 直接渲染"已感谢"锁定态，不再给按钮（防重渲染后重复投票）
+        if (requestId && _votedRequests.has(requestId)) {
+            const locked = document.createElement('div');
+            locked.className = 'feedback-btns';
+            locked.innerHTML = '<span style="font-size:12px;color:#999;">✓ 感谢反馈</span>';
+            msgDiv.appendChild(locked);
+            return;
+        }
 
         const btns = document.createElement('div');
         btns.className = 'feedback-btns';
@@ -906,10 +918,13 @@
         upBtn.textContent = '👍';
         upBtn.title = '有帮助';
         upBtn.onclick = async () => {
+            // v9.44 一次反馈：已投过 → 锁定，忽略再次点击
+            if (requestId && _votedRequests.has(requestId)) return;
             if (upBtn.classList.contains('active-up')) return; // 防重复提交
             upBtn.classList.add('active-up');
             const downBtn = btns.querySelector('.down-btn');
             if (downBtn) downBtn.classList.remove('active-down');
+            if (requestId) _votedRequests.add(requestId); // 提交前即锁定（无论网络成败，一次到底）
             await submitFeedbackAPI('up', requestId, question, answerText, '', '');
             showFeedbackThanks(msgDiv);
         };
@@ -919,19 +934,20 @@
         downBtn.textContent = '👎';
         downBtn.title = '不准确';
         downBtn.onclick = () => {
-            downBtn.classList.toggle('active-down');
+            // v9.45 一次反馈：已投过 → 锁定，不再弹窗。
+            // 倒赞箭头不再是"取消"开关（去掉 toggle）：一旦进入倒赞弹窗即视为发起反馈，
+            // 再次点击箭头不动作，取消仅能通过弹窗 ×/背景实现（提交前放弃，不耗投票权）。
+            if (requestId && _votedRequests.has(requestId)) return;
+            if (downBtn.classList.contains('active-down')) return; // 已进入弹窗 → 箭头失效，防自由取消/重复触发
+            downBtn.classList.add('active-down');
             upBtn.classList.remove('active-up');
-            if (downBtn.classList.contains('active-down')) {
-                _feedbackActiveMsgEl = msgDiv;
-                _feedbackCtx = { requestId, question, answerText };
-                document.getElementById('pendingAnswerText').value = answerText.substring(0, 500);
-                _selectedReason = '';
-                document.querySelectorAll('#feedbackReasons .reason-option').forEach(el => el.classList.remove('selected'));
-                document.getElementById('feedbackNote').value = '';
-                document.getElementById('feedbackModal').classList.add('show');
-            } else {
-                closeFeedbackModal();
-            }
+            _feedbackActiveMsgEl = msgDiv;
+            _feedbackCtx = { requestId, question, answerText };
+            document.getElementById('pendingAnswerText').value = answerText.substring(0, 500);
+            _selectedReason = '';
+            document.querySelectorAll('#feedbackReasons .reason-option').forEach(el => el.classList.remove('selected'));
+            document.getElementById('feedbackNote').value = '';
+            document.getElementById('feedbackModal').classList.add('show');
         };
 
         btns.appendChild(upBtn);
@@ -1000,6 +1016,7 @@
         const note = document.getElementById('feedbackNote').value;
         const { requestId, question, answerText } = _feedbackCtx;
 
+        if (requestId) _votedRequests.add(requestId); // v9.44 提交即锁定，一次到底
         await submitFeedbackAPI('down', requestId, question, answerText, _selectedReason, note);
 
         closeFeedbackModal();

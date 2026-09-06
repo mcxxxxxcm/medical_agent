@@ -104,20 +104,32 @@ ROUTER_PROMPT = ChatPromptTemplate.from_messages([
 # ===========================================================================
 
 QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "你是一个查询改写助手，负责将追问补全为自包含问题。"),
-    ("human", """将追问补全为自包含问题，从历史中提取症状/药物补入。必须输出合法的 JSON 对象，只输出 JSON：
+    ("system", "你是一个查询改写助手。根据对话历史判断当前追问是否依赖上下文，并决定是否需要改写。必须输出合法的 JSON 对象，只输出 JSON："),
+    ("human", """你在处理用户的一段连续医疗对话。请判断当前「追问」是否自包含：
+- 自包含：不依赖上文也能独立理解（有明确症状/药物/对象，如"头痛怎么缓解"、"说说二甲双胍缓释片的用量"）
+- 不自包含：依赖上文才能理解（含"这个药/它/还有什么/那..."等指代或省略，如"服用这个药需要注意啥"）
 
 历史：
 {history_summary}
 
 追问：{question}
 
-JSON 结构：
-- "final_question"：补全上下文的完整自包含问题（字符串）
-- "search_keywords"：BM25 检索关键词，空格分隔（字符串）
+【JSON 输出结构】
+- "need_rewrite"：是否需要改写（布尔值）。追问不自包含则为 true，自包含则为 false
+- "final_question"：补全上下文的完整自包含问题（need_rewrite=false 时原样返回追问）
+- "search_keywords"：BM25 检索关键词，空格分隔（need_rewrite=false 时可返回追问本身的关键词，不要空）
 
-示例：追问"还有其他什么可以吃吗？"（历史提到头痛用布洛芬）
-→ {{"final_question": "缓解头痛除了布洛芬还有什么药？", "search_keywords": "头痛 缓解 布洛芬 药物"}}
+判断规则：
+1.【硬性】追问含指代词/省略结构（这个/它/那些/还需要/别的/一样/其他/还有/刚才/上述/前面说的...）→ 一律 need_rewrite=true，必须从历史提取症状/药物补全，命中这条就不要写成 false
+2. 追问无指代、本身包含明确对象 → need_rewrite=false，原样返回
+3. 历史空白或追问完整 → need_rewrite=false
+
+示例：
+历史"用户问过头痛，用布洛芬"，追问"还有其他什么可以吃吗？"
+→ {{"need_rewrite": true, "final_question": "缓解头痛除了布洛芬还有什么药？", "search_keywords": "头痛 布洛芬 药物"}}
+
+历史"用户问过流感"（有历史），追问"说说二甲双胍缓释片的用量"
+→ {{"need_rewrite": false, "final_question": "说说二甲双胍缓释片的用量", "search_keywords": "二甲双胍缓释片 用量"}}
 
 只输出 JSON："""),
 ])

@@ -80,13 +80,33 @@ class QueryRewriteOutput(BaseModel):
     v9.1 扩展：从单字段 rewritten_query 扩展为 final_question + search_keywords，
     匹配实际 Prompt 格式。
     """
+    need_rewrite: bool = Field(
+        default=False,
+        description="是否需要对问题做改写：True=当前问题依赖上下文需补全，False=已自包含无需改写"
+    )
     final_question: str = Field(
-        description="补全后的自包含完整问题（FINAL 行）"
+        description="补全后的自包含完整问题（need_rewrite=False 时原样返回当前问题）"
     )
     search_keywords: Optional[str] = Field(
         default=None,
-        description="BM25 检索关键词，空格分隔（SEARCH 行）"
+        description="BM25 检索关键词，空格分隔（need_rewrite=False 时可留空）"
     )
+
+    @field_validator("need_rewrite", mode="before")
+    @classmethod
+    def coerce_need_rewrite(cls, v):
+        """兼容 LLM 输出字符串形式的布尔值/词语"""
+        if isinstance(v, bool):
+            return v
+        if v is None:
+            return False
+        if isinstance(v, str):
+            v = v.strip().lower()
+            if v in ("true", "yes", "是", "需要", "1"):
+                return True
+            if v in ("false", "no", "否", "不需要", "0"):
+                return False
+        return bool(v)
 
     @field_validator("final_question", mode="before")
     @classmethod

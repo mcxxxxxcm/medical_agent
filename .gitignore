@@ -14,3 +14,5 @@ logs/
 # Python 字节码缓存
 __pycache__/
 *.pyc
+# Office 临时锁定文件（Excel/Word 打开时产生的 ~$ 开头文件，勿提交）
+~$*

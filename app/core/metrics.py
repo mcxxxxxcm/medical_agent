@@ -602,7 +602,23 @@ class MetricsCollector:
             try:
                 conn = sqlite3.connect(str(self._db_path))
                 try:
-                    conn.execute(
+                    # v9.44 幂等：同一 request_id 只记一条反馈。
+                    # 原实现每次调用都新建行 + 差评重复建 bad case，前端误触发/重渲染
+                    # 会把同一条消息记成多条（up 后又 down、down 两次），污染统计和黄金集。
+                    # 已有反馈则直接返回既有 id，不重复插入、不重复建 bad case。
+                    if request_id:
+                        exist = conn.execute(
+                            "SELECT id FROM feedback WHERE request_id=? LIMIT 1",
+                            (request_id,),
+                        ).fetchone()
+                        if exist:
+                            logger.info(
+                                f"重复反馈已忽略（request_id={request_id} 已存在，"
+                                f"rating={rating} 未重复入库）"
+                            )
+                            return exist[0]
+
+                    cur = conn.execute(
                         """
                         INSERT INTO feedback
                         (request_id, thread_id, user_id, rating, reason,
@@ -622,11 +638,12 @@ class MetricsCollector:
                             time.time(),
                         ),
                     )
+                    row_id = cur.lastrowid
                     conn.commit()
                 finally:
                     conn.close()
 
-                # 差评自动关联 Bad Case
+                # 差评自动关联 Bad Case（幂等保证已反馈者不会重复建）
                 if rating == "down" and question:
                     self._auto_create_bad_case(
                         request_id, question, answer_preview, reason, note, user_id, thread_id
@@ -634,7 +651,9 @@ class MetricsCollector:
             except Exception as e:
                 logger.warning(f"Feedback 写入失败：{e}")
 
-            return feedback_id
+            # v9.44：统一返回持久行 id（首次插入=lastrowid，重复=已存在行 id），
+            # 与 `exist` 分支一致，便于调用方判断"这条反馈是新增还是已被去重"。
+            return row_id if 'row_id' in locals() else feedback_id
 
     def _auto_create_bad_case(
         self,

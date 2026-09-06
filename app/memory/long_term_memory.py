@@ -10,6 +10,7 @@
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 import threading
+import time
 import uuid
 import logging
 
@@ -40,12 +41,37 @@ _NAMESPACE_MAX_ITEMS = {
     "document_cache": 500,     # 全局文档缓存最多 500 条
 }
 
+# 各命名空间用于"记录年龄"判定的时间字段。
+# 注意：症状事件此前误用 onset_iso（症状首发时间）判过期，会被慢性/长期症状
+# 的首发时间误导；正确应使用 created_at（事件被记录的时刻）衡量"这条数据存了多久"。
+_NAMESPACE_AGE_FIELD = {
+    "symptom_events": "created_at",
+    "medication_events": "created_at",
+    "bad_cases": "created_at",
+    "query_history": "timestamp",
+    "document_cache": "cached_at",
+}
+# 写入路径年龄清理的冷却时间（秒）：同一命名空间至少间隔这么久才做一次全量年龄扫描，
+# 摊销成本，避免每次 append 都 O(n)。
+_AGE_PRUNE_COOLDOWN = 3600
+
+
+def _retention_cutoff(namespace_name: str) -> str:
+    """计算指定命名空间的过期截至时间（ISO），早于该值视为过期。
+
+    窗口取自 _NAMESPACE_RETENTION（如 symptom_events=90 天）。
+    """
+    days = _NAMESPACE_RETENTION.get(namespace_name, 90)
+    return (datetime.now() - timedelta(days=days)).isoformat()
+
 
 class LongTermMemoryManager:
     """长期记忆管理器 (同步版本)"""
 
     def __init__(self, store: PostgresStore):
         self.store = store
+        # 每个 (命名空间, 用户) 的上次年龄清理时间戳（键: (ns, user_id) → epoch 秒）
+        self._last_age_prune: Dict[Tuple[str, str], float] = {}
         # ✅ 移除这里的 setup()，在外部调用
         logger.info("长期记忆管理器已初始化")
 
@@ -62,6 +88,7 @@ class LongTermMemoryManager:
         改为读 symptom_events 并过滤症状报告事件。
         """
         items = self.store.search(("symptom_events", user_id))
+        cutoff = _retention_cutoff("symptom_events")
 
         # 应用层排序：提取 value 并按 created_at 倒序
         records = []
@@ -70,6 +97,9 @@ class LongTermMemoryManager:
                 continue
             if item.value.get("event_type", "symptom_report") != "symptom_report":
                 continue
+            created = item.value.get("created_at", "")
+            if created and created < cutoff:
+                continue  # v9.43 超出保留期（90天）的陈旧事件不展示
             records.append(item.value)
 
         records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -218,7 +248,10 @@ class LongTermMemoryManager:
 
             # 收集需要删除的 key
             keys_to_delete = []
-            timestamp_field = "onset_iso" if namespace_name == "symptom_events" else "created_at"
+            # v9.43 修复：过期判定统一用"记录年龄"字段（created_at），
+            # 症状事件不再误用 onset_iso（症状首发时间）——慢性症状的首发时间很旧，
+            # 用它会误删刚记录的近期事件。
+            timestamp_field = _NAMESPACE_AGE_FIELD.get(namespace_name, "created_at")
 
             # 1. 删除超过保留天数的过期记录
             for item in items:
@@ -258,18 +291,27 @@ class LongTermMemoryManager:
             return 0
 
     def _prune_if_oversize(self, namespace_name: str, user_id: str) -> None:
-        """写入路径阈值守卫：条目超上限时触发 prune，防止长期记忆无界膨胀
+        """写入路径阈值守卫：条目超上限 或 距上次年龄清理超冷却期时触发 prune。
 
         P2-6：prune_namespace 原为死代码，无任何调用者。在每次写入后
         检查该命名空间条目数，超上限才 prune（避免每次写入都全量清理）。
+
+        v9.43 修复：原实现只在"条目数 > 上限"时清理，普通用户（如测试几轮、几十条）
+        永远到不了上限，导致按保留天数（90天）的过期清理从不执行，陈旧症状/用药事件
+        永久残留。现改为：超上限 或 超过 _AGE_PRUNE_COOLDOWN 冷却期都触发 prune，
+        让年龄过期的事件也会被清掉（同一命名空间至少冷却一次才做全量扫描，摊销成本）。
         """
         try:
             max_items = _NAMESPACE_MAX_ITEMS.get(namespace_name)
             if not max_items:
                 return
+            now = time.time()
+            key = (namespace_name, user_id)
+            last = self._last_age_prune.get(key, 0.0)
             items = self.store.search((namespace_name, user_id))
-            if len(items) > max_items:
+            if len(items) > max_items or (now - last) >= _AGE_PRUNE_COOLDOWN:
                 self.prune_namespace(namespace_name, user_id)
+                self._last_age_prune[key] = now
         except Exception as e:
             logger.debug(f"写入后清理 {namespace_name}/{user_id} 跳过：{e}")
 
@@ -314,18 +356,20 @@ class LongTermMemoryManager:
             {user_id: {namespace: deleted_count}}
         """
         if user_ids is None:
-            # 尝试从各命名空间中收集所有 user_id
+            # 尝试从各命名空间中收集所有 user_id。
+            # v9.43 修复：事件 value 里不含 user_id（save_query_record 只存 question/answer），
+            # 旧实现从 query_history 的 value.get("user_id") 枚举恒为空集 → 启动清理空转。
+            # 改为利用 Item.namespace[1]（即 ("symptom_events", user_id) 的 user_id）反推。
             user_ids = set()
             for ns in (namespaces or ["symptom_events", "medication_events", "bad_cases", "query_history"]):
                 try:
-                    # PostgresStore.list_namespaces 可能不支持，这里用 search 近似
-                    # 遍历已知用户（从 query_history 中提取）
-                    items = self.store.search(("query_history",))
+                    items = self.store.search((ns,))  # 前缀匹配，跨所有用户
                     for item in items:
-                        if item.value and item.value.get("user_id"):
-                            user_ids.add(item.value["user_id"])
+                        # namespace 形如 (ns, user_id)
+                        if getattr(item, "namespace", None) and len(item.namespace) > 1:
+                            user_ids.add(item.namespace[1])
                 except Exception:
-                    pass
+                    continue
             user_ids = list(user_ids)
 
         results = {}
@@ -436,11 +480,18 @@ class LongTermMemoryManager:
         """
         items = self.store.search(("symptom_events", user_id))
         records = []
+        # v9.43 读路径年龄过滤：丢弃超过保留期（默认 90 天）的陈旧症状事件。
+        # 修复"很久前测试的流鼻血/感冒仍被 L1→L2 填进新会话"：若不过滤，
+        # get_all_symptom_onsets 会把任意久远的事件都当事实反复灌入当前会话。
+        cutoff = _retention_cutoff("symptom_events")
         for item in items:
             if not item.value or "onset_ts" not in item.value:
                 continue
             if symptom_name and item.value.get("symptom") != symptom_name:
                 continue
+            created = item.value.get("created_at", "")
+            if created and created < cutoff:
+                continue  # 超出保留期，跳过
             records.append(item.value)
             # v9.2 漏洞3修复：提前截断，避免全量加载后排序
             # 最多读取 limit * 3 条（留余量给排序过滤），减少内存占用

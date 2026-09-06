@@ -166,6 +166,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"启动 L1 缓冲 flush 失败：{e}")
 
+    # v9.42: 启动时清理长期记忆过期/超量事件（best-effort）
+    # PRUNE 原为死代码、写入路径又只在条目超上限时触发，普通用户的陈旧
+    # 症状/用药事件（如很久前测试的"流鼻血/感冒"）永远不会被按保留天数清掉。
+    # 启动扫描一次可发现的历史用户做全量清理；任意活跃用户在后续任一次写入时，
+    # 还有 _prune_if_oversize 的年龄清理兜底。
+    try:
+        from app.memory.long_term_memory import get_long_term_memory
+        memory = get_long_term_memory()
+        result = memory.prune_all_users()
+        total = sum(sum(v.values()) for v in result.values())
+        if total:
+            logger.info(f"启动长期记忆清理完成：共删除 {total} 条过期事件")
+        else:
+            logger.info("启动长期记忆清理完成：无可清理的过期事件")
+    except Exception as e:
+        logger.warning(f"启动长期记忆清理失败（不影响功能）：{e}")
+
     yield
 
     # 关闭时清理

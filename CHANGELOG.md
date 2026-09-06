@@ -1,15 +1,141 @@
 # 系统优化更新日志
 
-## v9.40 - 修复本地模型查询改写全失败导致的多轮对话幻觉（多个文件）
+## v9.47 - 修复：symptom 路径的"空症状字典"谎报实体，绕过澄清闸门（吃了三粒怎么办又漏澄清）（app/graph/nodes/nodes.py）
 
-背景：多轮对话第二轮追问（如"服用这个药需要注意啥？"）总是检索出冠心病/糖尿病等无关文档并生成幻觉答案。`logs/error.log` 每轮都刷 `查询重写失败：QueryRewriteOutput 结构化输出失败（2次尝试 × 3种策略），最后错误：None`。根因是**设计矛盾**：`QUERY_REWRITE_PROMPT` 要求模型输出 `FINAL:`/`SEARCH:` 两行纯文本，但 `query_rewrite_node` 却用 `get_local_llm_json()` —— 该函数强制 `response_format={"type":"json_object"}`。本地 qwen2.5:1.5b 被夹在矛盾指令中间，输出的 JSON 键名永远是 `FINAL`/`SEARCH`，与 `QueryRewriteOutput` 期望的 `final_question`/`search_keywords` 对不上，三层降级策略全部校验失败（最后错误为 None 说明是解析/校验失败而非请求失败）。except 分支随后把 `rewritten_query=final_question=原残缺问题` 拿去检索，缺实体（无"二甲双胍"）召回无关文档，幻觉由此产生。
+背景：v9.46 单测通过、但线上实测"吃了三粒怎么办"仍不澄清、直接检索（出 呼吸系统/急诊/发热/儿童护理 等无关来源）。v9.46 的闸门在裸调 `query_rewrite_node`（干净 state）下正确，真实请求却在 symptom 路径失效。
 
-- **对齐 Prompt 与 JSON Schema**：`QUERY_REWRITE_PROMPT`（app/graph/nodes/prompts.py）改为要求输出合法 JSON 对象，键名与 Pydantic 模型完全一致（`final_question`/`search_keywords`），并保留 Ollama json_object 识别所需的 "JSON" 字样；示例中的 JSON 字面量用 `{{}}` 转义避免 `str.format` 展开报错。模型从此不再收到矛盾的输出格式指令。
-- **search_keywords 输入容错**：`QueryRewriteOutput`（app/graph/nodes/models.py）的 `strip_search_prefix` 校验器扩展为兼容 list/dict 输入——qwen 若把关键词输出成数组或字典，统一归一为空格分隔字符串，避免 `model_validate` 因类型不符而失败。
-- **改写失败时的上下文规则兜底**：`query_rewrite_node` 的 except 分支（app/graph/nodes/nodes.py）不再裸用残缺问题，改为 `_context_fallback_rewrite`——复用 AC 自动机（`get_drug_matcher`/`get_symptom_matcher`）从最近 6 条历史提取药物/症状实体（如"二甲双胍"），拼进 `final_question`（"…（历史提到二甲双胍）"）与 `rewritten_query`（"… 二甲双胍"），保证至少能召回历史实体对应的文档，杜绝检索无关内容。仅当问题含指代词/省略结构且历史能补出实体时触发，否则保持原题（语义不变）。
-- 语义不变：不改检索环节其他逻辑；改写走通时完全走原路径，兜底仅在最坏情况下介入。
+- **根因（顺序 + 空字典 truthy）**：symptom 路径是 `router → symptom_analysis → query_rewrite`。`symptom_analysis_node` 先于 `query_rewrite_node` 执行，把 `state["symptoms"]` 设成结构上非空、语义全空的字典 `{'symptoms':[], 'severity':None, 'body_parts':[], ...}`（list/body_parts 均空）。而 `_context_has_entity` 只判 `if state.get("symptoms"):`——空结构字典本身 truthy → 谎报"已有实体" → 闸门返回 "ok" → 放行检索。单测用 `symptoms: None` 是干净 state，踩不到这个真实形态；online 路径每次都踩。
+- **修复**：`_context_has_entity` 的 symptoms 检查改为只看**内层真实实体**——`symptoms["symptoms"]`（症状名列表）或 `symptoms["body_parts"]`（部位）非空才算"有实体可补"。空结构字典不再谎报，闸门得以在 symptom 路径生效。
+- 验证：带"你好"历史 + `symptom_analysis` 填充空 symptoms 字典 → 闸门 `clarify`；确实提取到症状名（"头痛"）→ 仍放行 `ok`。澄清测试类 14/14 通过。
+- 附带教训：澄清闸门依赖 `state` 前置节点填充字段，单测必须用"真实节点顺序 + 真实污染后的 state"复现，而非裸调目标节点。
 
-<footer>查询改写修复 · 改动文件：`app/graph/nodes/prompts.py`、`app/graph/nodes/models.py`、`app/graph/nodes/nodes.py`</footer>
+<footer>空症状字典谎报实体修复 · 改动文件：`app/graph/nodes/nodes.py`、`tests/test_nodes.py`</footer>
+
+## v9.46 - 澄清阈值精细化：纠正"量词碎片"漏澄清（吃了三粒怎么办），用"具体临床主语"区分残缺与自包含（app/graph/nodes/nodes.py旧，v9.47修正其症状路径缺陷）
+
+背景：「吃了三粒怎么办？」首轮、无历史，本应澄清（"三粒"指代未说出的药、无主题无实体），却被放行检索 → router 判 symptom → 白烧一次检索后兜底输出"知识库未收录…请补充具体信息"并列出 8 条无关来源——最差组合：既浪费检索、又给误导来源、还没进正式澄清状态。
+
+- **根因（阈值过窄）**：v9.45 的闸门只认"空问题"和"强代词悬空"（`_has_strong_anaphora` 黑名单：这个/那个/它…）。"吃了三粒怎么办"的残缺形态是"**数量词无主语**"而非"悬空代词"，没有代词所以漏过，落到最后一步 `return "ok"` 放行。而仓库里更细的 `_has_anaphora_pattern`（短查询+无实体+疑问词开头）其实已认定它不自包含，只是 v9.45 为防过度澄清没接入。
+- **修复（阈值 6 步化 + 具体主语豁免）**：
+  1) 空问题 → 澄清；2) 具体领域实体（药/症状/疾病）→ 放行；3) 历史/快照/档案可补实体 → 放行；4) 强代词悬空且无具体临床主语 → 澄清；5) 细检测不自包含（量词碎片/短查询无实体）且 ≥3 字、且无具体临床主语 → 澄清；6) 其余（自包含通用问题）→ 放行。
+- **新增 `_SPECIFIC_HEALTH_TOPIC_KEYWORDS` + `_has_specific_health_topic()`**：身体部位（头/胃/心肺…）、生命体征（血压/血糖/心率…）、具体医学名词（报告/体检/检查/剂量/疫苗/手术…）。有具体主语 → 短查询也自包含可检索（"我胃不舒服/体检报告怎么解读"）；只有泛化名词（药/这个/它）或量词碎片（三粒）→ 无主语、该澄清。刻意**不含**泛化的"药"，避免"这个药/那个药"被豁免回检索——靠强代词分支过滤。
+- **长度下限**：步骤5要求 ≥3 字，跳过"谢谢/好的"等 2 字社交语，防误杀。
+- 验证（实测矩阵全对）：澄清↔ 吃了三粒怎么办/这个药一天几次/还有吗/它怎么吃/复用这个药的注意事项/再吃多少合适/怎么办/注意什么/要继续吃了/那个和这个能一起吃吗；放行↔ 我胃不舒服怎么办/体检报告怎么解读/血压药吃了三粒/阿莫西林吃了三粒/发烧了怎么办/胃疼该吃什么药/头孢和酒能一起吃吗/咳嗽几天了/二甲双胍缓释片怎么吃/心慌睡不着/手上起了红疹/谢谢/检查结果正常说明什么。一句话修正=兜底澄清编程式前置，不再烧那次注定空转的检索。
+
+### 触发阈值旋钮
+具体临床主语词表越宽 → 放行越多、澄清越少；长度下限 ↑ → 澄清越保守。当前默认：身体部位+生命体征+具体医学名词，层位 ≥3。
+
+<footer>澄清阈值精细化 · 改动文件：`app/graph/nodes/nodes.py`、`tests/test_nodes.py`</footer>
+
+## v9.45 - 检索前"回答可行性"闸门：无法意图识别的 query 追问而非乱答 + 反馈倒赞不能再自由取消（app/graph/nodes/nodes.py、app/static/index.html）
+
+背景：新会话（同 user_id、无历史）首问「复用这个药的注意事项」，被答成"奥美拉唑使用注意事项"+"老年人多药共用注意事项"——`query_rewrite` 的"首轮必自包含"假设把残缺 query 直接放行到检索，无主题可指、无实体可查却硬检索。
+
+- **根因（三点串不出澄清）**：①步骤0（nodes.py）`_has_prior_user_turn` 首轮为 False → `declared_need_rewrite=False` 直接跳过改写；②步骤1.5 澄清硬性要求 `declared_need_rewrite` → 首轮恒为 False，澄清分支永远走不到；③`_has_strong_anaphora("这个药")` 虽命中黑名单"这个"，却只挂步骤1模型分支里，首轮根本到不了。结果"这个药"无可消解 → 满场检索 → 奥美拉唑/老人用药乱撞。
+- **新增 `_decode_answerable()`（检索前可行性判定，规则主闸，确定性、零 LLM 成本）**：只在"有明确主题+有实体可检索"时才放行检索。判据按序：空问题→澄清；问句自带具体领域实体（药/症状/疾病，`_DOMAIN_ENTITY_KEYWORDS`）→可检索；历史/临床快照/档案可补出实体→可检索（合法追问）；无实体可查+强指代悬空（"这个药/那个药/它/其他…"）→澄清；其余（无实体、非遗留指代的自包含通用问题）→放行，交由改写+步骤1.5 LLM 澄清作副闸。置于 `query_rewrite_node` 顶部、步骤0之前，symptom 与 knowledge 两路径均经此统一拦截。
+- **新增 `_emit_clarify_response()`**：把命中闸门的轮次短路为澄清（记录 `clarify_triggered` bad case + 更新话题轨迹 + `refusal_type="clarify"` 复用上游澄清语义），不进入后续检索。
+- **`_build_clarify_answer()` 药物指代定向追问**：命中 `_DRUG_PRONOUN_RE`（"这个药/那个药/该药…"）时，把"访问者补充药物名称"一栏改为"您具体指的是哪一种药（如二甲双胍、布洛芬）及吃了多久、多大剂量"，避免患者只给代词、系统却拿泛化药物知识作答。
+- **反馈倒赞"自由取消"残留修复**：v9.44 只锁了"提交后/重渲染"，倒赞箭头本身仍用 `toggle`（`index.html` down 按钮），点击两次=取消选中、可反复开关弹窗再多次反馈。v9.45 去掉箭头 toggle：一经进入倒赞弹窗即视作发起反馈，再次点箭头不动作；取消仅可通过弹窗 ×/背景（提交前放弃，不耗投票权）。
+- 设计取舍：规则主闸承担可见的确定性 case（零延迟、可回归、可解释）；长尾歧义交由已有步骤1.5 LLM 澄清副闸，**未新增 `answerable` LLM 字段**——避免改动 `QueryRewriteOutput`/prompt 引入整条重写管线回归风险，也避免首轮多一次 5s 本地调用（违背代码库"单次调用裁决"的延迟约束）。
+- 验证：`复用这个药的注意事项`（首轮、无历史）→ `clarify` 且追问"哪一种药"；`二甲双胍缓释片怎么吃`→ 不澄清照常检索；`我胃不舒服怎么办`（无实体非遗留指代）→ `ok` 放行；`还有吗`（首轮悬空指代）→ 由"不澄清"反转为澄清（原测试断言更新为符合 v9.45 语义）。路由/症状白名单等 16 条失败为基线既有问题，与 v9.45 无关（stash 校验确认）。
+
+<footer>检索前回答可行性闸门 · 改动文件：`app/graph/nodes/nodes.py`、`tests/test_nodes.py`、`app/static/index.html`</footer>
+
+## v9.44 - 用户反馈改为"一次投票锁定 + 幂等"：不能取消/重复/改判（app/core/metrics.py、app/static/index.html）
+
+背景：用户反馈按钮（👍/👎）可被取消、再次倒赞、up/down 反复切换。倒赞后每条 `.feedback` 都新建行、差评还重复建 Bad Case，同一条消息被记成多条、满意度统计被污染、黄金测试集混入重复样本。
+
+- **功能说明（现状）**：👍 仅写 SQLite `feedback` 满意度记录；👎 额外 `_auto_create_bad_case`（case_type=`user_negative_feedback`）存入长期记忆，按文档化闭环供人工审核→黄金测试集→迭代评估（`/api/metrics/feedback/candidates`）。
+- **根因（后端无幂等）**：`record_feedback`（app/core/metrics.py）每次调用生成新 `fb_` id 插入；`request_id` 只有普通索引、无唯一约束、无去重判断 → 重渲染/误触发可产生多条记录 + 多个重复 bad case，甚至同一案例既 👍 又 👎。
+- **修复A（后端幂等）**：`record_feedback` 先按 `request_id` 查已有反馈，存在则直接返回既有行 id、不重复插入、也不重复建 bad case——首投生效（up/down 均一次到底）。返回值统一为持久行 id（首次=lastrowid，重复=已存在 id），与路由层返回一致。
+- **修复B（前端一次锁定）**：`index.html` 新增 `_votedRequests` Set（以 request_id 为键）：消息重渲染/流式续接时若已投过 → 只渲染"✓ 感谢反馈"锁定态、不再给按钮；up/down 提交即写入 Set 锁定，up 有防重守卫、down 弹窗提交前即锁定。
+- 语义：提交前允许反悔切换（up↔down，尚未发送）；一旦提交即锁定不可取消、不可改判；回退 via 重渲染也不可能绕过。
+- 验证：同一 request_id 两次 down → 返回同 id、仅 1 条持久行、仅 1 个 bad case；up 后 down → 保留首投 up。
+
+<footer>反馈一次锁定 · 改动文件：`app/core/metrics.py`、`app/static/index.html`</footer>
+
+## v9.43 - 修复长期记忆症状事件永不按期限清理：陈旧症状反复灌入新会话（app/memory/long_term_memory.py、app/api/routes.py）
+
+背景：很久前测试的"流鼻血/感冒"一直保留在档案里，每次新会话都从 L1 加载进当前 L2（`从L1加载症状首发时间：['流鼻血', '感冒']`）。90 天前的历史症状不该持续干扰新会话。
+
+- **根因1（清理机制失灵）**：`_NAMESPACE_RETENTION` 明明配了 `symptom_events: 90 天`，但按天数的过期清理只在"条目数 > 上限(500)"时才执行（`_prune_if_oversize`）。普通用户几轮/几十条远不到上限 → **过期清理从不运行**。且 `prune_all_users/prune_all_namespaces` 是死代码，无任何调用者。
+- **根因2（读路径不过滤）**：`get_all_symptom_onsets`/`get_symptom_events` 直接倒出全部事件、不按年龄裁剪，于是老事件永远被 L1→L2 填进当前会话。
+- **修复A（读路径年龄过滤）**：`get_symptom_events`/`get_symptom_history` 丢弃 `created_at` 超过保留期（默认 90 天）的事件，新会话不再灌入陈旧症状。`_retention_cutoff` 统一按 `_NAMESPACE_RETENTION` 取窗口。
+- **修复B1（prune 时间字段纠错）**：`prune_namespace` 原先用 `onset_iso`（症状首发时间）判过期，会被慢性症状的旧首发时间误导误删近期记录；改用 `_NAMESPACE_AGE_FIELD`（记录时间 `created_at`）。
+- **修复B2（年龄清理真正触发）**：`_prune_if_oversize` 改为"条数超上限 或 距上次年龄清理超 `_AGE_PRUNE_COOLDOWN`(1h) 即 prune"，普通用户任一次写入后也会清掉过期事件（同命名空间摊销，不每次全量扫描）。
+- **修复B3（启动扫描接通 + 用户枚举纠错）**：`prune_all_users` 原从 query_history 的 `value.get("user_id")` 枚举（value 里根本没存 user_id → 恒空集）；改为从各事件命名空间的 `Item.namespace[1]` 反推 user_id。并在 `lifespan` 启动时调用一次 `prune_all_users`（best-effort），上线即可清存量。
+- 验证：读过滤（记录于>90天前的"感冒"被挡，当天记录的"流鼻血"保留）；prune 按 created_at 而非 onset 判龄；写入触发年龄清理；`prune_all_users` 能从 symptom_events/query_history 反推出 alice/bob。
+
+<footer>长期记忆清理修复 · 改动文件：`app/memory/long_term_memory.py`、`app/api/routes.py`</footer>
+
+## v9.42 - 修复用药咨询被误判为症状处理：多余症状小节 + 糖尿病答案质量差（app/graph/nodes/nodes.py）
+
+背景：「服用这个药需要注意啥？（承接二甲双胍用量）」被答成 糖尿病用药 + 头痛/发热/腹痛/头晕 各一小节的多余答案；糖尿病部分也只泛泛列了 二甲双胍/磺脲类/DPP-4 分类，未聚焦二甲双胍注意事项。
+
+- **根因（路由）**：`_detect_route_from_context`（app/graph/nodes/nodes.py）的 `symptom_indicators` 把 `服用/剂量/用药` 等**用药类词**当成"症状上下文"。上一轮 AI 回答二甲双胍用量（自然含"服用/剂量/随餐"）→ 被判 had_symptom_context → 短句追问（≤15字）“服用这个药需要注意啥？”走 `symptom` 分支 → 触发 v9.20 症状检索词增强（`_GENERIC_TREATMENT_KEYWORDS="治疗 处理 药物 用药 缓解 护理 注意事项 家庭护理"`），把《发热/头痛/急诊症状/家庭护理/冠心病/皮肤》等无关症状文档拽进候选，LLM 便按"每个症状给一段处理"生成头痛/发热/腹痛/头晕小节。
+- **修复A（路由源点，核心）**：拆分 `med_indicators`（用量/用法/剂量/随餐/一次/一日）与 `symptom_indicators`（副作用/建议您/缓解/发热/疼痛…）独立识别 `has_med_context`；新增 `_is_drug_precaution_followup` + `_DRUG_PRECAUTION_INTENT_RE`：历史为用药上下文、且当前追问含药物指代/药名 + 用药意图词（注意/用法/副作用/剂量…）时，**优先路由到 `knowledge`**，不再走症状处理流程。
+- **修复B（检索词增强加闸，纵深防御）**：`_enrich_treatment_query` 对"含 药/服用 + 注意/用法/副作用 且无具体症状"的查询不追加 `_GENERIC_TREATMENT_KEYWORDS`，即便路由误降级到 symptom 也不会污染候选集。
+- **修复C（代指直填，聚焦药物）**：`_inject_context_entities` 新增 `_DRUG_PRONOUN_RE`，把 `final_question`/`rewritten_query` 里的"这个药/那个药/该药/这药"直接替换为最近用户提及的药物名（如 二甲双胍）。效果：FINAL=`服用二甲双胍需要注意啥？`、SEARCH=`二甲双胍 注意事项`，检索/生成以二甲双胍为主体，替代原"这个药 注意事项 二甲双胍"堆叠。
+- 验证：`服用这个药需要注意啥？`→路由 `knowledge`（原 symptom）；`发烧 怎么办`→仍增强护理词（不受影响）；药物注意查询不再增强；代指替换后 FINAL/SEARCH 聚焦二甲双胍。
+
+<footer>用药咨询路由修复 · 改动文件：`app/graph/nodes/nodes.py`</footer>
+
+## v9.41.1 - 修复弱模型把明显指代误判为"无需改写"致上下文丢失（nodes/prompts）
+
+背景：v9.41 改为"一次调用即裁决并改写"后，多轮第二步"服用这个药需要注意啥？"被 qwen2.5:3b 判成 `need_rewrite=False`，直接跳过硬写，用残缺原文"这个药"去检索，召回无关文档产生幻觉。规则层 `_anaphora_detected=True` 明明已正确检测到指代，却被模型的误判覆盖掉。
+
+- **根因**：`need_rewrite` 完全交给 3b 判断并作为唯一裁决；3b 对"这个/它/还"这类强指代也会输出 False，规则信号没有话语权。
+- **修复A（规则锚定，核心）**：`nodes.py` 新增 `_has_strong_anaphora`（仅判 Layer-1 黑名单命中，即 `_ANAPHORA_PATTERNS` 子串，比 `_has_anaphora_pattern` 安全、不含短查询/疑问词脆弱层）。节点最终裁决 `declared_need_rewrite = bool(result.need_rewrite) or _strong_anaphora`——黑名单命中即强制认为需改写，宁可多改写也不丢上下文；日志同时打印 `need_rewrite(模型)/规则锚定` 两项便于排查。模型的 `need_rewrite=False` 只在无强指代的自包含多轮问题（如继续闲聊中问"布洛芬怎么吃"）处才被信任，避免无意义改写。
+- **修复B（提示词硬性规则）**：`prompts.py` 判断规则第 1 条改为【硬性】——命中指代词一律 `need_rewrite=true`，纯靠模型能力兜底改为明确指令。
+- 兜底不变：被锚定改写但模型未重写时，`_inject_context_entities` 仍会把历史实体（如"二甲双胍"）并入检索词、并在 `final_question` 追加"（历史提到二甲双胍）"补全指代，双保险。
+- 验证：`服用这个药需要注意啥？`/`它多久能好？`/`还有什么药可以吃吗` → `_has_strong_anaphora=True`（强制改写）；`说说二甲双胍缓释片的用量`/`头痛怎么缓解？`/`布洛芬有什么副作用？` → `False`（交模型判断，不做无用改写）。
+
+<footer>改写裁决规则锚定 · 改动文件：`app/graph/nodes/nodes.py`、`app/graph/nodes/prompts.py`</footer>
+
+## v9.41 - 查询改写优化：首轮规则跳过 + 一次调用同时裁决并改写（prompts/models/nodes）
+
+背景：本地 qwen（GTX 3050 4GB）单次改写约 5s，多轮对话里若"先判断是否需要改写、再决定是否改写"会造成两次本地调用（2×5s）；而首轮问题本必自包含，更不该白白调一次模型。
+
+- **首轮规则跳过（免费）**：`query_rewrite_node`（app/graph/nodes/nodes.py）新增 `_has_prior_user_turn(messages, question)`，当前问题 `state['question']` 已作为最后一条 HumanMessage 持久化，跳过与之完全相同的条目后，无剩余用户轮次即首轮 → 直接判定自包含、跳过改写，**不发起任何本地模型调用**，替代原 `if not messages:` 的硬判。
+- **一次调用 = 裁决 + 改写（need_rewrite 合并）**：`QueryRewriteOutput`（app/graph/nodes/models.py）新增 `need_rewrite: bool` 字段（含字符串布尔 coercer，兼容 qwen 输出 "true"/"false"/"需要"等）；`QUERY_REWRITE_PROMPT`（app/graph/nodes/prompts.py）改写为一次调用同时输出 `need_rewrite`/`final_question`/`search_keywords`，保留 Ollama json_object 所需的 "JSON" 字样。节点据此决定：`need_rewrite=False` 时查询自包含、跳过改写（复用原问题），`True` 时才进入实体锚定/守卫/检索词组装。全程仅一次本地调用。
+- **澄清触发口径收紧**：步骤 1.5 主动澄清由原 `_anaphora_detected` 改为 `declared_need_rewrite`——只有"被判需改写 + 改写补不出实体 + 历史/快照确无实体"才澄清；首轮（`declared_need_rewrite=False`）绝不澄清，直接检索，避免误打断自包含首问。改写调用抛异常时保守回退 `declared_need_rewrite=True` 交由澄清兜底。
+- 语义不变：改写结果采纳、`_rewrite_guard_check` 守卫、`_inject_context_entities` 实体锚定、Bad Case 采集逻辑均保留；仅把"是否改写"的裁决从规则两分改为「首轮规则免费跳过 + 多轮模型单次裁决」。
+- 实测：改造后不做多轮本地模型调用判断改写与否，追问的改写/检索/回答质量保持 v9.40 基线不变。
+
+<footer>查询改写优化 · 改动文件：`app/graph/nodes/prompts.py`、`app/graph/nodes/models.py`、`app/graph/nodes/nodes.py`</footer>
+
+## v9.40.2 - 修复自包含短查询被误判为残缺改写（app/graph/nodes/nodes.py）
+
+背景：首轮自包含问题"说说二甲双胍缓释片的用量"（12 字 < 15）被日志判成"检测到指代词/省略结构，强制进入重写"，随后 qwen 把"用量"改写跑偏成"需要注意什么？"。用户问用量，检索却按注意事项走。
+
+- **根因**：`_has_anaphora_pattern` 第 2 层对 <15 字短查询用 `_DOMAIN_ENTITY_KEYWORDS` 判定"是否含领域实体"；而这张硬编码常用药表**缺"二甲双胍"等慢病用药**，"二甲双胍"不在表内 → 判"缺实体 → 不自包含" → 误触发强制改写。
+- **修复**：`_DOMAIN_ENTITY_KEYWORDS` 药物区补充慢病常用药（二甲双胍、格列美脲、胰岛素、阿卡波糖、左甲状腺素、氨氯地平、卡托普利、缬沙坦、阿托伐他汀、瑞舒伐他汀、氯吡格雷、华法林、奥美拉唑，及"二甲双胍缓释片"）。"二甲双胍"是"二甲双胍缓释片"的子串，任一在场即让短查询判为自包含，跳过改写。
+- 验证：`说说二甲双胍缓释片的用量`→false（自包含）；`服用这个药需要注意啥？`、`它多久能好？`、`还有什么药可以吃吗`→true（仍正常触发改写）；`布洛芬的用法用量`/`二甲双胍有什么副作用？`→false。
+- 语义不变：仅扩充自包含判定实体表，不改改写/注入机制。
+
+<footer>自包含判定修复 · 改动文件：`app/graph/nodes/nodes.py`</footer>
+
+## v9.40.1 - 修复实体锚定把助手答复中的医学术语污染进检索词（app/graph/nodes/nodes.py）
+
+背景：上一版 `_inject_context_entities` 从最近 6 条历史**所有消息**（含助手答复）遍历提取实体，导致助手解答时顺带列举的副作用（如二甲双胍的"便秘/出血/发热/头痛/眩晕/糖尿病"）被无差别并入检索词，`L2语义缓存检查` 的 cache_query 出现一大堆无关关键字，Dense embedding 被带偏。
+
+- **根因**：实体锚定应锚定**用户主动关心的实体**，而非助手答复里任何出现的医学术语（副作用列举不代表用户检索意图）。
+- **修复**：`_inject_context_entities` 只从用户（Human）消息提取实体（跳过 AIMessage）；`search_missing` 增加 `[:4]` 截断，防止超长历史仍把过多实体并入。用户实体（如"二甲双胍"）继续得到保留，副作用噪声全部消除，检索词从 `服用 用药 注意事项 二甲双胍 便秘 发热 恶心 眩晕 糖尿病 腹泻` 收敛为 `服用 用药 注意事项 二甲双胍`。
+- 语义不变：仅收紧实体来源与数量，不改注入机制本身。
+
+<footer>实体锚定修正 · 改动文件：`app/graph/nodes/nodes.py`</footer>
+
+## v9.40 - 修复多轮对话追问检索丢失实体的幻觉问题（多个文件 + .env）
+
+背景：多轮对话第二轮追问（如"服用这个药需要注意啥？"）总是检索出冠心病/糖尿病等无关文档并生成幻觉答案。第一版根因是**设计矛盾**：`QUERY_REWRITE_PROMPT` 要求模型输出 `FINAL:`/`SEARCH:` 两行纯文本，但 `query_rewrite_node` 用 `get_local_llm_json()` 强制 `response_format={"type":"json_object"}`，qwen2.5:1.5b 被夹在矛盾指令中间，输出 JSON 键名 `FINAL`/`SEARCH` 与 `QueryRewriteOutput` 期望的 `final_question`/`search_keywords` 对不上，三层降级策略全部校验失败（最后错误为 None），except 分支拿原残缺问题检索，缺"二甲双胍"实体召回无关文档。对齐格式后暴露第二层根因：**1.5b 即便改写成功也把核心实体漏进检索词**（search_keywords 只给"服用 用药 注意事项"）。检索命脉不该押在弱模型上。
+
+- **对齐 Prompt 与 JSON Schema**：`QUERY_REWRITE_PROMPT`（app/graph/nodes/prompts.py）改为要求输出合法 JSON 对象，键名与 Pydantic 模型完全一致（`final_question`/`search_keywords`），保留 Ollama json_object 识别所需的 "JSON" 字样；示例 JSON 用 `{{}}` 转义避免 `str.format` 报错。模型不再收到矛盾的输出格式指令。
+- **search_keywords 输入容错**：`QueryRewriteOutput`（app/graph/nodes/models.py）`strip_search_prefix` 校验器扩展兼容 list/dict——qwen 若把关键词输出成数组或字典，统一归一为空格分隔字符串，避免 `model_validate` 因类型不符失败。
+- **实体锚定（核心，升级为成功/失败双路径）**：`query_rewrite_node`（app/graph/nodes/nodes.py）新增 `_inject_context_entities`，对**指代/追问类问题**无论改写成功与否，都复用 AC 自动机（`get_drug_matcher`/`get_symptom_matcher`）从最近 6 条历史提取药物/症状实体（如"二甲双胍"），缺失则强制并入 `rewritten_query`（"服用 用药 注意事项 二甲双胍"）——只并入不覆盖、幂等。改写被判"与原问题一致"时也在 `final_question` 补全实体（"…（历史提到二甲双胍）"）。既修正重写语义，也保证 Dense/BM25 至少能召回历史实体对应文档。原 `_context_fallback_rewrite`（仅失败路径）合并为此函数。
+- **弱模型升级**：`.env` 显式 `LOCAL_MODEL_NAME=qwen2.5:3b`（替代 config.py 默认 1.5b，3b 已本地拉取），提升改写/实体提取能力本身。
+- 语义不变：非指代/追问类问题完全走原路径；只并入不覆盖、不改检索环节其他逻辑。检索后若发现相关文档仍不足，现有 retrieval 自纠正逻辑继续兜底。
+
+<footer>查询改写修复 · 改动文件：`app/graph/nodes/prompts.py`、`app/graph/nodes/models.py`、`app/graph/nodes/nodes.py`、`.env`</footer>
 
 ## v9.39 - 修复元数据交叉校验总体置信度统计异常（app/rag/metadata_extractor.py）
 

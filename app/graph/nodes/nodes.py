@@ -606,6 +606,7 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
     # 只看最近 4 条消息（2 轮对话）
     recent = messages[-4:] if len(messages) > 4 else messages
 
+    has_med_context = False
     has_symptom_context = False
     has_knowledge_context = False
 
@@ -615,8 +616,14 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
         elif isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            # AI 消息中包含用药建议/症状分析 → 说明之前是症状咨询
-            symptom_indicators = ["用药", "服用", "剂量", "副作用", "建议您", "药物", "缓解"]
+            # AI 消息包含"剂量/用法/随餐"等 → 之前是药物咨询，不算症状咨询。
+            # 用药/药量词归入"药物上下文"，与"症状上下文"严格分离（历史 Bug）：
+            # 上一轮答二甲双胍用量含"服用/剂量/用药"，若当症状上下文，
+            # 会让"服用这个药需要注意啥"被误判成 symptom，走症状处理流程。
+            med_indicators = ["用量", "用法", "剂量", "随餐", "服药", "服药片", "一次", "一日"]
+            symptom_indicators = ["副作用", "建议您", "缓解", "发热", "疼痛", "恶心", "呕吐"]
+            if any(kw in content for kw in med_indicators):
+                has_med_context = True
             if any(kw in content for kw in symptom_indicators):
                 has_symptom_context = True
             knowledge_indicators = ["是指", "是一种", "特征是", "主要包括"]
@@ -639,6 +646,13 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
     ]
     is_follow_up = len(question) <= 15 or any(kw in question for kw in follow_up_indicators)
 
+    # 药物/用药追问优先归 knowledge：历史在谈药量/用药，当前也在问药
+    # （"服用这个药需要注意啥/这个药副作用/怎么吃/禁忌"）。这类是"药物知识查询"，
+    # 不是症状咨询，按 symptom 走会触发症状检索词增强，把发热/头痛/家庭护理等
+    # 无关症状处理文档拽进候选集。
+    if is_follow_up and _is_drug_precaution_followup(question, has_med_context):
+        return "knowledge"
+
     if is_follow_up:
         if has_symptom_context:
             return "symptom"
@@ -652,6 +666,36 @@ def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:
         return "knowledge"
 
     return None
+
+
+# 药物/用药咨询意图正则：命中说明当前追问是"某个药的注意/用法/副作用/剂量"类问题。
+# 与症状处理问（"头痛怎么办"）区分：这类应走知识检索，而非症状处理流程。
+_DRUG_PRECAUTION_INTENT_RE = re.compile(
+    r'(注意|副作用|禁忌|过敏|用量|用法|剂量|怎么吃|怎么服用|一天几次|'
+    r'一次几[颗粒]|能吃吗|可不可以吃|能一起吃|停药|忌口)'
+)
+# 药物代指正则：追问里"这个药/那个药"等指代需回落为具体药物名
+_DRUG_PRONOUN_RE = re.compile(r'(这个药|那个药|该药|这药|这种药|那个药品|这个药品)')
+
+
+def _is_drug_precaution_followup(question: str, has_med_context: bool) -> bool:
+    """当前追问是否指向某个药物（而非症状处理）。
+
+    判据：
+        1. 历史是药物上下文（已答过药量/用法）→ has_med_context
+        2. 当前问句含药物指代（"这个药/服药/用药"）或明确药物名
+        3. 且命中用药咨询意图词（注意/用法/副作用/剂量…）
+
+    三者齐备才判为药物追问，避免把"我发烧了怎么办 "(含"怎么办"但无药物指代)
+    误归知识。纯"怎么办/缓解"类症状处理问句不含药物指代 → 不受影响。
+    """
+    if not has_med_context:
+        return False
+    has_drug_reference = (
+        "药" in question or "服用" in question or "服药" in question
+        or "吃药" in question or "用药" in question
+    )
+    return has_drug_reference and bool(_DRUG_PRECAUTION_INTENT_RE.search(question))
 
 
 _ROUTE_ALIASES = {
@@ -1097,6 +1141,14 @@ def _enrich_treatment_query(query: str) -> str:
     未命中意图时返回原查询，避免给知识类问题引入噪音。
     """
     if not query or not _TREATMENT_INTENT_RE.search(query):
+        return query
+    # 纵深防御：药物注意事项类查询（含"药/服用 + 注意/用法/副作用"，且无具体症状）
+    # 不追加通用处理词。即便路由误降级到 symptom，也不把发热/头痛/家庭护理等
+    # 无关症状处理文档拽进候选集（对应"服用这个药需要注意啥"的实验 case）。
+    if (
+        not any(sym in query for sym in _SYMPTOM_CARE_KEYWORDS)
+        and (("药" in query or "服用" in query) and _DRUG_PRECAUTION_INTENT_RE.search(query))
+    ):
         return query
     # P2-10：复合症状（"发烧头痛怎么办"）合并所有命中症状的护理词，
     # 避免只增强首个症状导致其余症状的护理内容召不回
@@ -3677,20 +3729,43 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     final_question = question
     hyde_answer = None
 
-    # ===== 自包含性前置检测（方案A P0）：指代词/省略结构 → 强制重写 =====
+    # ===== 自包含性规则提示（仅日志/澄清辅助；最终是否改写由一次调用裁决） =====
     _anaphora_detected = False
     if messages and _has_anaphora_pattern(question):
         _anaphora_detected = True
-        logger.info(f"检测到指代词/省略结构，强制进入重写：{question}")
+        logger.info(f"检测到指代词/省略结构，候选进入重写：{question}")
+    # 可靠指代（黑名单命中）：跨过弱模型误判，命中即强制认为需改写
+    _strong_anaphora = _has_strong_anaphora(question)
 
-    # ===== 步骤0：无历史 或 查询自包含 → 跳过重写 =====
-    # 只有追问/指代词（如"还有什么药？"）才需要从历史补全上下文
-    if not messages:
+    # ===== 步骤(-1)：检索前回答可行性闸门（规则主闸，稳定优先） =====
+    # 无"明确主题+实体可检索"绝不硬检索：宁可追问澄清，也不让残缺 query
+    # 冲到检索空转/误导（如新会话首问"复用这个药的注意事项"→ 奥美拉唑+老人用药乱答）。
+    # 规则主闸命中即短路为澄清，零 LLM 成本；其余交由改写 + 步骤1.5 LLM 澄清副闸。
+    _answerable = _decode_answerable(state, question, messages)
+    if _answerable == "clarify":
+        _history_summary = _build_rewrite_context(messages) if messages else ""
+        _clarify_text = _build_clarify_answer(question)
+        return _emit_clarify_response(
+            state,
+            question,
+            question, question,
+            _history_summary,
+            user_id,
+            thread_id,
+            _anaphora_detected,
+            _clarify_text,
+        )
+
+    # ===== 步骤0：首轮规则跳过（免费，不调模型） =====
+    # 上一轮无用户问题 → 当前问题必然自包含（无指代可指）→ 直接跳过，不做局部调用。
+    # 仅当存在历史用户轮次时才调用局部模型裁决"是否需要改写"。
+    declared_need_rewrite = False
+    if not _has_prior_user_turn(messages, question):
         logger.info(f"首轮对话，查询自包含，跳过重写：{question}")
-    elif not _anaphora_detected:
-        logger.info(f"查询自包含（无指代词/省略结构），跳过重写：{question}")
     else:
-        # ===== 步骤1：追问 → 强制重写 + 问题拆解 =====
+        # ===== 步骤1：一次调用 = 判断是否需要改写 + 返回改写结果 =====
+        # 弱模型单次调用既裁决 need_rewrite，又在需要时输出补全结果，
+        # 避免"先判改写、再改写"两次本地调用带来的 2×5s 延迟。
         try:
             from app.graph.nodes.prompts import QUERY_REWRITE_PROMPT
             from app.graph.nodes.models import QueryRewriteOutput
@@ -3709,62 +3784,77 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 llm, messages_prompt, QueryRewriteOutput, max_attempts=2,
             )
 
-            # Pydantic 校验通过，直接使用结构化字段
-            parsed_final = result.final_question
-            parsed_search = result.search_keywords
+            # 最终裁决 = 模型判断 OR 规则锚定（黑名单命中即视为需改写）。
+            # 弱模型常把"这个药/它/还"这类明显指代误判成自包含，
+            # 故可靠规则优先于模型：宁可多改写，也不丢上下文造成幻觉。
+            declared_need_rewrite = bool(result.need_rewrite) or _strong_anaphora
+            logger.info(
+                f"改写裁决（need_rewrite={declared_need_rewrite}，模型={bool(result.need_rewrite)}，规则锚定={_strong_anaphora}）：{question[:30]}"
+            )
 
-            # v9.0: Token 用量自动采集
-            try:
-                from app.core.token_tracker import track_tokens
-                track_tokens(
-                    node_name="查询重写",
-                    response=result,  # Pydantic 对象无 response_metadata，跳过
-                    request_id=state.get("request_id", ""),
-                    thread_id=state.get("thread_id", ""),
+            if not declared_need_rewrite:
+                # 模型判定当前问题已自包含，无需改写
+                logger.info(f"模型判定查询已自包含，跳过改写：{question[:30]}")
+                final_question, rewritten_query = question, question
+            else:
+                # v9.0: Token 用量自动采集
+                try:
+                    from app.core.token_tracker import track_tokens
+                    track_tokens(
+                        node_name="查询重写",
+                        response=result,  # Pydantic 对象无 response_metadata，跳过
+                        request_id=state.get("request_id", ""),
+                        thread_id=state.get("thread_id", ""),
+                    )
+                except Exception:
+                    pass
+
+                # Pydantic 校验通过，直接使用结构化字段
+                parsed_final = result.final_question
+                parsed_search = result.search_keywords
+
+                if parsed_final and not is_same_query(parsed_final, question):
+                    final_question = parsed_final
+                    logger.info(f"重写完成（Pydantic校验通过）：{question[:30]} -> {final_question[:50]}")
+                else:
+                    logger.info(f"重写结果与原问题一致，保留原问题：{question[:30]}")
+                    final_question = question
+
+                if parsed_search:
+                    rewritten_query = parsed_search
+                    logger.info(f"检索子查询：{rewritten_query}")
+                else:
+                    # 兜底：用 FINAL 或原问题做检索
+                    rewritten_query = final_question
+                    logger.info(f"SEARCH 为空，用 FINAL/原问题做检索")
+
+                # 重写守卫：丢失核心信息时回退
+                if final_question != question:
+                    final_question = _rewrite_guard_check(question, final_question)
+                if rewritten_query != question:
+                    rewritten_query = _rewrite_guard_check(question, rewritten_query)
+
+                # v9.40 实体锚定：弱模型改写常漏掉历史实体（如"二甲双胍"），
+                # 追问类问题强制并入，保证检索召回不偏
+                final_question, rewritten_query = _inject_context_entities(
+                    question, rewritten_query, final_question, messages
                 )
-            except Exception:
-                pass
 
-            if parsed_final and not is_same_query(parsed_final, question):
-                final_question = parsed_final
-                logger.info(f"重写完成（Pydantic校验通过）：{question[:30]} -> {final_question[:50]}")
-            else:
-                logger.info(f"重写结果与原问题一致，保留原问题：{question[:30]}")
-                final_question = question
-
-            if parsed_search:
-                rewritten_query = parsed_search
-                logger.info(f"检索子查询：{rewritten_query}")
-            else:
-                # 兜底：用 FINAL 或原问题做检索
-                rewritten_query = final_question
-                logger.info(f"SEARCH 为空，用 FINAL/原问题做检索")
-
-            # 重写守卫：丢失核心信息时回退
-            if final_question != question:
-                final_question = _rewrite_guard_check(question, final_question)
-            if rewritten_query != question:
-                rewritten_query = _rewrite_guard_check(question, rewritten_query)
-
-            # v9.40 实体锚定：弱模型改写常漏掉历史实体（如"二甲双胍"），
-            # 追问类问题强制并入，保证检索召回不偏
-            final_question, rewritten_query = _inject_context_entities(
-                question, rewritten_query, final_question, messages
-            )
-
-            # ===== Bad Case 自动采集 =====
-            _record_bad_case_if_needed(
-                original=question,
-                final_question=final_question,
-                rewritten_query=rewritten_query,
-                anaphora_detected=_anaphora_detected,
-                history_summary=history_summary,
-                user_id=user_id,
-                thread_id=thread_id,
-            )
+                # ===== Bad Case 自动采集 =====
+                _record_bad_case_if_needed(
+                    original=question,
+                    final_question=final_question,
+                    rewritten_query=rewritten_query,
+                    anaphora_detected=_anaphora_detected,
+                    history_summary=history_summary,
+                    user_id=user_id,
+                    thread_id=thread_id,
+                )
 
         except Exception as e:
             logger.error(f"查询重写失败：{str(e)}")
+            # 判定失败保守按"需要改写"处理，交给澄清兜底
+            declared_need_rewrite = True
             # v9.40 兜底：改写失败也不裸用残缺问题，从历史补实体（如"二甲双胍"）进检索词
             final_question, rewritten_query = _inject_context_entities(
                 question, question, question, messages
@@ -3776,11 +3866,12 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 )
 
     # ===== 步骤1.5：主动澄清（改写后低置信度 · 最保守） =====
-    # 仅在 追问(含指代/省略) + 改写补不出实体(结果与原文一致) + 历史/快照确无实体
+    # 仅在 被判需改写 + 改写补不出实体(结果与原文一致) + 历史/快照确无实体
     # 三重条件同时满足时，拦截短路为澄清、不再硬检索（医疗场景宁可澄清也不误导）。
+    # 首轮（declared_need_rewrite=False）绝不澄清——首轮问题自包含，直接检索。
     history_summary = _build_rewrite_context(messages) if messages else ""
     if (
-        _anaphora_detected
+        declared_need_rewrite
         and is_same_query(final_question, question)
         and not _context_has_entity(history_summary, state)
     ):
@@ -3890,17 +3981,36 @@ def _inject_context_entities(
     if not messages or not _has_anaphora_pattern(question):
         return [final_question, rewritten_query]
 
+    # v9.40.1 修正：只从用户（Human）消息提取实体。
+    # 助手回答里列举的副作用/医学术语（如二甲双胍的"便秘/出血/发热"）不代表用户检索意图，
+    # 无差别并入会让检索词被污染（cache_query 出现一大堆无关关键字）。
     history_entities = set()
+    recent_drug = None  # 最近一次用户提及的药物（用于"这个药"代指直填）
     for msg in messages[-6:]:
+        if not isinstance(msg, HumanMessage):
+            continue
         content = msg.content if isinstance(msg.content, str) else str(msg.content)
         for matcher in (get_drug_matcher(), get_symptom_matcher()):
             for ent in matcher.get_matched_originals(content, use_boundary=True):
                 if ent:
                     history_entities.add(ent)
+        found_drug = get_drug_matcher().get_matched_originals(content, use_boundary=True)
+        if found_drug:
+            recent_drug = found_drug[0]
+
+    # v9.42 代指直填：把"这个药/那个药"落到具体药物名，让 FINAL 问题与检索词聚焦。
+    # 弱改写模型常把"服用这个药需要注意啥"原样返回、只靠后置"历史提到二甲双胍"补，
+    # 直接替换指代词更干净：检索/生成都以二甲双胍为主体。
+    if recent_drug:
+        if _DRUG_PRONOUN_RE.search(final_question):
+            final_question = _DRUG_PRONOUN_RE.sub(recent_drug, final_question)
+        if _DRUG_PRONOUN_RE.search(rewritten_query):
+            rewritten_query = _DRUG_PRONOUN_RE.sub(recent_drug, rewritten_query)
 
     search_missing = [e for e in sorted(history_entities) if e not in rewritten_query]
     if search_missing:
-        rewritten_query = f"{rewritten_query} {' '.join(search_missing)}".strip()
+        # 截断数量，避免超长历史仍把过多实体兜进检索词
+        rewritten_query = f"{rewritten_query} {' '.join(search_missing[:4])}".strip()
 
     # 改写被判"与原问题一致"时（弱模型常没识别出该补全），补全 final_question
     if is_same_query(final_question, question):
@@ -3965,6 +4075,11 @@ _DOMAIN_ENTITY_KEYWORDS = [
     "布洛芬", "对乙酰氨基酚", "阿莫西林", "头孢", "阿司匹林",
     "奥司他韦", "连花清瘟", "感冒灵", "板蓝根", "蒙脱石散",
     "氯雷他定", "西替利嗪", "红霉素", "甲硝唑",
+    # 慢病常用药（v9.40.2：缺漏导致自包含短查询被误判为残缺改写）——
+    # "二甲双胍"能匹配"二甲双胍缓释片"，任一在场即视为自包含
+    "二甲双胍", "格列美脲", "胰岛素", "阿卡波糖", "左甲状腺素",
+    "氨氯地平", "卡托普利", "缬沙坦", "阿托伐他汀", "瑞舒伐他汀",
+    "氯吡格雷", "华法林", "奥美拉唑", "二甲双胍缓释片",
     # 常见疾病
     "感冒", "肺炎", "胃炎", "高血压", "糖尿病", "痛风", "哮喘",
     "甲亢", "甲减", "贫血", "冠心病", "肝炎", "肾炎",
@@ -4163,6 +4278,44 @@ def _apply_checkpoint_merge(
     return new_checkpoint
 
 
+def _has_prior_user_turn(messages: list, question: str) -> bool:
+    """判断是否存在除当前问题外的历史用户轮次（是否首轮）。
+
+    当前问题 state['question'] 已作为最后一条 HumanMessage 持久化，
+    跳过内容与当前问题完全相同的条目后，剩余 HumanMessage 即历史用户问题。
+    存在历史用户问题 → 当前 query 可能是追问，需交给改写判断；
+    不存在 → 当前即首轮问题，必然自包含，可免费跳过改写（不调模型）。
+
+    Args:
+        messages: 对话历史消息列表
+        question: 当前用户问题
+
+    Returns:
+        True=存在历史用户轮次；False=首轮（当前为第一条用户问题）
+    """
+    q = (question or "").strip()
+    prior_user_turns = 0
+    for msg in messages:
+        if not isinstance(msg, HumanMessage):
+            continue
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if content.strip() == q:
+            continue
+        prior_user_turns += 1
+    return prior_user_turns > 0
+
+
+def _has_strong_anaphora(query: str) -> bool:
+    """仅判 Layer 1 可靠指代（黑名单命中，如"这个/它/还/其他"）。
+
+    与 _has_anaphora_pattern 不同：后者还含短查询/疑问词等脆弱层，
+    可能误杀自包含查询。这里只认黑名单——命中即可信地认定"依赖上下文、需改写"，
+    用于跨过弱模型（qwen2.5:3b）把明显指代误判成自包含的缺陷。
+    """
+    text = (query or "").strip()
+    return any(p in text for p in _ANAPHORA_PATTERNS)
+
+
 def _has_anaphora_pattern(query: str) -> bool:
     """检测查询是否包含指代词/省略结构（不自包含）
 
@@ -4269,7 +4422,11 @@ def _context_has_entity(history_summary: str, state: MedicalAssistantState) -> b
         return True
     if cp.get("medication_history"):
         return True
-    if state.get("symptoms"):
+    # symptom 路径中 symptom_analysis 先于 query_rewrite 执行，会把 state["symptoms"] 设成
+    # 结构上的空字典 {'symptoms':[], 'severity':None, 'body_parts':[], ...}——容器虽非空，但无任何实体。
+    # 仅当确实提取到症状名/部位（列表非空）才算"有实体可补"，否则空字段字典会谎报实体、绕过澄清闸门。
+    _sym = state.get("symptoms") or {}
+    if isinstance(_sym, dict) and (_sym.get("symptoms") or _sym.get("body_parts")):
         return True
     profile = state.get("user_profile") or {}
     if profile.get("allergies") or profile.get("confirmed_facts"):
@@ -4277,9 +4434,128 @@ def _context_has_entity(history_summary: str, state: MedicalAssistantState) -> b
     return False
 
 
+# 具体临床主语（身体部位/生命体征/具体医学名词）→ 视为自包含、可检索
+# 用于澄清阈值判别：有具体主语 → 短查询也自包含（"我胃不舒服"）；
+# 只有泛化名词（药/这个/它）或量词碎片（三粒）→ 无主语、残缺、该澄清。
+# 注意：刻意不含泛化的"药"——"这个药/那个药"靠强代词分支过滤。
+_SPECIFIC_HEALTH_TOPIC_KEYWORDS = [
+    "头", "脑", "眼", "耳", "鼻", "喉", "颈", "胸", "心", "肺", "肝", "胆",
+    "脾", "肾", "胃", "腹", "腰", "背", "肩", "臂", "手", "脚", "腿", "膝",
+    "踝", "骨", "牙", "舌", "唇", "口", "皮肤", "肌肉", "神经", "关节",
+    "血压", "血糖", "血脂", "心率", "脉搏", "体温",
+    "报告", "体检", "检查", "化验", "剂量", "疫苗", "检测", "影像", "麻醉", "手术",
+]
+
+
+def _has_specific_health_topic(query: str) -> bool:
+    """query 是否含"具体临床主语"（身体部位/生命体征/具体医学名词）。
+
+    单独成函数便于扩展/调参：词表越宽 → 放行越多、澄清越少。
+    """
+    text = (query or "").strip()
+    for kw in _SPECIFIC_HEALTH_TOPIC_KEYWORDS:
+        if kw in text:
+            return True
+    return False
+
+
+def _decode_answerable(state: MedicalAssistantState, question: str, messages: list) -> str:
+    """检索前回答可行性判定（确定性规则主闸，零 LLM 成本）。
+
+    判定原则：只有"有明确主题 + 有实体可检索"才放行检索；否则澄清。
+    命中即短路为澄清，绝不让残缺 query 冲到检索空转/误导。
+    返回 "ok" 放行检索；返回 "clarify" 短路为澄清。
+
+    判据（按序裁定，稳定优先）：
+        1) 空问题 → 澄清
+        2) 问句自带具体领域实体（药/症状/疾病，见 _DOMAIN_ENTITY_KEYWORDS）→ 可检索
+        3) 历史/临床快照/档案可补出实体 → 可检索（合法追问，如"那这个呢"）
+        4) 强代词悬空（"这个药/那个药/它…"）且无具体临床主语 → 澄清
+        5) 细检测不自包含（短查询/疑问词开头无实体，见 _has_anaphora_pattern）
+           且 ≥3 字、且无具体临床主语 → 澄清（纠正"吃了三粒怎么办"类量词碎片）
+        6) 其余（自包含通用问题，如"我胃不舒服/体检报告怎么解读"）→ 放行，
+           交由改写 + 步骤1.5 LLM 澄清作副闸，避免过度打断。
+    """
+    q = (question or "").strip()
+    if not q:
+        return "clarify"
+
+    if any(kw in q for kw in _DOMAIN_ENTITY_KEYWORDS):
+        return "ok"
+
+    history_summary = _build_rewrite_context(messages) if messages else ""
+    if _context_has_entity(history_summary, state):
+        return "ok"
+
+    # 阈值主闸-1：无实体可查，且强代词悬空（"这个药/它…"）且无具体主语 → 澄清
+    if _has_strong_anaphora(q) and not _has_specific_health_topic(q):
+        return "clarify"
+
+    # 阈值主闸-2：细检测认定不自包含（量词碎片/短查询无实体），
+    # ≥3字（跳过"谢谢/好的"社交语）且无具体临床主语 → 澄清
+    if (
+        len(q) >= 3
+        and _has_anaphora_pattern(q)
+        and not _has_specific_health_topic(q)
+    ):
+        return "clarify"
+
+    return "ok"
+
+
+def _emit_clarify_response(
+    state: MedicalAssistantState,
+    question: str,
+    rewritten_query: str,
+    final_question: str,
+    history_summary: str,
+    user_id: str,
+    thread_id: str,
+    anaphora_detected: bool,
+    clarify_text: str,
+) -> Dict[str, Any]:
+    """把当前轮短路为澄清响应：记录 bad case + 更新话题轨迹 + 返回澄清态。
+
+    与步骤1.5的澄清返回结构一致（复用 refusal_type="clarify" 语义，
+    graph.py 上游据此短路为澄清、不再硬检索）。
+    """
+    try:
+        memory = get_long_term_memory()
+        memory.append_bad_case(
+            case_type="clarify_triggered",
+            original_query=question,
+            rewritten_query=rewritten_query,
+            final_question=final_question,
+            history_summary=history_summary,
+            user_id=user_id,
+            thread_id=thread_id,
+            metadata={"anaphora_detected": anaphora_detected},
+        )
+    except Exception as e:
+        logger.warning(f"Bad case 记录失败：{e}")
+    topic_update = _update_topic_trajectory(
+        state, _detect_topic(state, question, rewritten_query)
+    )
+    logger.info(f"检索前可行性澄清：{question[:30]}")
+    return {
+        "final_answer": clarify_text,
+        "refusal_type": "clarify",
+        "messages": [HumanMessage(content=question), AIMessage(content=clarify_text)],
+        "rewritten_query": question,
+        "final_question": question,
+        "hyde_answer": None,
+        "sub_questions": None,
+        **topic_update,
+    }
+
+
 def _build_clarify_answer(question: str) -> str:
-    """构建主动澄清文案（与拒答风格一致，不编造事实、不透传 LLM 原文）"""
-    return (
+    """构建主动澄清文案（与拒答风格一致，不编造事实、不透传 LLM 原文）
+
+    v9.45：若命中药物指代（"这个药/那个药/该药…"），追加"具体哪种药"的追问，
+    避免患者只给代词、系统却拿泛化药物知识作答。
+    """
+    base = (
         f"抱歉，我暂时无法确定您问的“{question}”具体指向哪里，"
         "当前信息还不足以定位到明确主题。\n"
         "为了给您更准确的建议，麻烦补充一点信息，比如：\n"
@@ -4288,6 +4564,12 @@ def _build_clarify_answer(question: str) -> str:
         "3. 是否有明确的既往病史或特殊人群情况（如孕哺、过敏）。\n"
         "\n⚠️ 若症状明显加重或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
     )
+    if _DRUG_PRONOUN_RE.search(question or ""):
+        base = base.replace(
+            "2. 相关的药物名称或症状持续时间；",
+            "2. 您具体指的是哪一种药（例如：二甲双胍、布洛芬），以及已经吃了多久、多大剂量；",
+        )
+    return base
 
 
 # ===== 显式话题轨迹（跨轮结构化状态） =====

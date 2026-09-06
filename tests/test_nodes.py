@@ -17,6 +17,7 @@ from app.graph.nodes.nodes import (
     _update_topic_trajectory,
     _context_has_entity,
     _build_clarify_answer,
+    _decode_answerable,
 )
 from app.graph.graph import route_after_rewrite
 
@@ -443,13 +444,93 @@ class TestProactiveClarify:
         assert result["messages"][0].content == "还有吗"
 
     def test_no_clarify_first_round_pure_anaphora(self):
-        # 无历史时即使含指代也不澄清（_anaphora_detected 仅在有历史时置位）
-        # 首轮纯指代查询交由正常检索/拒答，澄清不越界
+        # v9.45 首轮悬空指代（无历史可消解 + 无实体可查）→ 澄清而非乱检索。
+        # 原实现"首轮必自包含、绝不澄清"正是"复用这个药的注意事项→奥美拉唑乱答"的根因；
+        # 现在首轮纯指代无从指代，宁可追问，不放行检索空转/误导。
         state = {"question": "还有吗", "messages": [], "symptoms": None,
                  "clinical_checkpoint": None, "user_profile": None,
                  "question_type": None, "user_id": "test", "thread_id": ""}
         result = query_rewrite_node(state)
-        assert "refusal_type" not in result
+        assert result.get("refusal_type") == "clarify"
+        assert "无法确定" in result.get("final_answer", "")
+
+    def test_decode_answerable_first_round_drug_pronoun_no_entity(self):
+        # 用户复现用例："这个药"指代 + 无历史 + 无实体 → 不可答，应澄清
+        state = {"question": "复用这个药的注意事项", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(state, "复用这个药的注意事项", []) == "clarify"
+        result = query_rewrite_node(state)
+        assert result.get("refusal_type") == "clarify"
+        assert "哪一种药" in result.get("final_answer", "")
+
+    def test_decode_answerable_first_round_concrete_entity_ok(self):
+        # 含明确实体（二甲双胍）→ 必然可检索，绝不澄清
+        state = {"question": "二甲双胍缓释片怎么吃", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(state, "二甲双胍缓释片怎么吃", []) == "ok"
+        result = query_rewrite_node(state)
+        assert result.get("refusal_type") is None
+
+    def test_decode_answerable_first_round_non_dangling_no_entity_ok(self):
+        # 无实体但非遗留指代（自包含通用问题）→ 放行检索，不评价澄清
+        state = {"question": "我胃不舒服怎么办", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(state, "我胃不舒服怎么办", []) == "ok"
+
+    def test_decode_answerable_quantifier_fragment_clarifies(self):
+        # v9.46 量词碎片（"三粒"无主语）→ 无实体、无具体临床主语 → 澄清
+        state = {"question": "吃了三粒怎么办", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(state, "吃了三粒怎么办", []) == "clarify"
+        result = query_rewrite_node(state)
+        assert result.get("refusal_type") == "clarify"
+
+    def test_decode_answerable_specific_health_topic_ok(self):
+        # 具体临床主语（血压/体检报告）→ 视为自包含 → 放行检索
+        st = {"question": "血压药吃了三粒", "messages": [], "symptoms": None,
+              "clinical_checkpoint": None, "user_profile": None,
+              "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(st, "血压药吃了三粒", []) == "ok"
+        assert _decode_answerable(st, "体检报告怎么解读", []) == "ok"
+        # 泛化代词 + 无具体主语 → 仍澄清
+        assert _decode_answerable(st, "这个药一天几次", []) == "clarify"
+
+    def test_decode_answerable_tiny_social_phrase_ok(self):
+        # 2字社交语（<3字）不进入量词碎片澄清，避免误杀"谢谢/好的"
+        st = {"question": "谢谢", "messages": [], "symptoms": None,
+              "clinical_checkpoint": None, "user_profile": None,
+              "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(st, "谢谢", []) == "ok"
+
+    def test_answerable_ignores_empty_symptoms_payload(self):
+        # v9.47 复现实时 symptom 路径：symptom_analysis 先跑，把 state["symptoms"] 设成
+        # 结构非空、语义全空的字典（多带"你好"历史）→ 不得谎报实体、仍应澄清
+        payload = {"symptoms": [], "severity": None, "body_parts": [],
+                   "duration": None, "onset_date": None, "additional_info": None}
+        st = {"question": "吃了三粒怎么办",
+              "messages": [HumanMessage(content="你好"),
+                           AIMessage(content="你好！我是医疗助手"),
+                           HumanMessage(content="吃了三粒怎么办")],
+              "symptoms": payload, "clinical_checkpoint": None, "user_profile": None,
+              "question_type": None, "user_id": "test", "thread_id": ""}
+        # 空 symptoms 字典不构成实体 → 闸门仍判澄清
+        assert _context_has_entity("", st) is False
+        assert _decode_answerable(st, "吃了三粒怎么办", st["messages"]) == "clarify"
+        # 但确实提取到症状名 → 构成实体，放行
+        st["symptoms"] = {"symptoms": ["头痛"], "severity": None, "body_parts": [], "duration": None}
+        assert _context_has_entity("", st) is True
+        assert _decode_answerable(st, "头痛怎么办", st["messages"]) == "ok"
+
+    def test_decode_answerable_empty_question_clarifies(self):
+        # 空问题 → 澄清
+        state = {"question": "  ", "messages": [], "symptoms": None,
+                 "clinical_checkpoint": None, "user_profile": None,
+                 "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _decode_answerable(state, "  ", []) == "clarify"
 
     def test_no_clarify_first_round_with_entity(self):
         # 首轮含实体自包含查询 → 不澄清，走正常路径并更新话题轨迹
