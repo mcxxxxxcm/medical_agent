@@ -129,7 +129,8 @@
       "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe \"C:/Users/86176/AppData/Local/Temp/test_mem_retention.py\")",
       "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe \"C:/Users/86176/AppData/Local/Temp/test_feedback_idem.py\")",
       "Bash(PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe *)",
-      "Read(//d/Agent/medical_assistant_agent/**)"
+      "Read(//d/Agent/medical_assistant_agent/**)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -k \"Answerable or Clarify or clarify\" -q)"
     ]
   },
   "enableAllProjectMcpServers": true,

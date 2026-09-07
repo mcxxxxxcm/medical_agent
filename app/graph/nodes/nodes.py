@@ -676,6 +676,24 @@ _DRUG_PRECAUTION_INTENT_RE = re.compile(
 )
 # 药物代指正则：追问里"这个药/那个药"等指代需回落为具体药物名
 _DRUG_PRONOUN_RE = re.compile(r'(这个药|那个药|该药|这药|这种药|那个药品|这个药品)')
+# 药物摄入动词 / 剂型量词，用于识别"已服药(量)但未点名药名"的摄入碎片（v9.48）。
+# 刻意排除"次/顿"：剂量问句（"吃几次/一天几次"）是合法延续用药咨询的追问，不能被误判。
+_DRUG_CONSUMPTION_VERBS = ["吃", "服", "吞", "误食", "误服", "误吞"]
+_DRUG_CONSUMPTION_MEASURES = ["粒", "片", "颗", "包", "丸", "袋", "毫克", "克"]
+
+
+def _is_drug_consumption_fragment(question: str) -> bool:
+    """是否"吃了(量)但没说哪种药"的摄入碎片（如"吃了三粒/服用二片/误服一颗/三片吃着啥"）。
+
+    含摄药动词(吃/服/吞/误…) + 剂型量词(粒/片/颗/包/丸/袋/毫克/克)即视为摄入事件报告。
+    这类问句确无可命名的具体药物主语，历史即使累积了别的药也无从判断是哪种药，
+    故无论历史实体如何都应澄清——由领域实体判定(position 2)已兜住"点名药名"的 via 情况。
+    """
+    q = question or ""
+    return (
+        any(v in q for v in _DRUG_CONSUMPTION_VERBS)
+        and any(m in q for m in _DRUG_CONSUMPTION_MEASURES)
+    )
 
 
 def _is_drug_precaution_followup(question: str, has_med_context: bool) -> bool:
@@ -4469,11 +4487,13 @@ def _decode_answerable(state: MedicalAssistantState, question: str, messages: li
     判据（按序裁定，稳定优先）：
         1) 空问题 → 澄清
         2) 问句自带具体领域实体（药/症状/疾病，见 _DOMAIN_ENTITY_KEYWORDS）→ 可检索
-        3) 历史/临床快照/档案可补出实体 → 可检索（合法追问，如"那这个呢"）
-        4) 强代词悬空（"这个药/那个药/它…"）且无具体临床主语 → 澄清
-        5) 细检测不自包含（短查询/疑问词开头无实体，见 _has_anaphora_pattern）
-           且 ≥3 字、且无具体临床主语 → 澄清（纠正"吃了三粒怎么办"类量词碎片）
-        6) 其余（自包含通用问题，如"我胃不舒服/体检报告怎么解读"）→ 放行，
+        3) 摄食/过量事件报告（"吃了三粒怎么办"）→ 澄清：无具体药物主语，
+           历史累积实体无法指明是哪种药，故历史不授权（v9.48）
+        4) 历史/临床快照/档案可补出实体 → 可检索（合法用药咨询追问，如"一天几次？"）
+        5) 强代词悬空（"这个药/那个药/它…"）且无具体临床主语 → 澄清
+        6) 细检测不自包含（短查询/疑问词开头无实体，见 _has_anaphora_pattern）
+           且 ≥3 字、且无具体临床主语 → 澄清（兜底量词碎片）
+        7) 其余（自包含通用问题，如"我胃不舒服/体检报告怎么解读"）→ 放行，
            交由改写 + 步骤1.5 LLM 澄清作副闸，避免过度打断。
     """
     q = (question or "").strip()
@@ -4482,6 +4502,13 @@ def _decode_answerable(state: MedicalAssistantState, question: str, messages: li
 
     if any(kw in q for kw in _DOMAIN_ENTITY_KEYWORDS):
         return "ok"
+
+    # 摄入/过量事件报告（"吃了三粒怎么办"）：即使历史/档案累积了旧实体也不放行。
+    # 事件里"吃了几粒"未用指代指向历史中的任何药，历史无从判断是哪种药 → 强制澄清。
+    # 置于"context 授权"之前，防止累积 user_profile/checkpoint 谎报实体而绕过闸门。
+    # 但若问句自带药物主语（"血压药吃了三粒"已点名药物）则不算碎片，交由后续放行。
+    if _is_drug_consumption_fragment(q) and not _has_specific_health_topic(q):
+        return "clarify"
 
     history_summary = _build_rewrite_context(messages) if messages else ""
     if _context_has_entity(history_summary, state):

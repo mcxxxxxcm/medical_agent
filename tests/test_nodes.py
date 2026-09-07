@@ -525,6 +525,38 @@ class TestProactiveClarify:
         assert _context_has_entity("", st) is True
         assert _decode_answerable(st, "头痛怎么办", st["messages"]) == "ok"
 
+    def test_answerable_ingestion_event_overrides_accumulated_profile(self):
+        # v9.48 复现实时观测根因：memory_load 加载了用户历史累积的 user_profile.confirmed_facts
+        # （感冒/流鼻血/二甲双胍等）→ _context_has_entity=True 会让闸门"历史有实体→放行"。
+        # 但"吃了三粒怎么办"无具体药物主语、也无指代指向这些旧实体 → 必须仍澄清。
+        st = {"question": "吃了三粒怎么办",
+              "messages": [HumanMessage(content="你好"),
+                           AIMessage(content="你好！我是医疗助手"),
+                           HumanMessage(content="吃了三粒怎么办")],
+              "symptoms": None, "clinical_checkpoint": None,
+              "user_profile": {"confirmed_facts": ["既往有感冒、流鼻血，正在规律服用二甲双胍"]},
+              "question_type": None, "user_id": "test", "thread_id": ""}
+        # 档案确实有实体（_context_has_entity=True），但摄入事件仍强制澄清，不被历史误导
+        assert _context_has_entity("", st) is True
+        assert _decode_answerable(st, "吃了三粒怎么办", st["messages"]) == "clarify"
+        result = query_rewrite_node(st)
+        assert result.get("refusal_type") == "clarify"
+
+    def test_answerable_dosage_followup_not_overclarified(self):
+        # v9.48 防误伤：真实延续的"一天几次？"是合法剂量追问（历史有药实体）→ 放行，不澄清。
+        # 它没有"吃了N粒+出事追问"的事件慌乱句式，故不命中事件澄清。
+        st = {"question": "一天几次？",
+              "messages": [HumanMessage(content="二甲双胍怎么吃"),
+                           AIMessage(content="建议一次一片，随餐服用，一天2-3次。"),
+                           HumanMessage(content="一天几次？")],
+              "symptoms": None, "clinical_checkpoint": {"medication_history": [{"name": "二甲双胍"}]},
+              "user_profile": None, "question_type": None, "user_id": "test", "thread_id": ""}
+        assert _context_has_entity("", st) is True
+        assert _decode_answerable(st, "一天几次？", st["messages"]) == "ok"
+        # 点名药名的过量追问 → 领域实体优先、放行（有具体可检索主语）
+        st2 = dict(st, question="阿莫西林吃了三粒怎么办")
+        assert _decode_answerable(st2, "阿莫西林吃了三粒怎么办", st2["messages"]) == "ok"
+
     def test_decode_answerable_empty_question_clarifies(self):
         # 空问题 → 澄清
         state = {"question": "  ", "messages": [], "symptoms": None,
