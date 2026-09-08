@@ -32,6 +32,8 @@ RAG_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
 
 {symptom_whitelist_section}
 
+{disease_direction_section}
+
 直接给出最终处理建议，不要分步骤分析。正文一律**用 bullet（"- "）逐条论述，观点分明**；小节标题与先后顺序由你自由设计，**不必套用固定模板**。相关才写、无关略去，不要为了凑结构硬写。
 
 **正文（怎么处理/缓解/用药，逐条 bullet）**

@@ -341,6 +341,12 @@ async def admin_page():
     return FileResponse(str(STATIC_DIR / "admin.html"))
 
 
+@app.get("/admin/badcases")
+async def badcase_admin_page():
+    """BadCase 管理页面"""
+    return FileResponse(str(STATIC_DIR / "badcase.html"))
+
+
 # 异常处理
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -769,6 +775,76 @@ async def feedback_golden_candidates(request: Request, limit: int = 50):
     from app.core.metrics import get_metrics_collector
     collector = get_metrics_collector()
     return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
+
+
+@app.get("/api/admin/badcases")
+async def badcase_list(request: Request, limit: int = 50, case_type: str = None,
+                       reviewed: str = None):
+    """BadCase 列表 + 统计（需管理员认证）
+
+    limit: 最大返回条数
+    case_type: 按类型过滤
+    reviewed: "true"/"false" 过滤审核状态，不传返回全部
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+    from app.memory import get_long_term_memory
+    memory = get_long_term_memory()
+
+    reviewed_flag = None
+    if reviewed in ("true", "True", "1"):
+        reviewed_flag = True
+    elif reviewed in ("false", "False", "0"):
+        reviewed_flag = False
+
+    cases = memory.get_all_bad_cases(
+        case_type=case_type,
+        reviewed=reviewed_flag,
+        limit=limit,
+    )
+    return {"bad_cases": cases, "total": len(cases)}
+
+
+@app.get("/api/admin/badcases/stats")
+async def badcase_stats(request: Request):
+    """BadCase 累计统计（需管理员认证）：总数 / 待审核数 / 已审核数 / 类型分布"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+    from app.memory import get_long_term_memory
+    memory = get_long_term_memory()
+
+    cases = memory.get_all_bad_cases(limit=10000)
+    total = len(cases)
+    pending = sum(1 for c in cases if not c.get("reviewed"))
+    reviewed_count = total - pending
+    case_type_dist = {}
+    for c in cases:
+        t = c.get("case_type") or "unknown"
+        case_type_dist[t] = case_type_dist.get(t, 0) + 1
+    return {
+        "total": total,
+        "pending_review": pending,
+        "reviewed": reviewed_count,
+        "case_type_dist": case_type_dist,
+    }
+
+
+@app.post("/api/admin/badcases/{case_id}/review")
+async def badcase_review(request: Request, case_id: str):
+    """人工审核标记 bad case（补填期望重写、自包含标注、置为已审核）"""
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+    body = await request.json()
+    from app.memory import get_long_term_memory
+    memory = get_long_term_memory()
+    memory.update_bad_case_review(
+        user_id="system",
+        case_id=case_id,
+        expected_rewrite=body.get("expected_rewrite", "") or "",
+        is_self_contained=body.get("is_self_contained"),
+        reviewed=body.get("reviewed", True),
+    )
+    return {"ok": True, "case_id": case_id}
 
 
 @app.get("/api/admin/refusal/stats")

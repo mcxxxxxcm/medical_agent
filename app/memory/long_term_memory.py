@@ -7,7 +7,7 @@
     5. 新增 symptom_events / medication_events 命名空间（Append-Only 事件流）
     6. v9.2 漏洞3修复：新增 prune 机制，防止无界膨胀
 """
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Set
 from datetime import datetime, timedelta
 import threading
 import time
@@ -663,6 +663,47 @@ class LongTermMemoryManager:
         records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return records[:limit]
 
+    def get_all_bad_cases(
+            self,
+            case_type: Optional[str] = None,
+            reviewed: Optional[bool] = None,
+            limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """跨所有用户聚合查询 bad case 列表（管理后台用）
+
+        差评的 bad case 会按 user_id 写入各自命名空间（bad_cases, <user_id>），
+        单用户查询需 `user_id='system'`。管理后台应看到**全部**用户的 bad case，
+        故用前缀 ('bad_cases',) 聚合所有命名空间，再按 case_id 去重、按创建时间倒序。
+
+        Args:
+            case_type: 按类型过滤
+            reviewed: 按审核状态过滤
+            limit: 最大返回条数
+
+        Returns:
+            聚合后的 bad case 列表，按创建时间倒序
+        """
+        items = self.store.search(("bad_cases",), limit=max(limit * 2, 500))
+        seen: Set[str] = set()
+        records = []
+        for item in items:
+            if not item.value or "case_id" not in item.value:
+                continue
+            cid = item.value.get("case_id")
+            if cid in seen:
+                continue
+            seen.add(cid)
+            if case_type and item.value.get("case_type") != case_type:
+                continue
+            if reviewed is not None and item.value.get("reviewed") != reviewed:
+                continue
+            records.append(item.value)
+            if len(records) >= limit:
+                break
+
+        records.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return records
+
     def update_bad_case_review(
             self,
             user_id: str,
@@ -685,6 +726,15 @@ class LongTermMemoryManager:
             key=case_id,
         )
         if not item or not item.value:
+            # 跨用户兜底：数据可能写在别的 user 命名空间（管理后台用 user_id=system
+            # 作为"全局入口"审核任意用户的 bad case）。按 case_id 在所有命名空间里
+            # 查找实际归属，再定位到对应 user 执行更新。
+            # 不能因 user_id=="system" 跳过此兜底——那会让全局审核静默找不到。
+            found = self._find_bad_case_namespace(case_id)
+            if found:
+                item = self.store.get(namespace=found, key=case_id)
+                user_id = found[-1]
+        if not item or not item.value:
             logger.warning(f"Bad case 不存在：{case_id}")
             return
 
@@ -701,6 +751,20 @@ class LongTermMemoryManager:
             value=case,
         )
         logger.info(f"Bad case 审核更新：{case_id}")
+
+    def _find_bad_case_namespace(self, case_id: str) -> Optional[tuple]:
+        """按 case_id 在所有 bad_cases 命名空间中定位实际归属（写入用户）"""
+        try:
+            namespaces = self.store.list_namespaces(prefix=("bad_cases",))
+            for ns in namespaces:
+                if len(ns) < 2:
+                    continue
+                item = self.store.get(namespace=(ns[0], ns[1]), key=case_id)
+                if item and item.value:
+                    return (ns[0], ns[1])
+        except Exception as e:
+            logger.warning(f"跨用户查找 bad case 命名空间失败：{e}")
+        return None
 
     # ===== 用药事件（Append-Only 事件流） =====
 

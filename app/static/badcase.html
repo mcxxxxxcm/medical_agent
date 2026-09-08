@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BadCase 管理 - 医疗助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+        }
+        .header h1 { font-size: 20px; font-weight: 500; }
+        .header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        .header a:hover { opacity: 1; }
+
+        .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+
+        .card {
+            background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .card h2 { font-size: 16px; color: #333; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .status-item { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
+        .status-item .label { font-size: 12px; color: #999; }
+        .status-item .value { font-size: 20px; font-weight: 600; color: #333; margin-top: 4px; }
+        .status-item .value.warn { color: #faad14; }
+        .status-item .value.regular { color: #52c41a; }
+
+        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 8px; font-size: 14px;
+            cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .btn-danger { background: #ff4d4f; color: white; }
+        .btn-success { background: #52c41a; color: white; }
+        .btn-warning { background: #faad14; color: #333; }
+        .btn-outline { background: white; color: #666; border: 1px solid #ddd; }
+
+        .file-table { width: 100%; border-collapse: collapse; }
+        .file-table th { text-align: left; padding: 10px 12px; background: #f8f9fa; font-size: 13px; color: #666; border-bottom: 1px solid #e8e8e8; }
+        .file-table td { padding: 10px 12px; font-size: 14px; color: #333; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+        .file-table tr:hover td { background: #fafafa; }
+        .file-table .query-cell { max-width: 260px; word-break: break-all; }
+        .file-table .answer-cell { max-width: 340px; font-size: 13px; color: #555; word-break: break-all; }
+        .file-table .time-cell { white-space: nowrap; color: #999; font-size: 12px; }
+
+        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .type-user_negative_feedback { background: #fbe9e7; color: #c62828; }
+        .type-hallucination_suspected { background: #fff3e0; color: #e65100; }
+        .type-retrieval_miss { background: #f3e5f5; color: #7b1fa2; }
+        .type-rewrite_missed_anaphora { background: #e8f5e9; color: #2e7d32; }
+        .type-rewrite_same_as_original { background: #e8f5e9; color: #2e7d32; }
+        .type-rewrite_lost_entity { background: #e8f5e9; color: #2e7d32; }
+        .type-low_score_no_clarify { background: #e3f2fd; color: #1565c0; }
+        .type-route_misclassification { background: #e0f7fa; color: #00838f; }
+        .type-other { background: #f5f5f5; color: #666; }
+
+        .review-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .review-pending { background: #faad14; color: #fff; }
+        .review-done { background: #52c41a; color: #fff; }
+
+        .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+        .filter-bar input[type="text"] {
+            flex: 1; min-width: 180px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 13px; outline: none; transition: border-color 0.2s;
+        }
+        .filter-bar input[type="text"]:focus { border-color: #667eea; }
+        .filter-bar select {
+            padding: 7px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px;
+            outline: none; background: white; cursor: pointer;
+        }
+        .filter-bar .filter-count { font-size: 12px; color: #999; white-space: nowrap; }
+
+        .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13px; color: #666; }
+        .pagination .page-info { color: #999; font-size: 12px; }
+        .pagination .page-btns { display: flex; gap: 4px; }
+        .pagination .page-btns button {
+            padding: 4px 10px; border: 1px solid #ddd; border-radius: 6px; background: white;
+            font-size: 13px; cursor: pointer; transition: all 0.15s; color: #333;
+        }
+        .pagination .page-btns button:hover:not(:disabled) { border-color: #667eea; color: #667eea; }
+        .pagination .page-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pagination .page-btns button.active { background: #667eea; color: white; border-color: #667eea; }
+        .pagination .page-btns button.ellipsis { border: none; cursor: default; color: #999; }
+
+        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: white; font-size: 14px; z-index: 2000; transform: translateX(120%); transition: transform 0.3s; }
+        .toast.show { transform: translateX(0); }
+        .toast-success { background: #52c41a; }
+        .toast-error { background: #ff4d4f; }
+        .toast-info { background: #667eea; }
+
+        .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; font-size: 12px; color: #888; margin-top: 6px; }
+        .meta-grid div { display: flex; gap: 6px; }
+        .meta-grid .m-label { color: #aaa; flex-shrink: 0; }
+        .meta-grid .m-value { color: #666; word-break: break-all; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>BadCase 管理</h1>
+    <div style="display:flex;gap:16px;align-items:center;">
+        <a href="/admin">← 知识库管理</a>
+        <a href="/">← 返回对话</a>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 概览统计 -->
+    <div class="card">
+        <h2>📊 BadCase 概览</h2>
+        <div class="status-grid" id="statusGrid">
+            <div class="status-item"><div class="label">累计 BadCase</div><div class="value" id="statTotal">-</div></div>
+            <div class="status-item"><div class="label">待审核</div><div class="value warn" id="statPending">-</div></div>
+            <div class="status-item"><div class="label">已审核</div><div class="value regular" id="statReviewed">-</div></div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="font-size:13px;color:#666;margin-top:8px"><strong>类型分布：</strong><span id="typeDist" style="color:#999">加载中...</span></div>
+        </div>
+    </div>
+
+    <!-- BadCase 列表 -->
+    <div class="card">
+        <h2>📁 BadCase 列表</h2>
+        <div class="actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="loadCases()">刷新</button>
+            <button class="btn btn-warning" onclick="loadCases(true)">只看待审核</button>
+            <button class="btn btn-outline" onclick="loadCases(false)">只看已审核</button>
+        </div>
+        <div class="filter-bar">
+            <input type="text" id="searchInput" placeholder="搜索问题或回答..." oninput="applyFilter()">
+            <select id="typeFilter" onchange="applyFilter()">
+                <option value="">全部类型</option>
+                <option value="user_negative_feedback">用户负反馈</option>
+                <option value="hallucination_suspected">疑似幻觉</option>
+                <option value="retrieval_miss">检索失败</option>
+                <option value="rewrite_missed_anaphora">指代未重写</option>
+                <option value="rewrite_same_as_original">未重写</option>
+                <option value="rewrite_lost_entity">丢失实体</option>
+                <option value="low_score_no_clarify">低分未澄清</option>
+                <option value="route_misclassification">路由误分类</option>
+                <option value="manual_flag">人工标记</option>
+            </select>
+            <span class="filter-count" id="filterCount"></span>
+        </div>
+        <table class="file-table">
+            <thead><tr><th>用户问题</th><th>类型</th><th>AI 回答预览</th><th>审核状态</th><th>创建时间</th><th>操作</th></tr></thead>
+            <tbody id="caseTableBody"><tr><td colspan="6" style="text-align:center;color:#999">加载中...</td></tr></tbody>
+        </table>
+        <div class="pagination" id="pagination" style="display:none">
+            <span class="page-info" id="pageInfo"></span>
+            <div class="page-btns" id="pageBtns"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let _allCases = [];
+let _filteredCases = [];
+let _currentPage = 1;
+const PAGE_SIZE = 10;
+let _reviewFilter = null; // null=全部, true=待审核, false=已审核
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadCases();
+});
+
+// ===== 概览统计 =====
+async function loadStats() {
+    try {
+        const res = await fetch(`${API}/api/admin/badcases/stats`);
+        const data = await res.json();
+        document.getElementById('statTotal').textContent = data.total ?? 0;
+        document.getElementById('statPending').textContent = data.pending_review ?? 0;
+        document.getElementById('statReviewed').textContent = data.reviewed ?? 0;
+
+        const dist = data.case_type_dist || {};
+        const names = {
+            'user_negative_feedback': '用户负反馈',
+            'hallucination_suspected': '疑似幻觉',
+            'retrieval_miss': '检索失败',
+            'rewrite_missed_anaphora': '指代未重写',
+            'rewrite_same_as_original': '未重写',
+            'rewrite_lost_entity': '丢失实体',
+            'low_score_no_clarify': '低分未澄清',
+            'route_misclassification': '路由误分类',
+            'manual_flag': '人工标记',
+            'unknown': '未知'
+        };
+        const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]);
+        if (!entries.length) {
+            document.getElementById('typeDist').textContent = '暂无数据';
+        } else {
+            document.getElementById('typeDist').innerHTML = entries.map(([k, v]) =>
+                `<span style="margin-right:14px">${names[k] || k}: <b>${v}</b></span>`).join('');
+        }
+    } catch (e) {
+        showToast('加载统计失败: ' + e.message, 'error');
+    }
+}
+
+// ===== 列表加载 =====
+async function loadCases(reviewFilter) {
+    _reviewFilter = (reviewFilter === undefined) ? null : reviewFilter;
+    _currentPage = 1;
+    try {
+        let url = `${API}/api/admin/badcases?limit=10000`;
+        if (_reviewFilter === true) url += '&reviewed=false';
+        if (_reviewFilter === false) url += '&reviewed=true';
+        const res = await fetch(url);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        _allCases = data.bad_cases || [];
+        applyFilter();
+    } catch (e) {
+        document.getElementById('caseTableBody').innerHTML =
+            `<tr><td colspan="6" style="text-align:center;color:#ff4d4f">加载失败: ${e.message}</td></tr>`;
+        showToast('加载失败: ' + e.message, 'error');
+    }
+}
+
+// ===== 筛选 =====
+function applyFilter() {
+    const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
+    const typeFilter = document.getElementById('typeFilter').value;
+
+    _filteredCases = _allCases.filter(c => {
+        if (typeFilter && (c.case_type || '') !== typeFilter) return false;
+        if (keyword) {
+            const q = (c.original_query || '') + ' ' + (c.answer_preview || '');
+            if (!q.toLowerCase().includes(keyword)) return false;
+        }
+        return true;
+    });
+
+    document.getElementById('filterCount').textContent = `共 ${_filteredCases.length} 条`;
+    renderTable();
+}
+
+// ===== 渲染表格 =====
+function renderTable() {
+    const tbody = document.getElementById('caseTableBody');
+    const total = _filteredCases.length;
+    if (!total) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999">暂无 BadCase</td></tr>';
+        document.getElementById('pagination').style.display = 'none';
+        return;
+    }
+
+    const start = (_currentPage - 1) * PAGE_SIZE;
+    const pageCases = _filteredCases.slice(start, start + PAGE_SIZE);
+
+    tbody.innerHTML = pageCases.map(c => {
+        const typeClass = `type-${c.case_type || 'other'}`;
+        const typeName = {
+            'user_negative_feedback': '用户负反馈',
+            'hallucination_suspected': '疑似幻觉',
+            'retrieval_miss': '检索失败',
+            'rewrite_missed_anaphora': '指代未重写',
+            'rewrite_same_as_original': '未重写',
+            'rewrite_lost_entity': '丢失实体',
+            'low_score_no_clarify': '低分未澄清',
+            'route_misclassification': '路由误分类',
+            'manual_flag': '人工标记'
+        }[c.case_type] || (c.case_type || '未知');
+
+        const reviewed = !!c.reviewed;
+        const reviewBadge = reviewed
+            ? '<span class="review-badge review-done">已审核</span>'
+            : '<span class="review-badge review-pending">待审核</span>';
+
+        const meta = c.metadata || {};
+        const metaLines = [];
+        if (c.route) metaLines.push(`<div><span class="m-label">路由:</span><span class="m-value">${esc(c.route)}</span></div>`);
+        if (c.top_doc_score !== undefined && c.top_doc_score !== null && c.top_doc_score !== 0)
+            metaLines.push(`<div><span class="m-label">检索分:</span><span class="m-value">${c.top_doc_score}</span></div>`);
+        if (meta.reason) metaLines.push(`<div><span class="m-label">差评原因:</span><span class="m-value">${esc(meta.reason)}</span></div>`);
+        if (meta.note) metaLines.push(`<div><span class="m-label">用户补充:</span><span class="m-value">${esc(meta.note)}</span></div>`);
+        if (c.history_summary) metaLines.push(`<div><span class="m-label">历史:</span><span class="m-value">${esc(c.history_summary)}</span></div>`);
+
+        const actionBtn = reviewed
+            ? `<button class="btn btn-outline" onclick="markUnreviewed('${c.case_id}')" style="padding:4px 10px;font-size:12px">取消审核</button>`
+            : `<button class="btn btn-success" onclick="markReviewed('${c.case_id}')" style="padding:4px 10px;font-size:12px">标记已审核</button>`;
+
+        return `<tr>
+            <td class="query-cell">${esc(c.original_query || '-')}</td>
+            <td><span class="type-badge ${typeClass}">${typeName}</span></td>
+            <td class="answer-cell">${esc((c.answer_preview || c.final_question || '-'))}</td>
+            <td>${reviewBadge}</td>
+            <td class="time-cell">${esc((c.created_at || '').slice(0, 19) || '-')}</td>
+            <td>${actionBtn}</td>
+        </tr>
+        <tr style="border:none"><td colspan="6" style="padding:0 12px 10px;background:#fafafa;">
+            ${metaLines.length ? `<div class="meta-grid">${metaLines.join('')}</div>` : '<span style="color:#ccc;font-size:12px">无额外元数据</span>'}
+        </td></tr>`;
+    }).join('');
+
+    renderPagination();
+}
+
+function esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ===== 分页 =====
+function renderPagination() {
+    const total = _filteredCases.length;
+    const pageCount = Math.ceil(total / PAGE_SIZE);
+    const pagEl = document.getElementById('pagination');
+    if (pageCount <= 1) { pagEl.style.display = 'none'; return; }
+    pagEl.style.display = 'flex';
+
+    const start = (_currentPage - 1) * PAGE_SIZE;
+    document.getElementById('pageInfo').textContent = `第 ${start + 1}-${Math.min(start + PAGE_SIZE, total)} 条，共 ${total} 条`;
+
+    const btnsEl = document.getElementById('pageBtns');
+    let html = '';
+    for (let p = 1; p <= pageCount; p++) {
+        if (pageCount > 7 && p > 2 && p < pageCount - 1 && Math.abs(p - _currentPage) > 1) {
+            if (html.endsWith('ellipsis')) continue;
+            html += `<button class="ellipsis">...</button>`;
+            continue;
+        }
+        html += `<button class="${p === _currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`;
+    }
+    btnsEl.innerHTML = html;
+}
+
+function goPage(p) {
+    _currentPage = p;
+    renderTable();
+}
+
+// ===== 审核操作 =====
+async function markReviewed(caseId) {
+    try {
+        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(caseId)}/review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reviewed: true })
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'HTTP ' + res.status); }
+        showToast('已标记为已审核', 'success');
+        loadCases(_reviewFilter);
+        loadStats();
+    } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
+}
+
+async function markUnreviewed(caseId) {
+    try {
+        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(caseId)}/review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reviewed: false })
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'HTTP ' + res.status); }
+        showToast('已取消审核标记', 'success');
+        loadCases(_reviewFilter);
+        loadStats();
+    } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
+}
+
+// ===== Toast =====
+function showToast(msg, type = 'info') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `toast toast-${type} show`;
+    setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

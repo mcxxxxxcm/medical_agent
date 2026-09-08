@@ -1,5 +1,56 @@
 # 系统优化更新日志
 
+## v9.51 - 检索前病症方向理解增强（A+B 结合）：体征归一化+规则映射+LLM 兜底，方向词仅进检索不进答案（app/graph/nodes/nodes.py）
+
+背景：真实 bad case——用户问"体温37.8度伴头痛"，系统却召回泛泛的"发热家庭护理"（温水擦拭/退烧药/多喝水），价值低。根因：症状解析只做预设词精确匹配（能抓"头痛"但不把"37.8℃"归一为"发热"，也不判病症方向），检索词 = 用户原话，无方向增强 → 偏向通用发热护理文档而非具体病症场景。
+
+- **新增 `_infer_disease_direction(question, rule_result)`（A+B 方案）**：
+  - A 快速路径（<5ms，纯规则）：`_normalize_vital_temperature` 用正则抓 `(\d+(\.\d+)?)(℃|摄氏度|度)`，≥37.3 归为"发热"，高/低热分别并入方向；`_DISEASE_DIRECTION_RULES` 把症状组合映射到方向词（发热+头痛→上呼吸道感染/感冒、咳嗽+咳痰→支气管炎、腹泻→肠胃炎、胸闷→心血管疾病 等）。
+  - 规则匹配前做症状别名归一化（咽喉痛/喉咙痛→咽痛、发烧→发热 等）+ 子串容忍匹配，提高命中率；只要任一规则命中就 **跳过 LLM**，避免对常见单症状反复调用造成延迟与成本。
+  - B LLM 兜底：规则完全未命中且确有症状依据时，`_infer_disease_direction_llm` 让模型输出 2-4 个方向名词短语（JSON 数组，best-effort，失败静默降级）；兼容 ```json 围栏数组（`extract_json_block` 只解析 JSON 对象，故先剥围栏做顶层数组解析再看对象兜底）。
+- **新增 `_enrich_disease_direction(query, symptoms)`**（镜像 `_enrich_treatment_query`）：从 `symptoms["disease_direction"]` 取方向词，追加 `f"{query} {方向词}"`；超长兜底只取前 2 个方向词；方向为空原样返回不引入噪音。
+- **symptom_analysis_node**：规则提取成功分支把方向写入 `symptoms["disease_direction"]`（失败降级空列表，不阻塞）。
+- **knowledge_retrieval_node**：`if question_type == "symptom"` 处、`_enrich_treatment_query` 之后追加方向增强——**只改检索用 `search_query`，绝不改 `rewritten_query`/`final_question`**，方向词从结构上不会泄漏进答案 prompt，规避"感冒/上呼吸道感染确诊"类医疗诊断断言风险。
+- **零 schema 改动**：方向存进现有 `symptoms` dict（多一个 key），未动 `state.py`。
+- 验证：目标 case「37.8度伴头痛」→ 方向 `['发热','上呼吸道感染','感冒']` 并追加进检索词；`发烧咳嗽/咽痛发热/拉肚子/胸闷` 等命中断言均走规则、无 LLM；`恶心头晕` 等未命中走 LLM 兜底；空 query/空方向原样返回。答案端仍从 `final_question` 取数，不受影响。
+
+<footer>病症方向检索增强 · 改动文件：`app/graph/nodes/nodes.py`、`CHANGELOG.md`</footer>
+
+## v9.50 - BadCase 管理页面（admin/badcases）与 API：查看累计/待审核/类型分布，支持人工审核标记（app/api/routes.py、app/static/badcase.html）
+
+背景：bad case 自动采集（v9.49 标注脚本之前已存在）但无可视化入口，无法查看累计了多少、哪些待人工审核。新增独立管理页，照抄知识库管理页（admin.html）的样式与交互范式，复用 `_verify_admin_key` 管理鉴权与 PostgresStore `get_bad_cases`/`update_bad_case_review`。
+
+- **页面路由**：`GET /admin/badcases` → 渲染 `app/static/badcase.html`（新增模板，复用 admin.html 的 CSS/分页/Toast/筛选范式）。
+- **列表接口**：`GET /api/admin/badcases`（limit/case_type/reviewed 过滤），返回 bad_cases 列表。
+- **统计接口**：`GET /api/admin/badcases/stats` 返回 `{total, pending_review, reviewed, case_type_dist}`。
+- **审核接口**：`POST /api/admin/badcases/{case_id}/review` 复用 `update_bad_case_review`，可标记已审核/取消审核。
+- **页面能力**：概览卡（累计/待审核/已审核 + 类型分布）、问题/回答预览列、类型徽章、审核状态徽章、搜索/类型筛选、分页、"只看待审核/只看已审核"快捷按钮、单击标记已审核或取消审核。
+- **鉴权**：数据接口走 `_verify_admin_key`（本地回退 + X-Admin-API-Key），与既有 admin 接口一致。
+
+**根因修复（页面初始为空）**：bad case 按 user_id 分命名空间存储（`bad_cases, <user_id>`），差评时写入真实用户（如 `test`/`u`），而页面/统计接口原本写死 `user_id='system'` 只查默认命名空间 → 页面空、审核也找不到。
+
+- 新增 `LongTermMemoryManager.get_all_bad_cases()`：用前缀 `('bad_cases',)` 聚合**所有用户**的 bad case，按 case_id 去重、按创建时间倒序——管理后台应看到全部用户的 bad case。
+- `update_bad_case_review` 增加**跨用户兜底**：先按给定 user 查，找不到则 `_find_bad_case_namespace()` 在所有 `bad_cases` 命名空间定位实际归属再更新。**修掉一个静默失败**：原加了 `user_id != "system"` 条件反而让"全局审核入口"（user_id=system）跳过跨用户查找，导致 review 返回 ok 但实际未更新。
+- 列表/统计路由改用 `get_all_bad_cases`；review 路由复用已修复的 `update_bad_case_review`。
+- 验证：实测聚合到 **85 条唯一 bad case**（待审核 85），类型分布完整；跨用户审核 reviewed 0→1 更新成功（测试后已复原）。
+- 说明：排序在 `append_bad_case` 里以 `final_question` 存 question，`metadata` 含 reason/note/request_id/source，页面可展示差评原因与用户补充。
+
+<footer>badcase 管理页 + 跨用户聚合/审核修复 · 改动文件：`app/api/routes.py`、`app/memory/long_term_memory.py`、`app/static/badcase.html`（新增）、`CHANGELOG.md`</footer>
+
+## v9.49 - Bad Case 自动标注脚本（方案A：离线 draft，AI 预筛判真伪 → 归类 → 期望回答草稿，供人工肉眼审阅）（scripts/auto_annotate_bad_cases.py）
+
+背景：前端差评自动转 bad case（`case_type="user_negative_feedback"`）已采集，但 raw 差评≠黄金测试集，需人工逐条标注才能入库，成本高。本脚本用 LLM 做离线预标注，把"从零标注"降维为"人工审阅 draft"，且**第一职责是判真伪**——把"用户误点/乱点导致好答案被误传"识别出来，避免垃圾进黄金集。
+
+- **判真伪三步优先**：⑴ 答案与问题高度相关+内容正确+用户无具体差评原因 → 误点（`is_valid=false`，根因 `acceptable_answer`）；⑵ 答非所问/漏信息/幻觉/检索跑偏 → 真 badcase；⑶ 信息不足时本着医疗低误杀原则判 true 但 `confidence=low`，绝不因存疑把真 badcase 误判为误点。
+- **根因归类**：复用既有 9 类 case_type，另加 `user_misclick`/`acceptable_answer` 两特殊类；非法值回退 `user_negative_feedback`。
+- **期望回答草稿**：只基于用户问题本身、不照抄原错误答案、不得臆造剂量/禁忌，不确定医疗关键事实标 `[需人工核实]`——对应后续黄金集 ground_truth 草稿。
+- **只处理 `reviewed=False`**，不覆盖已人工审核的条目；输出 `tests/data/bad_cases_annotated_draft.jsonl` + 控制台统计（有效数/误点剔除数/分类分布/低置信度需重点审阅数）。
+- 容错：模型输出 JSON 解析失败时按有效/低置信度占位，并透传 `parse_error`，不中断批量。CLI 支持 `--limit/--output/--model(建议更强标注模型 glm-4.5-air)/--samples/--case-type`。
+- 冒烟验证：模拟答非所问+明确差评原因 → 判 true、根因 `hallucination_suspected`；模拟答案合理+无原因（误点）→ 判 false、根因 `acceptable_answer`。判真伪逻辑生效。
+- 说明：当前 Postgres `bad_cases` 为空（0 条未审核），脚本跑 `run()` 输出"未找到"属正常，待反馈链路积攒数据后即可批量标注。
+
+<footer>badcase 自动标注 · 改动文件：`scripts/auto_annotate_bad_cases.py`（新增）、`CHANGELOG.md`</footer>
+
 ## v9.48 - 摄入/过量事件报告强制澄清：防"自动驾驶式"漏澄清（吃了三粒又漏，根因在累积档案谎报实体）（app/graph/nodes/nodes.py）
 
 背景：`test_answerable_ingestion_event_overrides_accumulated_profile` 揭示的深层根因——`memory_load` 把**历史测试累积**的 `user_profile` 实体（感冒/流鼻血/二甲双胍）送进 `_context_has_entity`，判真 → 闸门放行 → "吃了三粒怎么办"这种无药物主语的事件被误放行检索。v9.46/47 已修症状字典谎报，但**累积档案实体仍是"自动授权"漏洞**：只要 user_profile 里留过任一药/症状，任何后续无主语的残缺 query 都会被它豁免。

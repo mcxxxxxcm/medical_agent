@@ -825,6 +825,13 @@ def symptom_analysis_node(state: MedicalAssistantState) -> Dict[str, Any]:
             if calculated_duration:
                 rule_result["duration"] = calculated_duration
                 logger.info(f"从快照计算持续时间：{calculated_duration}")
+        # v9.51: 病症方向推断（仅用于检索增强，不进答案 prompt）。
+        # 失败静默降级为空列表，不影响下游。
+        try:
+            rule_result["disease_direction"] = _infer_disease_direction(question, rule_result)
+        except Exception as e:
+            logger.warning(f"病症方向推断失败：{e}")
+            rule_result.setdefault("disease_direction", [])
         return {"symptoms": rule_result}
 
     # 2. 追问短路：有历史 → 症状由下方快照继承
@@ -1182,6 +1189,163 @@ def _enrich_treatment_query(query: str) -> str:
     return f"{query} {_GENERIC_TREATMENT_KEYWORDS}"
 
 
+# ===== v9.51: 病症方向推断（A+B 方案，仅用于检索增强，不进答案 prompt）=====
+# 设计准则：返回的是病症方向名词短语（供召回相关文档），绝不是诊断性断言。
+# 方向词只会通过 _enrich_disease_direction 追加进检索用 search_query，
+# 绝不改动 rewritten_query / final_question，从结构上保证回答中不出现
+# 未经验证的"感冒/上呼吸道感染确诊"类断言。
+
+# 体温归一化阈值：>= 此值视为发热
+_FEVER_TEMP_THRESHOLD = 37.3
+# 体温数值 → 归一化症状词（仅发热类用于方向增强，正常体温不参与检索）
+_TEMP_NORMALIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:℃|摄氏度|度)")
+
+
+def _normalize_vital_temperature(question: str) -> Optional[str]:
+    """从问诊文本提取体温数值并归一化（如"37.8度"→"发热"）。"""
+    m = _TEMP_NORMALIZE_RE.search(question or "")
+    if not m:
+        return None
+    try:
+        temp = float(m.group(1))
+    except (ValueError, TypeError):
+        return None
+    if temp >= _FEVER_TEMP_THRESHOLD:
+        return "发热"
+    return "体温正常"
+
+
+# 规则映射：症状组合 → 可能病症方向（仅检索用，无诊断断言）
+# 与 keyword_matcher 归一化后的标准症状词对齐（如头痛/发热/咳嗽/腹泻）
+_DISEASE_DIRECTION_RULES: List[tuple] = [
+    (("发热", "头痛"), ["上呼吸道感染", "感冒"]),
+    (("发热",), ["上呼吸道感染", "感冒"]),
+    (("低热",), ["上呼吸道感染"]),
+    (("高热",), ["感染", "上呼吸道感染"]),
+    (("流涕", "发热"), ["上呼吸道感染", "感冒"]),
+    (("流鼻涕",), ["上呼吸道感染", "感冒"]),
+    (("咳嗽", "咳痰"), ["支气管炎"]),
+    (("咳嗽",), ["上呼吸道感染", "支气管炎"]),
+    (("咽痛", "发热"), ["上呼吸道感染"]),
+    (("咽痛",), ["上呼吸道感染"]),
+    (("喉咙痛",), ["上呼吸道感染"]),
+    (("鼻塞",), ["上呼吸道感染", "感冒"]),
+    (("呕吐", "腹泻"), ["急性肠胃炎"]),
+    (("腹泻",), ["肠胃炎"]),
+    (("恶心", "呕吐"), ["急性肠胃炎"]),
+    (("乏力",), ["上呼吸道感染"]),
+    (("胸闷",), ["心血管疾病"]),
+]
+
+
+def _infer_disease_direction_llm(question: str, symptoms: List[str]) -> List[str]:
+    """规则未命中时，用 LLM 推断病症方向词（best-effort，失败则空列表）。"""
+    prompt = (
+        "你是医疗检索辅助助手。请根据用户描述的症状，推断最可能对应的1-3个"
+        "疾病/病症方向名词短语（仅作检索用，供召回相关医学文档）。\n"
+        "要求：只给方向词，不下确诊结论、不写句子；不得臆造剂量/治疗方案。\n"
+        f"用户描述：{question}\n"
+        f"已识别症状：{'、'.join(symptoms)}\n"
+        '请严格输出一个 JSON 字符串数组，如 ["上呼吸道感染", "感冒"]，不要任何其他文字。'
+    )
+    try:
+        from langchain_core.messages import HumanMessage
+        llm = get_llm()
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        raw = resp.content if isinstance(resp.content, str) else str(resp.content or "")
+        # 模型常把数组包在 ```json 围栏里；extract_json_block 只解析 JSON 对象，
+        # 对数组返回 None，故这里先剥围栏 + 顶层数组 json 解析，再做对象兜底
+        fenced = re.sub(r"^```(?:json)?\s*", "", raw.strip()).rstrip("`").strip()
+        arr = None
+        try:
+            parsed = json.loads(fenced)
+            if isinstance(parsed, list):
+                arr = parsed
+        except (json.JSONDecodeError, ValueError):
+            arr = extract_json_block(raw)
+        if isinstance(arr, list):
+            terms = []
+            for x in arr:
+                t = str(x or "").strip()
+                if t and t not in terms:
+                    terms.append(t)
+            return terms[:4]
+    except Exception as e:
+        logger.warning(f"病症方向LLM推断失败：{e}")
+    return []
+
+
+def _infer_disease_direction(question: str, rule_result: Dict[str, Any]) -> List[str]:
+    """推断病症方向（A+B 方案）。返回方向词列表，空列表表示无需增强。
+
+    A. 快速路径：体温归一化 + 规则映射（<5ms，无 LLM）
+    B. LLM 兜底：规则未命中且有一定症状依据时，推理补充方向词
+    """
+    if not question:
+        return []
+    symptoms = rule_result.get("symptoms") or []
+    directions: List[str] = []
+
+    temp_term = _normalize_vital_temperature(question)
+
+    # 规则匹配前做症状别名归一化，弥合 keyword_matcher 口语变体与规则词的差异
+    # （如"咽喉痛/喉咙痛"→"咽痛"），提高规则命中率、减少不必要的 LLM 兜底调用
+    symptom_alias = {"咽喉痛": "咽痛", "喉咙痛": "咽痛", "咽喉炎": "咽炎",
+                     "头昏": "头晕", "流涕": "流鼻涕", "发烧": "发热",
+                     "咽喉": "咽"}
+    symptom_set = set(symptoms or [])
+    for s in list(symptom_set):
+        al = symptom_alias.get(s)
+        if al:
+            symptom_set.add(al)
+    if temp_term in ("发热", "低热", "高热"):
+        directions.append(temp_term)
+        symptom_set.add(temp_term)
+
+    rule_hit = False
+    for combo, matches in _DISEASE_DIRECTION_RULES:
+        # 子串容忍匹配：规避"咽痛"vs"咽喉痛"这类归一化残余差异导致漏判
+        if all(any(kw in s or s in kw for s in symptom_set) for kw in combo):
+            for m in matches:
+                if m not in directions:
+                    directions.append(m)
+            rule_hit = True
+            break
+
+    # B: 规则完全未命中且确有症状依据时，LLM 补充方向（失败静默降级为规则结果）。
+    # 只要任一规则命中即跳过 LLM，避免对常见单症状反复调用造成延迟与成本。
+    if not rule_hit and symptom_set:
+        for extra in _infer_disease_direction_llm(question, list(symptom_set)[:8]):
+            if extra not in directions:
+                directions.append(extra)
+
+    return directions[:4]
+
+
+def _enrich_disease_direction(query: str, symptoms: Optional[Dict[str, Any]]) -> str:
+    """病症方向检索词增强：把推断出的方向词追加进检索 query。
+
+    仅作用 search_query；方向为空时原样返回，避免给检索引入噪音。
+    深度防御：合并后超长则只保留前 2 个方向词。
+    """
+    if not query:
+        return query
+    directions = (symptoms or {}).get("disease_direction") or []
+    terms: List[str] = []
+    for d in directions:
+        t = (str(d or "").strip())
+        if not t or t in terms:
+            continue
+        terms.append(t)
+    if not terms:
+        return query
+    if len(query) + len(" ".join(terms)) > 80:
+        appended = " ".join(terms[:2])
+    else:
+        appended = " ".join(terms)
+    return f"{query} {appended}".strip()
+
+
 # 过敏背景结构正则：匹配"对X过敏"（X通常为过敏原，如"对花粉过敏""对芒果过敏"）
 _ALLERGY_BACKGROUND_RE = re.compile(r'对[^\s，,。！？!?；;、　]{1,12}过敏')
 
@@ -1353,6 +1517,13 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             if enriched != search_query:
                 logger.info(f"检索词增强：'{search_query}' → '{enriched}'")
                 search_query = enriched
+            # v9.51: 病症方向检索词增强（仅作用 search_query，绝不改 final_question，
+            # 规避医疗诊断风险——方向词只用于召回针对性文档）。方向为空时原样返回。
+            symptoms_payload = state.get("symptoms") or {}
+            direction_enriched = _enrich_disease_direction(search_query, symptoms_payload)
+            if direction_enriched != search_query:
+                logger.info(f"病症方向检索词增强：'{search_query}' → '{direction_enriched}'")
+                search_query = direction_enriched
 
         retriever = get_cached_hybrid_retriever(k=k, alpha=0.5, use_reranker=True, rerank_top_k=10)
 
@@ -2761,6 +2932,22 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     else:
         symptom_whitelist_section = ""
 
+    # v9.51: 病症方向开场（仅病症类问诊，软措辞——先点明可能病症方向，再给处理）。
+    # 方向词已由 `_infer_disease_direction` 推断并存放于 symptoms dict；
+    # 注入答案 prompt 时用『可能/需就医核实』等谨慎措辞，绝不写成确诊。
+    disease_direction_section = ""
+    directions = (symptoms or {}).get("disease_direction") or []
+    if directions and state.get("question_type") == "symptom":
+        disease_direction_section = (
+            f"【可能的病症方向（系统依据本次症状推断，仅供开场参考，需就医核实）】\n"
+            + "、".join(directions)
+            + "\n\n"
+            "若【问题】是症状类问诊，请在正文开头用一句话先点明这些症状『可能属于的常见病症方向』"
+            "（从中选用，必须用『可能/常见于/需就医核实』等谨慎措辞，绝不能写成确诊或绝对判断），"
+            "之后再逐条给出处理建议。若上面的方向在【文档】中没有支持依据，可不用点明方向，直接按症状给处理。"
+            "其余措辞仍须严格忠于【文档】，不得因点明方向而编造或夸大。"
+        )
+
     # 使用 ChatPromptTemplate 构建
     messages = RAG_ANSWER_PROMPT.format_messages(
         frozen_profile_section=frozen_profile_section,
@@ -2770,6 +2957,7 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         history_section=history_section,
         question=question,
         symptom_whitelist_section=symptom_whitelist_section,
+        disease_direction_section=disease_direction_section,
         followup_section=followup_section,
     )
     return messages
