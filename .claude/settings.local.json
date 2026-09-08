@@ -140,7 +140,10 @@
       "Bash(netstat -ano)",
       "Bash(tasklist //FI \"PID eq 44104\")",
       "Bash(ps -p 49456 -o pid,lstart,cmd)",
-      "Bash(taskkill //PID 49456 //F)"
+      "Bash(taskkill //PID 49456 //F)",
+      "Bash(/c/Users/86176/miniconda3/python.exe -c \"import conda; print\\(conda.__version__\\)\")",
+      "Bash(/c/Users/86176/miniconda3/python.exe -m pytest --version)",
+      "Bash(/c/Users/86176/miniconda3/Scripts/conda.exe env *)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1195,14 +1195,20 @@ def _enrich_treatment_query(query: str) -> str:
 # 绝不改动 rewritten_query / final_question，从结构上保证回答中不出现
 # 未经验证的"感冒/上呼吸道感染确诊"类断言。
 
-# 体温归一化阈值：>= 此值视为发热
-_FEVER_TEMP_THRESHOLD = 37.3
+# 体温归一化阈值（v9.52：多档分阶，替代 v9.51 的统一"发热"单档）
+_FEVER_TEMP_THRESHOLD = 37.3  # 低于此值视为正常体温，不参与方向增强
+_LOW_FEVER_TEMP_MAX = 38.0    # [阈值, thist) 为低热
+_MID_FEVER_TEMP_MAX = 39.0    # [thist, thist2) 为中热；>= thist2 为高热
 # 体温数值 → 归一化症状词（仅发热类用于方向增强，正常体温不参与检索）
 _TEMP_NORMALIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:℃|摄氏度|度)")
 
 
 def _normalize_vital_temperature(question: str) -> Optional[str]:
-    """从问诊文本提取体温数值并归一化（如"37.8度"→"发热"）。"""
+    """从问诊文本提取体温数值并分档归一化（如"37.8度"→"低热"、"39.5℃"→"高热"）。
+
+    返回值与 `_DISEASE_DIRECTION_RULES` 中低/中/高热映射词对齐，使数值体温
+    能够触发对应方向的规则命申，替代 v9.51 所有发热统一归为"发热"的粗粒度。
+    """
     m = _TEMP_NORMALIZE_RE.search(question or "")
     if not m:
         return None
@@ -1210,31 +1216,54 @@ def _normalize_vital_temperature(question: str) -> Optional[str]:
         temp = float(m.group(1))
     except (ValueError, TypeError):
         return None
-    if temp >= _FEVER_TEMP_THRESHOLD:
-        return "发热"
-    return "体温正常"
+    if temp < _FEVER_TEMP_THRESHOLD:
+        return "体温正常"
+    if temp < _LOW_FEVER_TEMP_MAX:
+        return "低热"
+    if temp < _MID_FEVER_TEMP_MAX:
+        return "中热"
+    return "高热"
 
 
 # 规则映射：症状组合 → 可能病症方向（仅检索用，无诊断断言）
-# 与 keyword_matcher 归一化后的标准症状词对齐（如头痛/发热/咳嗽/腹泻）
+# 与 keyword_matcher 归一化后的标准症状词对齐（如头痛/发烧/咳嗽/腹泻）。
+# v9.52：① 体温分档后，低/中/高热三档分别加入映射，替代原"发热"单映射；
+#    ② 词表按 keyword_matcher 真实产出词形对齐（"嗓子疼"而非"咽痛"），
+#       并修正几处原本对不上标准词的映射（"咳痰"无标准词、"乏力"原错写为→上呼吸道感染等）。
 _DISEASE_DIRECTION_RULES: List[tuple] = [
-    (("发热", "头痛"), ["上呼吸道感染", "感冒"]),
+    # 呼吸道（对应 _normalize_vital_temperature 的分档 + keyword_matcher 标准词）
+    (("低热",), ["上呼吸道感染", "低热"]),
+    (("中热",), ["感染", "上呼吸道感染"]),
+    (("高热",), ["呼吸道感染", "感染"]),
     (("发热",), ["上呼吸道感染", "感冒"]),
-    (("低热",), ["上呼吸道感染"]),
-    (("高热",), ["感染", "上呼吸道感染"]),
-    (("流涕", "发热"), ["上呼吸道感染", "感冒"]),
+    (("低热", "头痛"), ["上呼吸道感染", "感冒"]),
+    (("发热", "头痛"), ["上呼吸道感染", "感冒"]),
+    (("流鼻涕", "发热"), ["上呼吸道感染", "感冒"]),
     (("流鼻涕",), ["上呼吸道感染", "感冒"]),
-    (("咳嗽", "咳痰"), ["支气管炎"]),
-    (("咳嗽",), ["上呼吸道感染", "支气管炎"]),
-    (("咽痛", "发热"), ["上呼吸道感染"]),
-    (("咽痛",), ["上呼吸道感染"]),
-    (("喉咙痛",), ["上呼吸道感染"]),
     (("鼻塞",), ["上呼吸道感染", "感冒"]),
+    (("咳嗽",), ["支气管炎", "上呼吸道感染"]),
+    (("咳嗽", "呼吸困难"), ["支气管炎", "肺炎"]),
+    (("咳嗽", "胸痛"), ["支气管炎", "肺部感染"]),
+    (("嗓子疼",), ["上呼吸道感染"]),
+    (("嗓子疼", "发热"), ["上呼吸道感染"]),
+    # 消化系统（keyword_matcher 标准词：腹痛/恶心/呕吐/腹泻）
     (("呕吐", "腹泻"), ["急性肠胃炎"]),
     (("腹泻",), ["肠胃炎"]),
     (("恶心", "呕吐"), ["急性肠胃炎"]),
-    (("乏力",), ["上呼吸道感染"]),
+    (("腹痛", "呕吐"), ["急性肠胃炎"]),
+    (("腹痛", "腹泻"), ["急性肠胃炎"]),
+    (("腹痛", "恶心"), ["胃炎", "肠胃炎"]),
+    (("便秘",), ["便秘", "消化系统功能紊乱"]),
+    # 其他常见组合（均为 keyword_matcher 能产出的标准词）
+    (("头晕", "呕吐"), ["眩晕", "前庭性眩晕"]),
+    (("乏力",), ["乏力"]),
     (("胸闷",), ["心血管疾病"]),
+    (("胸痛", "呼吸困难"), ["心血管疾病"]),
+    (("胸闷", "呼吸困难"), ["心血管疾病"]),
+    (("皮疹", "瘙痒"), ["过敏性皮炎"]),
+    (("瘙痒",), ["过敏性皮炎"]),
+    (("水肿",), ["肾脏疾病"]),
+    (("恶心",), ["消化不良"]),
 ]
 
 
@@ -1288,24 +1317,29 @@ def _infer_disease_direction(question: str, rule_result: Dict[str, Any]) -> List
 
     temp_term = _normalize_vital_temperature(question)
 
-    # 规则匹配前做症状别名归一化，弥合 keyword_matcher 口语变体与规则词的差异
-    # （如"咽喉痛/喉咙痛"→"咽痛"），提高规则命中率、减少不必要的 LLM 兜底调用
-    symptom_alias = {"咽喉痛": "咽痛", "喉咙痛": "咽痛", "咽喉炎": "咽炎",
-                     "头昏": "头晕", "流涕": "流鼻涕", "发烧": "发热",
-                     "咽喉": "咽"}
+    # 规则匹配前做症状别名归一化，弥合 keyword_matcher 口语变体与规则词的差异。
+    # v9.52：规则词已改为 keyword_matcher 实际产出的标准词（"嗓子疼"而非"咽痛"），
+    # 故别名统一向标准词对齐（"咽痛/咽喉痛/喉咙痛"→"嗓子疼"、"发烧"→"发热"），
+    # 使口语变体能精确命中规则，避免落入 LLM 兜底（v9.51 漏掉"嗓子疼"导致咽痛类必走LLM）。
+    symptom_alias = {"咽痛": "嗓子疼", "咽喉痛": "嗓子疼", "喉咙痛": "嗓子疼",
+                     "咽喉炎": "咽炎", "头昏": "头晕", "流涕": "流鼻涕",
+                     "发烧": "发热", "咽喉": "嗓子", "腹疼": "腹痛"}
     symptom_set = set(symptoms or [])
     for s in list(symptom_set):
         al = symptom_alias.get(s)
         if al:
             symptom_set.add(al)
-    if temp_term in ("发热", "低热", "高热"):
+    if temp_term in ("低热", "中热", "高热"):
         directions.append(temp_term)
         symptom_set.add(temp_term)
 
     rule_hit = False
     for combo, matches in _DISEASE_DIRECTION_RULES:
-        # 子串容忍匹配：规避"咽痛"vs"咽喉痛"这类归一化残余差异导致漏判
-        if all(any(kw in s or s in kw for s in symptom_set) for kw in combo):
+        # v9.52 规整判合：alias 补齐后规则词即 keyword_matcher 标准词，采用
+        # "精确相等 或 规则词⊆症状词"的正向匹配（保留子串容忍覆盖归一化残余差异），
+        # 移除原 `s in kw` 反向子串——该反向判定会让"症状词恰为规则词的子串"
+        # （如 symptom"疼"之于 kw"头痛"）伪命中，导致误判。单字规则词不参与子串匹配。
+        if all(any(kw == s or (len(kw) >= 2 and kw in s) for s in symptom_set) for kw in combo):
             for m in matches:
                 if m not in directions:
                     directions.append(m)

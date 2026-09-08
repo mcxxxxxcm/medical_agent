@@ -18,6 +18,9 @@ from app.graph.nodes.nodes import (
     _context_has_entity,
     _build_clarify_answer,
     _decode_answerable,
+    _normalize_vital_temperature,
+    _infer_disease_direction,
+    _enrich_disease_direction,
 )
 from app.graph.graph import route_after_rewrite
 
@@ -635,3 +638,106 @@ class TestSegmentedEmitter:
         em = self._SegmentedEmitter([], [], "")
         em.feed("- 你好，祝您健康。")
         assert em.finish() == "- 你好，祝您健康。"
+
+
+# ===== v9.52: 病症方向检索增强（温度分档 + 规则对齐）确定性单测 =====
+class TestDiseaseDirection:
+    """`_infer_disease_direction` 家庭成员函数：温度分档 / 规则映射 / LLM兜底 / 增强拼合"""
+
+    # ---- 温度分档 ----
+    def test_temp_below_gateway_normal(self):
+        assert _normalize_vital_temperature("体温36.8度") == "体温正常"
+
+    def test_temp_low_fever(self):
+        assert _normalize_vital_temperature("体温37.8度") == "低热"
+
+    def test_temp_low_fever_edge_inclusive(self):
+        # 阈值 37.3 本身即为低热区（>= 37.3）
+        assert _normalize_vital_temperature("37.3℃") == "低热"
+
+    def test_temp_mid_fever(self):
+        assert _normalize_vital_temperature("38.5摄氏度") == "中热"
+
+    def test_temp_high_fever(self):
+        assert _normalize_vital_temperature("39.5℃") == "高热"
+
+    def test_temp_missing_returns_none(self):
+        assert _normalize_vital_temperature("发烧了") is None
+        assert _normalize_vital_temperature("") is None
+
+    # ---- A 路径规则命中（确定性、不触发 LLM）----
+    def test_fever_headache_direction(self):
+        # 数值体温被归为低热，叠加头痛症状 → 走规则、含低热档方向词
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            m.side_effect = AssertionError("A路径规则应命中，不应调用LLM兜底")
+            d = _infer_disease_direction("体温37.8度伴头痛", {"symptoms": ["头痛"]})
+        assert "低热" in d
+        assert "上呼吸道感染" in d
+
+    def test_sore_throat_alias_reaches_rule(self):
+        # v9.52 修复：keyword_matcher 产出"嗓子疼"，规则词也是"嗓子疼"，
+        # 不再像 v9.51 那样（规则用"咽痛"）必落空走 LLM。
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            m.side_effect = AssertionError("咽痛类应命中规则，不应调用LLM兜底")
+            d = _infer_disease_direction("嗓子疼怎么办", {"symptoms": ["嗓子疼"]})
+        assert "上呼吸道感染" in d
+
+    def test_throat_synonym_normalized(self):
+        # 口语变体"喉咙痛"经 alias 归一为"嗓子疼"后命中规则
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            d = _infer_disease_direction("喉咙痛", {"symptoms": ["喉咙痛"]})
+            m.assert_not_called()
+        assert "上呼吸道感染" in d
+
+    def test_diarrhea_vomiting_rule(self):
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            d = _infer_disease_direction("又吐又拉", {"symptoms": ["呕吐", "腹泻"]})
+            m.assert_not_called()
+        assert "急性肠胃炎" in d
+
+    def test_chest_pain_breath_rule(self):
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            d = _infer_disease_direction("胸闷呼吸困难", {"symptoms": ["胸闷", "呼吸困难"]})
+            m.assert_not_called()
+        assert "心血管疾病" in d
+
+    # ---- 反向子串误判修复（v9.52 规整判合）----
+    def test_reverse_substring_no_false_hit(self):
+        # 症状"疼"是规则词"头痛"的子串，旧 `s in kw` 会伪命中；
+        # v9.52 移除反向子串后，仅有"疼"不应命中任何口味规则（无其他症状支撑）
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            m.return_value = []  # 无其他症状依据，静默降级为空
+            d = _infer_disease_direction("疼", {"symptoms": ["疼"]})
+        assert d == []
+
+    # ---- B 路径 LLM 兜底 ----
+    def test_no_rule_falls_to_llm(self):
+        rule_result = {"symptoms": ["头晕"]}
+        # 头晕有该规则… 用一个确实无映射的症状验证 LLM 兜底被触发
+        with patch("app.graph.nodes.nodes._infer_disease_direction_llm") as m:
+            m.return_value = ["内耳前庭问题"]
+            d = _infer_disease_direction("耳朵有点发闷", {"symptoms": ["耳闷"]})
+        m.assert_called_once()
+        assert "内耳前庭问题" in d
+
+    def test_empty_question_returns_empty(self):
+        assert _infer_disease_direction("", {"symptoms": []}) == []
+
+    def test_empty_symptoms_returns_empty(self):
+        assert _infer_disease_direction("还能帮我吗", {"symptoms": []}) == []
+
+    # ---- 增强拼合 ----
+    def test_enrich_appends_directions(self):
+        out = _enrich_disease_direction("头痛", {"disease_direction": ["低热", "上呼吸道感染"]})
+        assert "低热" in out and "上呼吸道感染" in out and out.startswith("头痛")
+
+    def test_enrich_empty_directions_no_change(self):
+        assert _enrich_disease_direction("头痛", {"disease_direction": []}) == "头痛"
+        assert _enrich_disease_direction("头痛", {}) == "头痛"
+
+    def test_enrich_empty_query_no_change(self):
+        assert _enrich_disease_direction("", {"disease_direction": ["感冒"]}) == ""
+
+    def test_enrich_dedup_and_truncate(self):
+        out = _enrich_disease_direction("一个很长的头痛查询", {"disease_direction": ["感冒", "感冒"]})
+        assert out.count("感冒") == 1
