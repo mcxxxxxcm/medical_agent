@@ -143,7 +143,15 @@
       "Bash(taskkill //PID 49456 //F)",
       "Bash(/c/Users/86176/miniconda3/python.exe -c \"import conda; print\\(conda.__version__\\)\")",
       "Bash(/c/Users/86176/miniconda3/python.exe -m pytest --version)",
-      "Bash(/c/Users/86176/miniconda3/Scripts/conda.exe env *)"
+      "Bash(/c/Users/86176/miniconda3/Scripts/conda.exe env *)",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -c \"import ast; ast.parse\\(open\\('app/api/routes.py',encoding='utf-8'\\).read\\(\\)\\); print\\('routes syntax OK'\\)\")",
+      "Bash(cp /tmp/golden_backup.jsonl tests/data/golden_test_set.jsonl)",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='python.exe'\\\\\" | Select-Object ProcessId,CreationDate | Sort-Object CreationDate | Format-Table -AutoSize\")",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -c \"from app.core.config import get_config; c=get_config\\(\\); print\\('ADMIN_API_KEY=', repr\\(getattr\\(c,'ADMIN_API_KEY',''\\)\\)\\)\")",
+      "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''python.exe'\\\\''\" | Where-Object {$_.CommandLine -match '\\\\''routes'\\\\'' -or $_.CommandLine -match '\\\\''spawn_main'\\\\''} | ForEach-Object { Write-Host \\('\\\\''Stopping PID '\\\\'' + $_.ProcessId\\); Stop-Process -Id $_.ProcessId -Force } ')",
+      "Bash(echo \"port check exit: $?\")",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='python.exe'\\\\\" | Select-Object ProcessId | Format-Table -AutoSize\")",
+      "Bash(grep -E \"[0-9]{4,}\")"
     ]
   },
   "enableAllProjectMcpServers": true,

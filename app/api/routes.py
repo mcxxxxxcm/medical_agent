@@ -45,6 +45,7 @@ from app.memory.checkpointer import close_checkpointer
 from app.rag.hybrid_retriever import get_hybrid_retriever
 from app.rag.reranker import get_reranker
 from app.rag.loader import LOADERS
+from app.core.badcase_categories import CATEGORY_ZH, category_zh, default_category
 
 logger = get_logger(__name__)
 
@@ -344,7 +345,10 @@ async def admin_page():
 @app.get("/admin/badcases")
 async def badcase_admin_page():
     """BadCase 管理页面"""
-    return FileResponse(str(STATIC_DIR / "badcase.html"))
+    return FileResponse(
+        str(STATIC_DIR / "badcase.html"),
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # 异常处理
@@ -807,7 +811,7 @@ async def badcase_list(request: Request, limit: int = 50, case_type: str = None,
 
 @app.get("/api/admin/badcases/stats")
 async def badcase_stats(request: Request):
-    """BadCase 累计统计（需管理员认证）：总数 / 待审核数 / 已审核数 / 类型分布"""
+    """BadCase 累计统计（需管理员认证）：总数 / 待审核数 / 已审核数 / 类型分布 / 三大类分布"""
     if not _verify_admin_key(request):
         return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.memory import get_long_term_memory
@@ -818,33 +822,123 @@ async def badcase_stats(request: Request):
     pending = sum(1 for c in cases if not c.get("reviewed"))
     reviewed_count = total - pending
     case_type_dist = {}
+    category_dist = {}
     for c in cases:
         t = c.get("case_type") or "unknown"
         case_type_dist[t] = case_type_dist.get(t, 0) + 1
+        cat = c.get("category") or default_category(t)  # 老记录无 category 时按 case_type 兜底
+        category_dist[cat] = category_dist.get(cat, 0) + 1
     return {
         "total": total,
         "pending_review": pending,
         "reviewed": reviewed_count,
         "case_type_dist": case_type_dist,
+        "category_dist": category_dist,
     }
+
+
+# 黄金测试集写入重入锁（防并发追加/判重竞态）
+_golden_lock = asyncio.Lock()
+# 黄金测试集路径（与 scripts/evaluate_rag.py DEFAULT_TEST_SET 对齐）
+GOLDEN_TEST_SET_PATH = Path(__file__).resolve().parent.parent.parent / "tests" / "data" / "golden_test_set.jsonl"
+
+
+async def _sync_badcase_to_golden(case: Dict, ground_truth: str, category: str) -> bool:
+    """审核通过（三真类 + 有期望答案）时，将该 badcase 追加进黄金测试集。
+
+    - 按 query 精确判重，已存在则跳过（同一 case 重复审核不重复入库）
+    - category 以中文三大类写入黄金集 category 字段（与既有"用药安全"等中文类别风格一致）
+    - 失败不影响审核操作本身，异常在此吞掉并记录
+    """
+    original_query = (case.get("original_query") or "").strip()
+    # 仅三大失败类可入库（排除 other）；期望回答（ground_truth）必须非空
+    if category not in ("retrieval_fail", "knowledge_gap", "generation_fail"):
+        return False
+    if not original_query or not (ground_truth or "").strip():
+        return False
+
+    try:
+        async with _golden_lock:
+            existing = set()
+            if GOLDEN_TEST_SET_PATH.exists():
+                with open(GOLDEN_TEST_SET_PATH, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            item = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        existing.add((item.get("query") or "").strip())
+            if original_query in existing:
+                return False
+
+            entry = {
+                "query": original_query,
+                "ground_truth": ground_truth,
+                "key_facts": [],
+                "category": category_zh(category),
+                "difficulty": "medium",
+                "source_doc": f"badcase:{case.get('case_id', '')}",
+                "source": "badcase",
+            }
+            GOLDEN_TEST_SET_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(GOLDEN_TEST_SET_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            logger.info(f"badcase 已并入黄金测试集：{original_query[:30]}")
+            return True
+    except Exception as e:
+        logger.warning(f"badcase 并入黄金测试集失败：{e}")
+        return False
 
 
 @app.post("/api/admin/badcases/{case_id}/review")
 async def badcase_review(request: Request, case_id: str):
-    """人工审核标记 bad case（补填期望重写、自包含标注、置为已审核）"""
+    """人工审核标记 bad case（补填失败大类、期望回答、置为已审核）
+
+    审核通过（reviewed=True）且属三大失败类之一、期望回答非空时，
+    自动将该 badcase 追加进黄金测试集（按 query 判重）。
+    """
     if not _verify_admin_key(request):
         return JSONResponse(status_code=403, content={"detail": "无权访问"})
     body = await request.json()
     from app.memory import get_long_term_memory
     memory = get_long_term_memory()
+
+    category = str(body.get("category") or "").strip() or None
+    ground_truth = str(body.get("ground_truth") or "").strip()
+    reviewed = body.get("reviewed", True)
+
     memory.update_bad_case_review(
         user_id="system",
         case_id=case_id,
         expected_rewrite=body.get("expected_rewrite", "") or "",
         is_self_contained=body.get("is_self_contained"),
-        reviewed=body.get("reviewed", True),
+        reviewed=reviewed,
+        category=category,
+        ground_truth=ground_truth,
     )
-    return {"ok": True, "case_id": case_id}
+
+    # 审核通过 + 三大失败类之一 + 有期望答案 → 并入黄金测试集
+    synced = False
+    reason = ""
+    if not reviewed:
+        reason = "取消/未审核，不入黄金集"
+    elif not category or category not in CATEGORY_ZH or category == "other":
+        reason = f"失败大类为「{category_zh(category or 'other')}」，非三大失败类，仅标记审核不入黄金集"
+    elif not ground_truth.strip():
+        reason = "期望回答(ground_truth)为空，仅标记审核不入黄金集"
+    else:
+        case = memory.get_bad_case(case_id)
+        if not case:
+            reason = "未找到该 badcase，未写入黄金集"
+        else:
+            synced = await _sync_badcase_to_golden(case, ground_truth, category)
+            reason = "已并入黄金测试集" if synced else "该问题已存在于黄金集或写入失败（已存在则判重跳过）"
+        logger.info(f"badcase 审核 {case_id}：{reason}")
+
+    return {"ok": True, "case_id": case_id, "synced_to_golden": synced, "reason": reason}
 
 
 @app.get("/api/admin/refusal/stats")

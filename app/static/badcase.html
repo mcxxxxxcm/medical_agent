@@ -101,6 +101,23 @@
         .meta-grid div { display: flex; gap: 6px; }
         .meta-grid .m-label { color: #aaa; flex-shrink: 0; }
         .meta-grid .m-value { color: #666; word-break: break-all; }
+
+        .type-sub { font-size: 11px; color: #888; margin-left: 6px; font-weight: 400; }
+
+        /* 审核弹窗 */
+        .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 3000; align-items: center; justify-content: center; }
+        .modal-mask.show { display: flex; }
+        .modal { background: #fff; border-radius: 12px; padding: 22px; width: 560px; max-width: 92vw; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+        .modal h3 { font-size: 16px; margin-bottom: 6px; color: #333; }
+        .modal .modal-desc { font-size: 12px; color: #888; margin-bottom: 14px; }
+        .modal label { display: block; font-size: 13px; color: #555; margin: 12px 0 6px; }
+        .modal select, .modal textarea {
+            width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 13px; outline: none; box-sizing: border-box; font-family: inherit;
+        }
+        .modal select:focus, .modal textarea:focus { border-color: #667eea; }
+        .modal textarea { min-height: 120px; resize: vertical; }
+        .modal .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
     </style>
 </head>
 <body>
@@ -136,6 +153,13 @@
         </div>
         <div class="filter-bar">
             <input type="text" id="searchInput" placeholder="搜索问题或回答..." oninput="applyFilter()">
+            <select id="categoryFilter" onchange="applyFilter()">
+                <option value="">全部三大类</option>
+                <option value="retrieval_fail">检索失败</option>
+                <option value="knowledge_gap">知识缺失</option>
+                <option value="generation_fail">生成失败</option>
+                <option value="other">其他</option>
+            </select>
             <select id="typeFilter" onchange="applyFilter()">
                 <option value="">全部类型</option>
                 <option value="user_negative_feedback">用户负反馈</option>
@@ -163,6 +187,21 @@
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
+<!-- 审核弹窗 -->
+<div class="modal-mask" id="reviewModal">
+    <div class="modal">
+        <h3>审核 BadCase 并（可选）并入黄金测试集</h3>
+        <div class="modal-desc">选择失败大类；期望回答留空则仅标记审核、不入黄金测试集。</div>
+        <label>所属失败大类</label>
+        <select id="reviewCategory"></select>
+        <label>期望回答 / ground_truth（预填原始答案，可修改后入库）</label>
+        <textarea id="reviewGroundTruth"></textarea>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeReview()">取消</button>
+            <button class="btn btn-success" onclick="submitReview()">确认审核并入库</button>
+        </div>
+    </div>
+</div>
 
 <script>
 const API = window.location.origin;
@@ -171,6 +210,51 @@ let _filteredCases = [];
 let _currentPage = 1;
 const PAGE_SIZE = 10;
 let _reviewFilter = null; // null=全部, true=待审核, false=已审核
+
+// 三大失败大类中文（与后端 CATEGORY_ZH 对齐）
+const CATEGORY_ZH = {
+    'retrieval_fail': '检索失败',
+    'knowledge_gap': '知识缺失',
+    'generation_fail': '生成失败',
+    'other': '其他'
+};
+// 细粒度子类型中文（与后端 CASE_TYPE_ZH 对齐）
+const CASE_TYPE_ZH = {
+    'user_negative_feedback': '用户负反馈',
+    'hallucination_suspected': '疑似幻觉',
+    'retrieval_miss': '检索失败',
+    'rewrite_missed_anaphora': '指代未重写',
+    'rewrite_same_as_original': '未重写',
+    'rewrite_lost_entity': '丢失实体',
+    'low_score_no_clarify': '低分未澄清',
+    'route_misclassification': '路由误分类',
+    'manual_flag': '人工标记',
+    'user_misclick': '误点',
+    'acceptable_answer': '答案可接受',
+    'unknown': '未知'
+};
+// case_type → 三大类默认归类（与后端 default_category 对齐，未知回退 other）
+const CASE_TYPE_CATEGORY = {
+    'retrieval_miss': 'retrieval_fail',
+    'route_misclassification': 'retrieval_fail',
+    'rewrite_missed_anaphora': 'retrieval_fail',
+    'rewrite_lost_entity': 'retrieval_fail',
+    'rewrite_same_as_original': 'retrieval_fail',
+    'low_score_no_clarify': 'retrieval_fail',
+    'hallucination_suspected': 'generation_fail',
+    'user_negative_feedback': 'other',
+    'manual_flag': 'other',
+    'user_misclick': 'other',
+    'acceptable_answer': 'other'
+};
+function categoryOf(c) {
+    if (c && c.category && CATEGORY_ZH[c.category]) return c.category;
+    return CASE_TYPE_CATEGORY[(c && c.case_type) || ''] || 'other';
+}
+function caseTypeZh(c) {
+    const t = (c && c.case_type) || '';
+    return CASE_TYPE_ZH[t] || t || '未知';
+}
 
 // ===== 初始化 =====
 document.addEventListener('DOMContentLoaded', () => {
@@ -188,24 +272,19 @@ async function loadStats() {
         document.getElementById('statReviewed').textContent = data.reviewed ?? 0;
 
         const dist = data.case_type_dist || {};
-        const names = {
-            'user_negative_feedback': '用户负反馈',
-            'hallucination_suspected': '疑似幻觉',
-            'retrieval_miss': '检索失败',
-            'rewrite_missed_anaphora': '指代未重写',
-            'rewrite_same_as_original': '未重写',
-            'rewrite_lost_entity': '丢失实体',
-            'low_score_no_clarify': '低分未澄清',
-            'route_misclassification': '路由误分类',
-            'manual_flag': '人工标记',
-            'unknown': '未知'
-        };
+        const catDist = data.category_dist || {};
         const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]);
-        if (!entries.length) {
-            document.getElementById('typeDist').textContent = '暂无数据';
+        const catEntries = Object.entries(catDist).sort((a, b) => b[1] - a[1]);
+        if (!entries.length && !catEntries.length) {
+            document.getElementById('typeDist').innerHTML = '暂无数据';
         } else {
-            document.getElementById('typeDist').innerHTML = entries.map(([k, v]) =>
-                `<span style="margin-right:14px">${names[k] || k}: <b>${v}</b></span>`).join('');
+            const catHtml = catEntries.map(([k, v]) =>
+                `<span style="margin-right:14px"><b>${CATEGORY_ZH[k] || k}</b>: <b>${v}</b></span>`).join('');
+            const subHtml = entries.map(([k, v]) =>
+                `<span style="margin-right:10px;color:#aaa">${CASE_TYPE_ZH[k] || k}: ${v}</span>`).join('');
+            document.getElementById('typeDist').innerHTML =
+                (catHtml ? `<div style="margin-bottom:6px">失败大类：${catHtml}</div>` : '') +
+                (subHtml ? `<div style="color:#888">子类型：${subHtml}</div>` : '');
         }
     } catch (e) {
         showToast('加载统计失败: ' + e.message, 'error');
@@ -239,8 +318,10 @@ async function loadCases(reviewFilter) {
 function applyFilter() {
     const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
     const typeFilter = document.getElementById('typeFilter').value;
+    const categoryFilter = document.getElementById('categoryFilter').value;
 
     _filteredCases = _allCases.filter(c => {
+        if (categoryFilter && categoryOf(c) !== categoryFilter) return false;
         if (typeFilter && (c.case_type || '') !== typeFilter) return false;
         if (keyword) {
             const q = (c.original_query || '') + ' ' + (c.answer_preview || '');
@@ -267,18 +348,11 @@ function renderTable() {
     const pageCases = _filteredCases.slice(start, start + PAGE_SIZE);
 
     tbody.innerHTML = pageCases.map(c => {
+        const cat = categoryOf(c);
+        const catZh = CATEGORY_ZH[cat] || '其他';
+        const subZh = caseTypeZh(c);
         const typeClass = `type-${c.case_type || 'other'}`;
-        const typeName = {
-            'user_negative_feedback': '用户负反馈',
-            'hallucination_suspected': '疑似幻觉',
-            'retrieval_miss': '检索失败',
-            'rewrite_missed_anaphora': '指代未重写',
-            'rewrite_same_as_original': '未重写',
-            'rewrite_lost_entity': '丢失实体',
-            'low_score_no_clarify': '低分未澄清',
-            'route_misclassification': '路由误分类',
-            'manual_flag': '人工标记'
-        }[c.case_type] || (c.case_type || '未知');
+        const typeName = `${catZh}<span class="type-sub">${subZh}</span>`;
 
         const reviewed = !!c.reviewed;
         const reviewBadge = reviewed
@@ -296,7 +370,7 @@ function renderTable() {
 
         const actionBtn = reviewed
             ? `<button class="btn btn-outline" onclick="markUnreviewed('${c.case_id}')" style="padding:4px 10px;font-size:12px">取消审核</button>`
-            : `<button class="btn btn-success" onclick="markReviewed('${c.case_id}')" style="padding:4px 10px;font-size:12px">标记已审核</button>`;
+            : `<button class="btn btn-success" onclick="openReview('${c.case_id}')" style="padding:4px 10px;font-size:12px">标记已审核</button>`;
 
         return `<tr>
             <td class="query-cell">${esc(c.original_query || '-')}</td>
@@ -350,15 +424,56 @@ function goPage(p) {
 }
 
 // ===== 审核操作 =====
-async function markReviewed(caseId) {
+let _reviewingCase = null;
+
+function openReview(caseId) {
+    const c = _allCases.find(x => x.case_id === caseId);
+    if (!c) return;
+    _reviewingCase = c;
+
+    // 注入提示条：需选择三大失败类之一才会入库
+    const desc = document.querySelector('.modal-desc');
+    let hint = document.querySelector('.review-hint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'review-hint';
+        hint.style.cssText = 'font-size:12px;color:#e65100;margin:8px 0;background:#fff3e0;padding:6px 10px;border-radius:6px;';
+        desc.after(hint);
+    }
+    hint.textContent = '如需并入黄金测试集：请选择「检索失败 / 知识缺失 / 生成失败」之一，并保留 / 填写期望回答（可修改）。选择「其他」或期望回答留空将不入黄金集。';
+
+    // 填充大类下拉
+    const sel = document.getElementById('reviewCategory');
+    const options = Object.entries(CATEGORY_ZH).map(([k, v]) =>
+        `<option value="${k}" ${k === categoryOf(c) ? 'selected' : ''}>${v}</option>`).join('');
+    sel.innerHTML = options;
+
+    // 预填原始答案文本（answer_preview），审核者可修改后入库
+    const gt = document.getElementById('reviewGroundTruth');
+    gt.value = c.answer_preview || (c.ground_truth || '');
+
+    document.getElementById('reviewModal').classList.add('show');
+}
+
+function closeReview() {
+    document.getElementById('reviewModal').classList.remove('show');
+    _reviewingCase = null;
+}
+
+async function submitReview() {
+    if (!_reviewingCase) return;
+    const category = document.getElementById('reviewCategory').value;
+    const groundTruth = document.getElementById('reviewGroundTruth').value.trim();
     try {
-        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(caseId)}/review`, {
+        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(_reviewingCase.case_id)}/review`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reviewed: true })
+            body: JSON.stringify({ reviewed: true, category, ground_truth: groundTruth })
         });
         if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'HTTP ' + res.status); }
-        showToast('已标记为已审核', 'success');
+        const data = await res.json();
+        showToast(data.synced_to_golden ? '已并入黄金测试集' : (data.reason || '已标记为已审核'), data.synced_to_golden ? 'success' : 'info');
+        closeReview();
         loadCases(_reviewFilter);
         loadStats();
     } catch (e) { showToast('操作失败: ' + e.message, 'error'); }

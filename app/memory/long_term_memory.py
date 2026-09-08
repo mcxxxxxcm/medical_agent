@@ -18,6 +18,8 @@ from langgraph.store.postgres import PostgresStore
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.base import Item
 
+from app.core.badcase_categories import default_category
+
 # 假设你的日志模块
 logger = logging.getLogger(__name__)
 
@@ -616,6 +618,8 @@ class LongTermMemoryManager:
             "metadata": metadata or {},
             "created_at": datetime.now().isoformat(),
             "reviewed": False,
+            "category": default_category(case_type),  # 三大失败大类（默认归类，审核可改）
+            "ground_truth": "",  # 人工补填：期望正确回答（审核并入黄金集时用）
             "expected_rewrite": "",  # 人工补填：期望的重写结果
             "is_self_contained": None,  # 人工标注：原问题是否自包含
         }
@@ -711,8 +715,10 @@ class LongTermMemoryManager:
             expected_rewrite: str = "",
             is_self_contained: Optional[bool] = None,
             reviewed: bool = True,
+            category: Optional[str] = None,
+            ground_truth: Optional[str] = None,
     ) -> None:
-        """人工审核更新 bad case（补填期望重写结果和自包含标注）
+        """人工审核更新 bad case（补填期望重写结果、失败大类、期望回答和自包含标注）
 
         Args:
             user_id: 用户ID
@@ -720,6 +726,8 @@ class LongTermMemoryManager:
             expected_rewrite: 期望的重写结果
             is_self_contained: 原问题是否自包含
             reviewed: 是否已审核
+            category: 三大失败大类（retrieval_fail/knowledge_gap/generation_fail/other）
+            ground_truth: 期望的正确回答（并入黄金集时用）
         """
         item = self.store.get(
             namespace=("bad_cases", user_id),
@@ -743,6 +751,10 @@ class LongTermMemoryManager:
             case["expected_rewrite"] = expected_rewrite
         if is_self_contained is not None:
             case["is_self_contained"] = is_self_contained
+        if category:
+            case["category"] = category
+        if ground_truth:
+            case["ground_truth"] = ground_truth
         case["reviewed"] = reviewed
 
         self.store.put(
@@ -751,6 +763,20 @@ class LongTermMemoryManager:
             value=case,
         )
         logger.info(f"Bad case 审核更新：{case_id}")
+
+    def get_bad_case(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """按 case_id 跨命名空间取单条 bad case（管理审核用，返回 None 表示不存在）"""
+        item = self.store.get(
+            namespace=("bad_cases", "system"),
+            key=case_id,
+        )
+        if not item or not item.value:
+            found = self._find_bad_case_namespace(case_id)
+            if found:
+                item = self.store.get(namespace=found, key=case_id)
+        if not item or not item.value:
+            return None
+        return item.value
 
     def _find_bad_case_namespace(self, case_id: str) -> Optional[tuple]:
         """按 case_id 在所有 bad_cases 命名空间中定位实际归属（写入用户）"""

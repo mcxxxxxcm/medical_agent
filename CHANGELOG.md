@@ -1,5 +1,29 @@
 # 系统优化更新日志
 
+## v9.53.1 - 修复：审核后黄金集未新增 + 拦截"其他"类入黄金集（app/api/routes.py、app/static/badcase.html）
+
+背景：v9.53 上线后实测发现人工审核后 `golden_test_set.jsonl` 未新增条目。根因：① 浏览器缓存旧版页面，审核仍走旧"一键标记"只发 `{reviewed:true}`，请求无 `category`/`ground_truth`，`_sync_badcase_to_golden` 因 `ground_truth` 为空而静默跳过；② `badcase_review` 用 `category in CATEGORY_ZH` 判断，把 `other` 也当有效类，与"三大失败类"语义相悖。
+
+- **hard 收紧入黄金集条件**：`_sync_badcase_to_golden` 顶部校验 `category` 仅限 `retrieval_fail/knowledge_gap/generation_fail` 三真类（排除 other）+ `ground_truth` 必须非空才写。
+- **审核接口返回明确原因**：`badcase_review` 按分支给出 `reason`（取消审核 / 非三大失败类 / 期望回答为空 / 未找到 badcase / 已并入 / 判重跳过），前端 toast 展示，杜绝静默失败。
+- **前端提示**：审核弹窗注入提示条"需选三大失败类之一、保留/填写期望回答才入库"；`submitReview` 按 `synced` 与 `reason` 显示结果。
+- 验证：四态隔离测试——`other`+有期望→False、`knowledge_gap`+有期望→True、`generation_fail`+空期望→False、`retrieval_fail`+有期望→True，仅 2 条合法入库、类别正确；`routes` 语法通过。
+- 用户操作：旧页面需硬刷新（Ctrl+F5）加载新 badcase.html 后重新审核；审核时在下拉选三真类之一、保留/填写期望回答。
+
+<footer>v9.53.1 · app/api/routes.py、app/static/badcase.html、CHANGELOG.md</footer>
+
+## v9.53 - BadCase 三大失败大类归因 + 审核通过自动并入黄金测试集（app/core/badcase_categories.py、app/api/routes.py、app/memory/long_term_memory.py、app/static/badcase.html）
+
+背景：BadCase 管理此前只有 9 个细粒度子类型（指代未重写/检索零命中/疑似幻觉等），缺少统一的失败归因视角；且人工审核完的 badcase 只改数据库 `reviewed` 标记，**从未自动落地成黄金测试集**（`golden_test_set.jsonl` 一直只由 `generate_golden_test_set.py` 从医学文档生成），`auto_annotate_bad_cases.py` 第 293 行那句"确认后再入库为黄金测试集"只是提示文案、无落地逻辑。本次补齐两大断点。
+
+- **三大失败大类归因**：新增 `app/core/badcase_categories.py`，把 `case_type → 检索失败(retrieval_fail)/知识缺失(knowledge_gap)/生成失败(generation_fail)/其他(other)` 统一归类。`default_category()` 对可自动识别的类型做预选——所有 rewrite/retrieval/route/low_score → 检索失败，`hallucination_suspected`（答案含文档不存在的实体）→ 生成失败；`user_negative_feedback`/`manual_flag`/误点/可接受 → 其他，留待审核时人工指定。**不改动存量 `case_type` 存储值**，`bad_case_runner`、标注/导出脚本、回归测试链路不受影响。
+- **采集落库**：`append_bad_case()` 在 case 记录新增 `category`（按 `case_type` 自动预选）与 `ground_truth`（默认空）；`update_bad_case_review()` 新增 `category`、`ground_truth` 参数可写回。新增 `get_bad_case(case_id)` 跨命名空间单条查询（供审核后取原 query 入库用）。
+- **审核并入黄金集**：`badcase_review` 读取 `category`/`ground_truth` 写库；当 `reviewed=True` 且属三大失败类之一、期望回答非空时，经 `_sync_badcase_to_golden()` 追加进 `tests/data/golden_test_set.jsonl`——按 `query` 精确判重（同 case 重复审核/query 已存在均跳过），新增条目字段 `{query, ground_truth, key_facts:[], category:<中文三大类>, difficulty:medium, source_doc:"badcase:<case_id>", source:"badcase"}`，`_golden_lock` 防并发竞态；失败不影响审核操作本身。评估端 `app/rag/evaluation.py` 字段全 `.get()` 兜底，无需改动。
+- **统计与前端**：`badcase_stats` 额外返回 `category_dist`（老记录无 `category` 时按 `case_type` 兜底归类）；`badcase.html` 类型徽标改为"三大类为主 + 子类型小字双标"、新增三大类筛选下拉、概览类型分布按失败大类聚合、审核按钮改为弹窗——可人工选择所属失败大类、期望回答预填原始 `answer_preview` 供修改后入库（留空则仅标审核不入黄金集）。
+- 验证：`default_category` 全类型映射断言通过；`_sync_badcase_to_golden` 隔离测试三态——首次入库 True、同 case 重复 False、query 已存在 False，写入条目字段与编码正确；`routes`/`long_term_memory` 模块导入通过。前端为静态页面改动，需启动服务在 `/admin/badcases` 目检双标、筛选、审核弹窗与分布聚合。
+
+<footer>BadCase 三大失败大类归因 + 审核入黄金集 · 改动文件：`app/core/badcase_categories.py`、`app/api/routes.py`、`app/memory/long_term_memory.py`、`app/static/badcase.html`、`CHANGELOG.md`</footer>
+
 ## v9.52 - 病症方向检索增强四项优化：体温多档分阶 + 规则词对 keyword_matcher 标准词对齐 + 判合规整 + 确定性单测（app/graph/nodes/nodes.py、tests/test_nodes.py）
 
 背景：v9.51 的病症方向增强（A规则+B·LLM兜底）对召回提升有效，但存在四个实测缺陷：① 数值体温（"38.3℃""39.2℃"）一律只归为"发热"，规则表里本已存在的 低热/高热 映射对数值体温永不生效；② 规则词与 keyword_matcher 产出的标准词对不齐——`_extract_symptoms_by_rules` 用 `get_symptom_matcher()` 把"咽痛/喉咙痛/嗓子疼"都归为**"嗓子疼"**，把"发热/发烧"归为**"发烧"**，而 v9.51 规则表用"咽痛""发热"、`symptom_alias` 漏了"嗓子疼→咽痛"，导致**所有咽痛类 query 的规则必然落空、每条都白烧一次 LLM 兜底**，召回差且延迟高；③ 判合用双向子串 `kw in s or s in kw`，反向使"症状词恰为规则词子串"（如 symptom"疼"之于 kw"头痛"）伪命中；④ 该增强无任何确定性回归测试。
