@@ -38,6 +38,7 @@ from app.graph.nodes import (
     safety_check_node, memory_load_node,
     profile_extraction_node,
     direct_answer_node,
+    entry_refusal_node,
     vision_analysis_node,
     query_rewrite_node,
     question_decompose_node,
@@ -80,6 +81,7 @@ def build_graph() -> StateGraph:
     builder.add_node("memory_load", memory_load_node)
     builder.add_node("profile_extraction", profile_extraction_node)
     builder.add_node("router", router_node)
+    builder.add_node("entry_refusal", entry_refusal_node)
     builder.add_node("symptom_analysis", symptom_analysis_node)
     builder.add_node("knowledge_retrieval", knowledge_retrieval_node)
     builder.add_node("grade_documents", grade_documents_node)
@@ -99,6 +101,9 @@ def build_graph() -> StateGraph:
     builder.add_edge(START, "memory_load")
     builder.add_edge("memory_load", "profile_extraction")
     builder.add_edge("profile_extraction", "router")
+
+    # 入口正交闸终止边：router 命中合规/澄清短路 → entry_refusal 透传 → END
+    builder.add_edge("entry_refusal", END)
 
     # symptom 路径：router -> symptom_analysis -> query_rewrite -> question_decompose -> knowledge_retrieval
     builder.add_edge("symptom_analysis", "query_rewrite")

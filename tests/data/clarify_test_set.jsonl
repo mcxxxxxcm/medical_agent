@@ -1,0 +1,12 @@
+{"original_query": "吃了三粒怎么办", "should_clarify": true, "intent": "drug", "missing_slots": ["drug_name", "user_type"], "case_type": "drug_fragment", "history_has_entity": false}
+{"original_query": "这个药怎么吃", "should_clarify": true, "intent": "drug", "missing_slots": ["drug_name", "user_type"], "case_type": "anaphora", "history_has_entity": false}
+{"original_query": "一天三次", "should_clarify": true, "intent": "drug", "missing_slots": ["drug_name", "user_type"], "case_type": "measure_fragment", "history_has_entity": false}
+{"original_query": "这个药", "should_clarify": true, "intent": "drug", "missing_slots": ["drug_name", "user_type"], "case_type": "anaphora", "history_has_entity": false}
+{"original_query": "它有用吗", "should_clarify": true, "case_type": "strong_anaphora", "history_has_entity": false}
+{"original_query": "高血压吃什么药", "should_clarify": false, "intent": "drug", "case_type": "has_entity", "history_has_entity": false}
+{"original_query": "布洛芬没用", "should_clarify": false, "case_type": "has_entity", "history_has_entity": false}
+{"original_query": "头痛怎么缓解", "should_clarify": false, "intent": "symptom", "missing_slots": ["duration"], "case_type": "has_entity", "history_has_entity": false}
+{"original_query": "头晕", "should_clarify": false, "intent": "symptom", "missing_slots": ["duration"], "case_type": "has_entity", "history_has_entity": false}
+{"original_query": "肚子疼好几天了", "should_clarify": false, "case_type": "has_entity", "history_has_entity": false}
+{"original_query": "验血报告怎么看", "should_clarify": false, "case_type": "specific_topic", "history_has_entity": false}
+{"original_query": "谢谢", "should_clarify": false, "case_type": "social", "history_has_entity": false}

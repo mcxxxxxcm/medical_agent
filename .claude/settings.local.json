@@ -151,7 +151,13 @@
       "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''python.exe'\\\\''\" | Where-Object {$_.CommandLine -match '\\\\''routes'\\\\'' -or $_.CommandLine -match '\\\\''spawn_main'\\\\''} | ForEach-Object { Write-Host \\('\\\\''Stopping PID '\\\\'' + $_.ProcessId\\); Stop-Process -Id $_.ProcessId -Force } ')",
       "Bash(echo \"port check exit: $?\")",
       "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='python.exe'\\\\\" | Select-Object ProcessId | Format-Table -AutoSize\")",
-      "Bash(grep -E \"[0-9]{4,}\")"
+      "Bash(grep -E \"[0-9]{4,}\")",
+      "Bash(C:/Users/86176/miniconda3/python.exe -c 'import sys,struct;print\\(sys.version\\)')",
+      "Bash('D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe' -c ' *)",
+      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" tests/test_intent_clarify.py)",
+      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" -m py_compile app/core/intent_clarify.py tests/test_intent_clarify.py)",
+      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" -m py_compile app/graph/nodes/nodes.py app/graph/nodes/__init__.py app/graph/graph.py app/core/intent_clarify.py)",
+      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" tests/test_self_containment.py)"
     ]
   },
   "enableAllProjectMcpServers": true,

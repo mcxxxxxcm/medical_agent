@@ -46,6 +46,9 @@ from app.rag.hybrid_retriever import get_hybrid_retriever
 from app.rag.reranker import get_reranker
 from app.rag.loader import LOADERS
 from app.core.badcase_categories import CATEGORY_ZH, category_zh, default_category
+from app.core.badcase_cluster import get_cluster_map, apply_clusters, count_duplicates
+from app.core.badcase_priority import apply_priorities, count_pending_by_priority
+from app.core.bad_evidence import evidence_payload, generate_draft, retrieve_evidence
 
 logger = get_logger(__name__)
 
@@ -781,14 +784,44 @@ async def feedback_golden_candidates(request: Request, limit: int = 50):
     return {"candidates": collector.get_feedback_candidates_for_golden_set(limit)}
 
 
+def _enrich_bad_cases(cases, cluster_map):
+    """套用 L2 分级（priority）与 L1 聚类（cluster/dup_of，仅未审有意义）。
+
+    已审核的 case 保留 priority（便于回溯曾有的高风险标记），但 cluster 字段置空，
+    避免"已审的重复件"和未审导航混在一起造成困惑。
+    """
+    enriched = apply_priorities(cases)
+    out = []
+    for c in enriched:
+        if not c.get("reviewed"):
+            c = dict(c)
+            c["dup_of"] = None  # 占位，下面按 cluster_map 实际覆盖
+            c["rep_count"] = 1
+            out.append(c)
+        else:
+            c = dict(c)
+            c["cluster_id"] = None
+            c["rep_count"] = 1
+            c["dup_of"] = None
+            out.append(c)
+    # 对未审子集应用真实聚类信息（代表件/重复件）
+    pending_idx = [i for i, c in enumerate(out) if not c.get("reviewed")]
+    pending = [out[i] for i in pending_idx]
+    applied = apply_clusters(pending, cluster_map=cluster_map)
+    for i, pc in zip(pending_idx, applied):
+        out[i] = pc
+    return out
+
+
 @app.get("/api/admin/badcases")
 async def badcase_list(request: Request, limit: int = 50, case_type: str = None,
-                       reviewed: str = None):
-    """BadCase 列表 + 统计（需管理员认证）
+                       reviewed: str = None, priority: str = None):
+    """BadCase 列表（需管理员认证）
 
     limit: 最大返回条数
     case_type: 按类型过滤
     reviewed: "true"/"false" 过滤审核状态，不传返回全部
+    priority: "high"/"normal" 过滤审阅优先级（针对未审核 case）
     """
     if not _verify_admin_key(request):
         return JSONResponse(status_code=403, content={"detail": "无权访问"})
@@ -801,17 +834,29 @@ async def badcase_list(request: Request, limit: int = 50, case_type: str = None,
     elif reviewed in ("false", "False", "0"):
         reviewed_flag = False
 
+    # 聚类上下文 = 全量待审 bad case（这样列表任意过滤下重复件标记都一致）
+    all_pending = memory.get_all_bad_cases(reviewed=False, limit=10000)
+    cluster_map = get_cluster_map(all_pending)
+
     cases = memory.get_all_bad_cases(
         case_type=case_type,
         reviewed=reviewed_flag,
         limit=limit,
     )
-    return {"bad_cases": cases, "total": len(cases)}
+    enriched = _enrich_bad_cases(cases, cluster_map=cluster_map)
+
+    priority_flag = None
+    if priority in ("high", "normal"):
+        priority_flag = priority
+    if priority_flag:
+        enriched = [c for c in enriched if c.get("priority") == priority_flag]
+
+    return {"bad_cases": enriched, "total": len(enriched)}
 
 
 @app.get("/api/admin/badcases/stats")
 async def badcase_stats(request: Request):
-    """BadCase 累计统计（需管理员认证）：总数 / 待审核数 / 已审核数 / 类型分布 / 三大类分布"""
+    """BadCase 累计统计（需管理员认证）：总数 / 待审核 / 已审核 / 类型分布 / 三大类分布 / 优先级 / 去重待审数"""
     if not _verify_admin_key(request):
         return JSONResponse(status_code=403, content={"detail": "无权访问"})
     from app.memory import get_long_term_memory
@@ -819,8 +864,9 @@ async def badcase_stats(request: Request):
 
     cases = memory.get_all_bad_cases(limit=10000)
     total = len(cases)
-    pending = sum(1 for c in cases if not c.get("reviewed"))
-    reviewed_count = total - pending
+    pending = [c for c in cases if not c.get("reviewed")]
+    pending_count = len(pending)
+    reviewed_count = total - pending_count
     case_type_dist = {}
     category_dist = {}
     for c in cases:
@@ -828,12 +874,21 @@ async def badcase_stats(request: Request):
         case_type_dist[t] = case_type_dist.get(t, 0) + 1
         cat = c.get("category") or default_category(t)  # 老记录无 category 时按 case_type 兜底
         category_dist[cat] = category_dist.get(cat, 0) + 1
+
+    # L2 优先级 + L1 聚类（聚类用全量待审做上下文）
+    priority_dist = count_pending_by_priority(pending)
+    cluster_map = get_cluster_map(pending)
+    duplicate_count = count_duplicates(pending, cluster_map=cluster_map)
+
     return {
         "total": total,
-        "pending_review": pending,
+        "pending_review": pending_count,
         "reviewed": reviewed_count,
         "case_type_dist": case_type_dist,
         "category_dist": category_dist,
+        "priority": priority_dist,          # {"high": n, "normal": n}
+        "duplicate_pending": duplicate_count,  # 被去重合并掉的重复待审条数
+        "unique_pending": pending_count - duplicate_count,  # 去重后真正需人工审的条数
     }
 
 
@@ -939,6 +994,44 @@ async def badcase_review(request: Request, case_id: str):
         logger.info(f"badcase 审核 {case_id}：{reason}")
 
     return {"ok": True, "case_id": case_id, "synced_to_golden": synced, "reason": reason}
+
+
+@app.get("/api/admin/badcases/{case_id}/evidence")
+async def badcase_evidence(request: Request, case_id: str):
+    """BadCase 证据式标注：返回命中片段 + 默认可溯源草稿（需管理员认证）。
+
+    片段来自知识库混合检索；草稿只基于『用户问题 + 片段』，绝不复用原坏例错误答案。
+    检索/生成失败时降级返回空，由前端提示，不阻塞审核。
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+    from app.memory import get_long_term_memory
+    memory = get_long_term_memory()
+    case = memory.get_bad_case(case_id)
+    if not case:
+        return JSONResponse(status_code=404, content={"detail": "未找到该 badcase"})
+    return JSONResponse(content=evidence_payload(case))
+
+
+@app.post("/api/admin/badcases/{case_id}/evidence/generate")
+async def badcase_evidence_generate(request: Request, case_id: str):
+    """按人工勾选的片段重新生成 ground_truth 草稿（需管理员认证）。
+
+    body: {"fragment_ids": ["#1", "#3"]}，不传则用前 3 片。
+    """
+    if not _verify_admin_key(request):
+        return JSONResponse(status_code=403, content={"detail": "无权访问"})
+    body = await request.json()
+    from app.memory import get_long_term_memory
+    memory = get_long_term_memory()
+    case = memory.get_bad_case(case_id)
+    if not case:
+        return JSONResponse(status_code=404, content={"detail": "未找到该 badcase"})
+    query = (case.get("final_question") or case.get("original_query") or "").strip()
+    fragments = retrieve_evidence(case)
+    fragment_ids = body.get("fragment_ids") or None
+    res = generate_draft(query, fragments, fragment_ids)
+    return JSONResponse(content={"case_id": case_id, "draft": res["draft"], "notes": res["notes"], "used_frag_ids": res["used_frag_ids"]})
 
 
 @app.get("/api/admin/refusal/stats")

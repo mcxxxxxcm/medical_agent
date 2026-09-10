@@ -512,7 +512,23 @@ def router_node(state: MedicalAssistantState) -> Command:
         logger.info("检测到图片输入，路由到vision分支")
         return Command(goto="vision_analysis")
 
-    # ===== 第一层：规则优先（0ms） =====
+    # ===== 入口正交闸（v9.55）：第一轴=可答性与合规，先于检索与改写 =====
+    # 短路结果（合规红线拒答 / 信息不足澄清）直接终止，不让残缺 query 触发
+    # symptom_analysis 或 LLM 改写的空转，更不冲检索。未命中则放行第二轴（检索策略）。
+    _entry = _entry_intent_gate(state)
+    if _entry is not None:
+        _e_qtype, _e_answer, _e_refusal = _entry
+        _record_route_metrics(state, question, _e_qtype, "entry")
+        logger.info(f"入口闸短路：question_type={_e_qtype}（refusal={_e_refusal}）")
+        return Command(goto="entry_refusal", update={
+            "final_answer": _e_answer,
+            "refusal_type": _e_refusal,
+            "question_type": _e_qtype,
+            "messages": [HumanMessage(content=question), AIMessage(content=_e_answer)],
+        })
+
+    # ===== 第二轴：检索策略（原三层路由，symptom/knowledge 均为检索子类） =====
+    # 第一层：规则优先（0ms） =====
     rule_based_route = detect_rule_based_route(question)
     route_layer = "rule"  # 记录命中的路由层
     if rule_based_route:
@@ -584,6 +600,71 @@ def _record_route_metrics(state: dict, question: str, question_type: str, route_
         )
     except Exception as e:
         logger.debug(f"路由指标记录失败（不影响主流程）：{e}")
+
+
+# ===== v9.55: 入口正交闸（第一轴=可答性与合规，第二轴=检索策略） =====
+# RAG 检索最重要的就是"要不要检索"。此前可答性判定散在下游 query_rewrite，
+# 症状/知识两类照样拿残缺 query 冲检索。本闸把两类硬判前置到路由入口：
+#   - 合规红线：诊断/开处方/明确致命疾病自诊 → 直接拒答引导就医，绝不放行检索再事后改
+#   - 信息不足澄清：hard-clear 的缺失（量词碎片/直观事件缺药物主语等）→ entry 即澄清，
+#     省下 symptom_analysis + LLM 改写的空转；难以判定的一律交给下游回退盾，不怕误伤。
+# 保持 RouterOutput Literal[symptom,knowledge,general] 代码面不变：
+# symptom/knowledge 退化为"检索强化策略"子类（要不要检索已在此闸定死）。
+
+# 合规红线：仅匹配"唯一正确动作是拒答"的强指令，宁缺毋滥，避免误伤合法知识问答
+# （"高血压吃什么药"是合法知识，不在此列；"给我开处方"才是红线）。
+_COMPLIANCE_REDLINE_RE = re.compile(
+    r'(给我|帮我)?(开|出|写)(个|张|一个)?(处方|药方|药单|药品方)'
+    r'|(帮我|给我|你帮我)?(诊断|确诊)(一下|下)?'
+    r'|我(是不是|是不是得|是否得了|得的?)?(癌症|癌|肿瘤|心梗|脑梗|中风|白血病|艾滋|梅毒|尿毒症)'
+    r'|(急救|抢救)(方案|流程|步骤|处置|怎么办)'
+    r'|怎么(抢救|急救)\S{0,6}$',
+    re.IGNORECASE,
+)
+
+
+def _compliance_redline(question: str) -> str:
+    """命中合规红线返回说明文案，否则返回空串。"""
+    q = (question or "").strip()
+    m = _COMPLIANCE_REDLINE_RE.search(q)
+    if m:
+        return f"命中诊断/处方红线：{m.group(0)}"
+    return ""
+
+
+def _entry_intent_gate(state: MedicalAssistantState) -> Optional[tuple]:
+    """入口正交闸第一层：返回 (question_type, final_answer_text, refusal_type) 表示入口短路；
+    返回 None 表示放行进第二层（检索策略，即原 symptom/knowledge/general 三层）。
+    """
+    question = state.get("question", "")
+
+    # --- 1. 合规红线置前（真新增：build_out_of_scope_answer 此前未接线） ---
+    redline = _compliance_redline(question)
+    if redline:
+        logger.info(f"[入口闸] 合规红线短路：{redline[:30]} | {question[:30]}")
+        return ("compliance", build_out_of_scope_answer(question), "compliance")
+
+    # --- 2. 可答性澄清前置（复用 intent_clarify 判定链，与 _decode_answerable 一致） ---
+    # 用路由器时间点的上下文（历史摘要 + 临床快照升级）喂 _context_has_entity，
+    # 与 query_rewrite 时的判定对齐；entry 判定无法保证一致时，交给下游回退盾兜底。
+    try:
+        from app.core.intent_clarify import should_clarify
+        messages = state.get("messages", [])
+        history_summary = _build_rewrite_context(messages) if messages else ""
+        ctx_has_entity = _context_has_entity(history_summary, state)
+        should, why = should_clarify(question, history_has_entity=ctx_has_entity)
+        if should:
+            logger.info(f"[入口闸] 信息不足澄清短路({why})：{question[:30]}")
+            return ("clarify", _build_clarify_answer(question), "clarify")
+    except Exception as e:
+        logger.warning(f"[入口闸] 澄清判定失败，放行下游兜底：{e}")
+
+    return None
+
+
+def entry_refusal_node(state: MedicalAssistantState) -> Dict[str, Any]:
+    """入口闸终止节点：final_answer/refusal_type/messages 已由 router 的 Command.update 写入，透传。"""
+    return {}
 
 
 def _detect_route_from_context(state: MedicalAssistantState) -> Optional[str]:

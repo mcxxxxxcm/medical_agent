@@ -67,6 +67,14 @@
         .review-pending { background: #faad14; color: #fff; }
         .review-done { background: #52c41a; color: #fff; }
 
+        .prio-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .prio-high { background: #ff4d4f; color: #fff; }
+        .prio-normal { background: #e8f5e9; color: #2e7d32; }
+
+        .dup-tag { display: inline-block; margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+        .dup-tag.only { color: #7b1fa2; background: #f3e5f5; }
+        .dup-tag.member { color: #b26a00; background: #fff7e6; }
+
         .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
         .filter-bar input[type="text"] {
             flex: 1; min-width: 180px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 8px;
@@ -140,6 +148,8 @@
         </div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;">
             <div style="font-size:13px;color:#666;margin-top:8px"><strong>类型分布：</strong><span id="typeDist" style="color:#999">加载中...</span></div>
+            <div style="font-size:13px;color:#666;margin-top:8px"><strong>待审高优先：</strong><span id="statHighPrio" style="color:#c62828">-</span></div>
+            <div style="font-size:13px;color:#666;margin-top:8px"><strong>去重后待审：</strong><span id="statUniquePending" style="color:#2e7d32">-</span> <span style="color:#999;font-size:12px" id="statDupHint">（自动合并重复提问）</span></div>
         </div>
     </div>
 
@@ -160,6 +170,11 @@
                 <option value="generation_fail">生成失败</option>
                 <option value="other">其他</option>
             </select>
+            <select id="priorityFilter" onchange="applyFilter()">
+                <option value="">全部优先级</option>
+                <option value="high">高优先（医学敏感）</option>
+                <option value="normal">常规</option>
+            </select>
             <select id="typeFilter" onchange="applyFilter()">
                 <option value="">全部类型</option>
                 <option value="user_negative_feedback">用户负反馈</option>
@@ -175,8 +190,8 @@
             <span class="filter-count" id="filterCount"></span>
         </div>
         <table class="file-table">
-            <thead><tr><th>用户问题</th><th>类型</th><th>AI 回答预览</th><th>审核状态</th><th>创建时间</th><th>操作</th></tr></thead>
-            <tbody id="caseTableBody"><tr><td colspan="6" style="text-align:center;color:#999">加载中...</td></tr></tbody>
+            <thead><tr><th>用户问题</th><th>类型</th><th>优先级</th><th>AI 回答预览</th><th>审核状态</th><th>创建时间</th><th>操作</th></tr></thead>
+            <tbody id="caseTableBody"><tr><td colspan="7" style="text-align:center;color:#999">加载中...</td></tr></tbody>
         </table>
         <div class="pagination" id="pagination" style="display:none">
             <span class="page-info" id="pageInfo"></span>
@@ -189,13 +204,25 @@
 <div class="toast" id="toast"></div>
 <!-- 审核弹窗 -->
 <div class="modal-mask" id="reviewModal">
-    <div class="modal">
-        <h3>审核 BadCase 并（可选）并入黄金测试集</h3>
-        <div class="modal-desc">选择失败大类；期望回答留空则仅标记审核、不入黄金测试集。</div>
+    <div class="modal" style="width:760px;max-width:96vw;">
+        <h3>审核 BadCase（证据式标注）</h3>
+        <div class="modal-desc">勾选下方检索片段作为依据 → 生成草稿 → 人工核对引用与医学正确性后再入库黄金集。不用复审到脸红，逐句对照片段即可。</div>
+        <div class="review-hint" id="reviewPriorityHint" style="font-size:12px;color:#e65100;margin:6px 0;background:#fff3e0;padding:6px 10px;border-radius:6px;display:none;"></div>
+        <div id="reviewQueryBox" style="font-size:13px;color:#333;background:#f8f9fa;padding:8px 10px;border-radius:8px;margin-bottom:6px;"></div>
+
+        <label>证据片段（知识库检索，勾选作为期望回答依据）<span id="evidenceState" style="color:#999;font-weight:400"></span></label>
+        <div id="evidenceBox" style="max-height:200px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;background:#fafafa;">
+            <div style="color:#999;font-size:13px">加载证据中...</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end;">
+            <button class="btn btn-outline" onclick="regenDraft()" style="padding:6px 14px;font-size:13px">按所选片段重新生成草稿</button>
+        </div>
+
         <label>所属失败大类</label>
         <select id="reviewCategory"></select>
-        <label>期望回答 / ground_truth（预填原始答案，可修改后入库）</label>
+        <label>期望回答 / ground_truth<span id="gtHint" style="color:#999;font-weight:400"></span></label>
         <textarea id="reviewGroundTruth"></textarea>
+        <div id="draftNotes" style="font-size:12px;color:#888;margin-top:4px;line-height:1.5;"></div>
         <div class="modal-actions">
             <button class="btn btn-outline" onclick="closeReview()">取消</button>
             <button class="btn btn-success" onclick="submitReview()">确认审核并入库</button>
@@ -271,6 +298,12 @@ async function loadStats() {
         document.getElementById('statPending').textContent = data.pending_review ?? 0;
         document.getElementById('statReviewed').textContent = data.reviewed ?? 0;
 
+        const prio = data.priority || {};
+        document.getElementById('statHighPrio').textContent = prio.high ?? 0;
+        document.getElementById('statUniquePending').textContent = data.unique_pending ?? data.pending_review ?? 0;
+        document.getElementById('statDupHint').textContent =
+            (data.duplicate_pending ? `（已自动合并 ${data.duplicate_pending} 条重复提问）` : '（自动合并重复提问）');
+
         const dist = data.case_type_dist || {};
         const catDist = data.category_dist || {};
         const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]);
@@ -309,7 +342,7 @@ async function loadCases(reviewFilter) {
         applyFilter();
     } catch (e) {
         document.getElementById('caseTableBody').innerHTML =
-            `<tr><td colspan="6" style="text-align:center;color:#ff4d4f">加载失败: ${e.message}</td></tr>`;
+            `<tr><td colspan="7" style="text-align:center;color:#ff4d4f">加载失败: ${e.message}</td></tr>`;
         showToast('加载失败: ' + e.message, 'error');
     }
 }
@@ -319,10 +352,12 @@ function applyFilter() {
     const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
     const typeFilter = document.getElementById('typeFilter').value;
     const categoryFilter = document.getElementById('categoryFilter').value;
+    const prioFilter = document.getElementById('priorityFilter').value;
 
     _filteredCases = _allCases.filter(c => {
         if (categoryFilter && categoryOf(c) !== categoryFilter) return false;
         if (typeFilter && (c.case_type || '') !== typeFilter) return false;
+        if (prioFilter && (c.priority || 'normal') !== prioFilter) return false;
         if (keyword) {
             const q = (c.original_query || '') + ' ' + (c.answer_preview || '');
             if (!q.toLowerCase().includes(keyword)) return false;
@@ -339,7 +374,7 @@ function renderTable() {
     const tbody = document.getElementById('caseTableBody');
     const total = _filteredCases.length;
     if (!total) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999">暂无 BadCase</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">暂无 BadCase</td></tr>';
         document.getElementById('pagination').style.display = 'none';
         return;
     }
@@ -359,6 +394,13 @@ function renderTable() {
             ? '<span class="review-badge review-done">已审核</span>'
             : '<span class="review-badge review-pending">待审核</span>';
 
+        const prioBadge = (c.priority === 'high')
+            ? '<span class="prio-badge prio-high">高优先</span>'
+            : '<span class="prio-badge prio-normal">常规</span>';
+        const dupTag = c.dup_of
+            ? '<span class="dup-tag member" title="重复件，审核同簇代表件即可">重复件</span>'
+            : (c.rep_count > 1 ? `<span class="dup-tag only" title="同簇 ${c.rep_count} 条同类提问，审此代表件即可">同类x${c.rep_count}</span>` : '');
+
         const meta = c.metadata || {};
         const metaLines = [];
         if (c.route) metaLines.push(`<div><span class="m-label">路由:</span><span class="m-value">${esc(c.route)}</span></div>`);
@@ -373,14 +415,15 @@ function renderTable() {
             : `<button class="btn btn-success" onclick="openReview('${c.case_id}')" style="padding:4px 10px;font-size:12px">标记已审核</button>`;
 
         return `<tr>
-            <td class="query-cell">${esc(c.original_query || '-')}</td>
+            <td class="query-cell">${esc(c.original_query || '-')}${dupTag}</td>
             <td><span class="type-badge ${typeClass}">${typeName}</span></td>
+            <td>${prioBadge}${prioFilterTooltip(c)}</td>
             <td class="answer-cell">${esc((c.answer_preview || c.final_question || '-'))}</td>
             <td>${reviewBadge}</td>
             <td class="time-cell">${esc((c.created_at || '').slice(0, 19) || '-')}</td>
             <td>${actionBtn}</td>
         </tr>
-        <tr style="border:none"><td colspan="6" style="padding:0 12px 10px;background:#fafafa;">
+        <tr style="border:none"><td colspan="7" style="padding:0 12px 10px;background:#fafafa;">
             ${metaLines.length ? `<div class="meta-grid">${metaLines.join('')}</div>` : '<span style="color:#ccc;font-size:12px">无额外元数据</span>'}
         </td></tr>`;
     }).join('');
@@ -392,6 +435,11 @@ function esc(s) {
     return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function prioFilterTooltip(c) {
+    if (c.priority !== 'high' || !c._priority_reason) return '';
+    return `<span style="font-size:11px;color:#ff4d4f;display:block;margin-top:2px" title="${esc(c._priority_reason)}">${esc(c._priority_reason)}</span>`;
 }
 
 // ===== 分页 =====
@@ -423,24 +471,26 @@ function goPage(p) {
     renderTable();
 }
 
-// ===== 审核操作 =====
+// ===== 审核操作（证据式标注） =====
 let _reviewingCase = null;
+let _reviewEvidence = null;  // {fragments:[], query}
 
 function openReview(caseId) {
     const c = _allCases.find(x => x.case_id === caseId);
     if (!c) return;
     _reviewingCase = c;
+    _reviewEvidence = null;
 
-    // 注入提示条：需选择三大失败类之一才会入库
-    const desc = document.querySelector('.modal-desc');
-    let hint = document.querySelector('.review-hint');
-    if (!hint) {
-        hint = document.createElement('div');
-        hint.className = 'review-hint';
-        hint.style.cssText = 'font-size:12px;color:#e65100;margin:8px 0;background:#fff3e0;padding:6px 10px;border-radius:6px;';
-        desc.after(hint);
+    // 优先级提示条
+    const prioHint = document.getElementById('reviewPriorityHint');
+    if (c.priority === 'high') {
+        prioHint.style.display = 'block';
+        prioHint.textContent = '⚠ 该 case 命中医学高风险，必须人工终审' + (c._priority_reason ? `（${c._priority_reason}）` : '');
+    } else {
+        prioHint.style.display = 'none';
     }
-    hint.textContent = '如需并入黄金测试集：请选择「检索失败 / 知识缺失 / 生成失败」之一，并保留 / 填写期望回答（可修改）。选择「其他」或期望回答留空将不入黄金集。';
+    // 用户问题
+    document.getElementById('reviewQueryBox').textContent = (c.original_query || c.final_question || '(空问题)');
 
     // 填充大类下拉
     const sel = document.getElementById('reviewCategory');
@@ -448,11 +498,95 @@ function openReview(caseId) {
         `<option value="${k}" ${k === categoryOf(c) ? 'selected' : ''}>${v}</option>`).join('');
     sel.innerHTML = options;
 
-    // 预填原始答案文本（answer_preview），审核者可修改后入库
+    // 证据区与新草稿提示复位
+    document.getElementById('evidenceBox').innerHTML = '<div style="color:#999;font-size:13px">证据检索中...</div>';
+    document.getElementById('evidenceState').textContent = '';
     const gt = document.getElementById('reviewGroundTruth');
-    gt.value = c.answer_preview || (c.ground_truth || '');
+    gt.value = '';
+    document.getElementById('draftNotes').innerHTML = '';
+    document.getElementById('gtHint').textContent = '初稿由证据片段生成，请核查引用与医疗正确性后入库';
 
     document.getElementById('reviewModal').classList.add('show');
+    loadEvidence(caseId);
+}
+
+async function loadEvidence(caseId) {
+    try {
+        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(caseId)}/evidence`);
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'HTTP ' + res.status); }
+        const data = await res.json();
+        _reviewEvidence = data;
+        renderFragments(data.fragments || [], data.frag_total || 0);
+        // 预填证据草稿（若有）；否则回退原答案作起点
+        const gt = document.getElementById('reviewGroundTruth');
+        if (data.draft) {
+            gt.value = data.draft;
+            document.getElementById('gtHint').textContent = '草稿来自所选片段，可修改；来源自片段引用需人工核对';
+        } else {
+            gt.value = _reviewingCase.answer_preview || (_reviewingCase.ground_truth || '');
+            document.getElementById('gtHint').textContent = (
+                data.fragments && data.fragments.length
+                    ? '未生成草稿，请基于片段人工撰写（勿照搬错误原答案）'
+                    : '知识库无可用证据，请人工撰写期望回答'
+            );
+        }
+        const notes = (data.notes || []).join('<br>');
+        document.getElementById('draftNotes').innerHTML = notes ? `<b>草稿提示：</b>${notes}` : '';
+    } catch (e) {
+        document.getElementById('evidenceBox').innerHTML =
+            `<div style="color:#ff4d4f;font-size:13px">证据检索不可用：${esc(e.message)}。请直接人工撰写期望回答。</div>`;
+        const gt = document.getElementById('reviewGroundTruth');
+        if (!gt.value) gt.value = _reviewingCase.answer_preview || (_reviewingCase.ground_truth || '');
+        document.getElementById('draftNotes').innerHTML = '知识库检索失败，本次按人工撰写处理，不参考原错误答案更佳。';
+    }
+}
+
+function renderFragments(fragments, fragTotal) {
+    const box = document.getElementById('evidenceBox');
+    const st = document.getElementById('evidenceState');
+    if (!fragments || !fragments.length) {
+        box.innerHTML = '<div style="color:#999;font-size:13px">知识库未命中相关文档，请人工撰写期望回答。</div>';
+        st.textContent = '';
+        return;
+    }
+    st.textContent = `（检索到 ${fragTotal} 段，已显示 ${fragments.length} 段）`;
+    // 默认全勾选，便于按完整上下文生成；用户可取消不相关片段
+    box.innerHTML = fragments.map((f, i) => `
+        <label style="display:block;margin:4px 0;padding:8px;border-radius:6px;background:#fff;border:1px solid #eee;cursor:pointer;font-size:12px;line-height:1.5;">
+            <div><input type="checkbox" value="${esc(f.frag_id)}" checked style="margin-right:8px" onchange="evidenceDirty()">
+                <b style="color:#667eea">${esc(f.frag_id)}</b> <span style="color:#999">${esc(f.source || 'unknown')}</span></div>
+            <div style="color:#555;margin-top:3px;max-height:64px;overflow:auto;">${esc(f.content)}</div>
+        </label>`).join('');
+}
+
+function evidenceDirty() { /* 片段勾选变化时的轻提示，可留空 */ }
+
+function collectSelectedFragments() {
+    const box = document.getElementById('evidenceBox');
+    const sel = [];
+    box.querySelectorAll('input[type=checkbox]:checked').forEach(cb => sel.push(cb.value));
+    return sel;
+}
+
+async function regenDraft() {
+    if (!_reviewingCase) return;
+    const ids = collectSelectedFragments();
+    if (!ids.length) { showToast('请先勾选至少一个片段', 'error'); return; }
+    try {
+        const res = await fetch(`${API}/api/admin/badcases/${encodeURIComponent(_reviewingCase.case_id)}/evidence/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fragment_ids: ids })
+        });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'HTTP ' + res.status); }
+        const data = await res.json();
+        document.getElementById('reviewGroundTruth').value = data.draft || '';
+        document.getElementById('draftNotes').innerHTML =
+            (data.notes || []).length ? `<b>草稿提示：</b>${data.notes.join('<br>')}` : '';
+        showToast('已按所选片段重新生成草稿', 'info');
+    } catch (e) {
+        showToast('草稿生成失败: ' + e.message, 'error');
+    }
 }
 
 function closeReview() {

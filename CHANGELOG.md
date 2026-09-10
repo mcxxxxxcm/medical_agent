@@ -1,5 +1,31 @@
 # 系统优化更新日志
 
+## v9.55 - 意图正交闸：澄清逻辑收敛独立模块 + 可答性/合规闸前置 + 澄清回归集（阶段0/1/2）（app/core/intent_clarify.py、app/graph/nodes/nodes.py、app/graph/nodes/__init__.py、app/graph/graph.py、tests/test_intent_clarify.py、tests/data/clarify_test_set.jsonl）
+
+背景：RAG 检索最重要的是"要不要检索"。此前意图分类走 `general/knowledge/symptom` 三层，其中"知识 vs 症状"本质是检索强化策略而非互斥桶，看不出重合是轴选错；更要紧的是——可答性判定散在下游 `query_rewrite`（要先进 symptom_analysis + LLM 改写才可能澄清），红线合规（诊断/开处方）的拒答函数 `build_out_of_scope_answer` 定义了却从未接线。本次把路由改造成两条正交闸：第一轴（可答性与合规）前置到入口，第二轴（检索策略）保留原三层。
+
+- **收敛澄清判定（app/core/intent_clarify.py，`__version__=9.55`）**：`should_clarify(question, history_has_entity)` 按 `_decode_answerable` 完全一致的判定链顺序执行（空问题→领域实体→审视碎片→上下文实体→强代词→短查询无实体），复用 nodes 既有谓词保证只此一处实现；新增 `extract_slots`（药物名/症状部位/用户类型/持续时间/剂型量词）、`missing_slots`（按检索意图查缺，仿 REQUIRED_SLOTS）、`build_clarify_question`（针对缺失槽位生成具体追问，非空泛话术）。
+- **澄清回归用例集（tests/data/clarify_test_set.jsonl + tests/test_intent_clarify.py）**：固化 v9.48 死角（"吃了三粒"/代词悬空"这个药"/量词碎片"一天三次"）+ 自包含放行态（"高血压吃什么药"/"头痛怎么缓解"）共 12 条，每条标 `should_clarify` 与期望缺失槽位。
+- **行为保真验证**：断言 12/12 通过；对 12 条用例与现网 `_decode_answerable` 交叉对拍 **0 不一致**——收敛不动现有行为。
+- **入口正交闸（阶段2，app/graph/nodes/nodes.py + graph.py）**：`router_node` 增加 `_entry_intent_gate`，先于图片分支与三层路由。① 合规红线正则 `_compliance_redline`（明确的开处方/药方、诊断致命疾病自诊、急救处置指令）→ 短路 `refusal_type="compliance"` + `build_out_of_scope_answer` 拒答引导就医，绝不放行检索再事后改（此前该函数未接线）；② 可答性澄清前置：复用 `intent_clarify.should_clarify`（用路由时间点 `_context_has_entity` 喂上下文），hard-clear（量词碎片/审视事件缺药物主语/强代词悬空）→ 短路 `refusal_type="clarify"`，省下 symptom_analysis + LLM 改写空转。`Command(goto="entry_refusal")` 终止于新增 `entry_refusal_node`，graph 加 `entry_refusal→END` 边。未命中则放行进第二轴（原三层，symptom/knowledge 退化为检索策略子类，`RouterOutput Literal` 代码面不变）。
+- **安全回退设计**：现网 `query_rewrite` 的澄清（步-1 `_decode_answerable` / 步1.5）**未删除**，作为入口闸的回退盾——入口无法判定的 case 一律交给下游兜底，杜绝误伤。
+- **验证**：`py_compile` 四文件通过；断言 12/12、自包含 38/38、入口闸 8/8 全绿；`build_graph()` 成功注册 `entry_refusal` 节点与边；导入链路 OK。运行时需重启 8000 服务在真实对话目检（合规拒答 / 澄清触发 / 正常检索），并回归 golden 集。
+
+<footer>v9.55 · app/core/intent_clarify.py、app/graph/nodes/nodes.py、app/graph/nodes/__init__.py、app/graph/graph.py、tests/test_intent_clarify.py、tests/data/clarify_test_set.jsonl</footer>
+
+## v9.54 - Bad Case 分级与证据式标注（L1 聚类去重 + L2 医学敏感性分级 + L3 证据面板）（app/core/badcase_cluster.py、app/core/badcase_priority.py、app/core/bad_evidence.py、app/api/routes.py、app/static/badcase.html）
+
+背景：v9.49-9.53 已把 badcase「采集 → 自动标注 → 审核 → 入黄金集」闭环打通，但审核仍是"写作式"——弹窗预填原始错误答案、人工整段改写，成本高且受锚定效应污染（医疗低频错误进集即污染）。本次落地"分层漏斗 + 证据式标注"（阶段一单人版），把人工每一单位时间花在唯一不可替代动作——对着证据核对医学事实——上。
+
+- **L2 分级（app/core/badcase_priority.py）**：医学高风险词表（剂量/儿童孕妇等特殊人群/急救/用药中毒/具体药物）纯字符串判别 → priority=`high`/`normal`；`confidence=low` 升级为 high。列表加"高优先/常规"列与原因 tooltip，过滤下拉新增优先级；stats 新增 `priority` / `unique_pending` / `duplicate_pending`。
+- **L1 聚类去重（app/core/badcase_cluster.py）**：query embedding（复用 `get_embeddings` + 进程内 LRU+TTL 缓存，阈值 0.92 与语义缓存对齐）余弦归簇，代表件审核、重复件标 `dup_of`；列表问题列加"同类xN"/"重复件"标记、概览显示"去重后待审"。embedding 不可用时降级跳过、不阻塞后台。
+- **L3 证据式标注（app/core/bad_evidence.py）**：`GET /badcases/{id}/evidence` 混合检索命中 Top-K 片段（带 frag_id/来源/内容，复用 `get_cached_hybrid_retriever`），并生成**基于片段、断言标来源片段ID 的可溯源草稿**（绝不复用原错误答案；剂量/禁忌不确定标 `[需人工核实]`）；`POST .../evidence/generate` 按人工勾选片段重生成。审核弹窗升级为"证据面板"：勾选片段 → 重新生成 → 人审引用 → 入库；证据失败降级为人工撰写。
+- 路由：`badcase_list` 增加 priority 过滤与字段透出；`badcase_stats` 扩展；新增两个 evidence 端点均过 `_verify_admin_key`。
+- 验证：py_compile 四个后端文件通过；分级断言（高风险→high、泛问→normal）；聚类 monkeypatch 归簇（阈值 0.7 下 4 条→2 簇、2 重复件）；前端 JS `node --check` 通过；路由 AST 校验 4 端点方法正确。依赖 jieba 等的外部运行需在完整环境执行。
+- 未覆盖：证据检索与黄金集入库为外部 DB/向量库依赖，需重启 8000 服务在 `/admin/badcases` 目检（证据面板勾选→生成→入库）。
+
+<footer>v9.54 · app/core/badcase_cluster.py、app/core/badcase_priority.py、app/core/bad_evidence.py、app/api/routes.py、app/static/badcase.html</footer>
+
 ## v9.53.1 - 修复：审核后黄金集未新增 + 拦截"其他"类入黄金集（app/api/routes.py、app/static/badcase.html）
 
 背景：v9.53 上线后实测发现人工审核后 `golden_test_set.jsonl` 未新增条目。根因：① 浏览器缓存旧版页面，审核仍走旧"一键标记"只发 `{reviewed:true}`，请求无 `category`/`ground_truth`，`_sync_badcase_to_golden` 因 `ground_truth` 为空而静默跳过；② `badcase_review` 用 `category in CATEGORY_ZH` 判断，把 `other` 也当有效类，与"三大失败类"语义相悖。
