@@ -621,6 +621,13 @@ def add_metadata(
         doc.metadata["file_type"] = file_type
         doc.metadata["file_size"] = file_size
         doc.metadata["doc_hash"] = doc_hash
+        # 逻辑分类标签（阶段一：单库内软过滤的命名空间；阶段二：物理分库依据）。
+        # 纯文件名判别、确定性、零 LLM，失败不影响入库。
+        try:
+            from app.core.doc_category import classify_doc_category
+            doc.metadata["category"] = classify_doc_category(file_path.name)
+        except Exception:
+            doc.metadata["category"] = "general"
 
     # 多源元数据自动提取（版本/日期/权威等级等）
     meta_report = None

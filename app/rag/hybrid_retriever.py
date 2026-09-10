@@ -180,6 +180,7 @@ class HybridRetriever(BaseRetriever):
     use_reranker: bool = True
     rerank_top_k: int = 5
     bm25_retriever: Any = None
+    categories: Optional[List[str]] = None
 
     def __init__(
             self,
@@ -189,7 +190,8 @@ class HybridRetriever(BaseRetriever):
             alpha: float = 0.5,
             use_cache: bool = True,
             use_reranker: bool = True,
-            rerank_top_k: int = 5
+            rerank_top_k: int = 5,
+            categories: Optional[List[str]] = None
     ):
         super().__init__()
         self.vector_store = vector_store or get_vector_store()
@@ -197,6 +199,7 @@ class HybridRetriever(BaseRetriever):
         self.alpha = alpha
         self.use_reranker = use_reranker
         self.rerank_top_k = rerank_top_k
+        self.categories = categories
 
         # 初始化 EnsembleRetriever
         self._init_ensemble_retriever(documents, use_cache)
@@ -562,6 +565,25 @@ class HybridRetriever(BaseRetriever):
         candidates = self._reciprocal_rank_fusion(dense_docs, sparse_docs)
         fusion_ms = (time.time() - fusion_start) * 1000
 
+        # 逻辑分类软过滤（阶段一：单库内按 category 前置 + 补齐，永远不缩水、零命中兜底全库）。
+        # 默认 categories=None 时完全跳过，行为与旧版一致。旧索引无 category 元数据时
+        # 归入 non_cat，天然走兜底，重建索引前该过滤不会误伤检索。
+        if self.categories:
+            cat_set = set(self.categories)
+            cat_docs = [c for c in candidates if (c.metadata.get("category") or "general") in cat_set]
+            non_cat = [c for c in candidates if (c.metadata.get("category") or "general") not in cat_set]
+            if cat_docs:
+                # 命中类别最前，未命中类别补齐到原规模（软过滤：定向但仍够 k 条，不零召回）
+                candidates = (cat_docs + non_cat)[:len(candidates)]
+                logger.info(
+                    f"类别软过滤生效 categories={self.categories}：命中 {len(cat_docs)}，"
+                    f"其前置顶 top{self.k}"
+                )
+            else:
+                logger.warning(
+                    f"类别软过滤零命中 categories={self.categories}，保留原始候选（兜底全库）"
+                )
+
         # 隔离文档副本：下游 Reranker/来源多样性/版本去重会写 doc.metadata，
         # 统一作用到副本，避免污染 BM25 共享源和并发 data race
         candidates = _isolate_docs(candidates)
@@ -676,7 +698,8 @@ def get_hybrid_retriever(
         alpha: float = 0.5,
         use_cache: bool = True,
         use_reranker: bool = True,
-        rerank_top_k: int = 10
+        rerank_top_k: int = 10,
+        categories: Optional[List[str]] = None
 ) -> HybridRetriever:
     """工厂函数"""
     return HybridRetriever(
@@ -685,25 +708,33 @@ def get_hybrid_retriever(
         alpha=alpha,
         use_cache=use_cache,
         use_reranker=use_reranker,
-        rerank_top_k=rerank_top_k
+        rerank_top_k=rerank_top_k,
+        categories=categories
     )
 
 
 # 全局检索器实例（支持双集合切换时重置）
 # v9.16: 按 k 值缓存，不同 K 值使用不同实例
-_hybrid_retriever_instances: Dict[int, HybridRetriever] = {}
+# v9.57: 缓存 key 扩展到 (k, categories)——类别软过滤下同 k 不同 categories 必须是不同实例
+_hybrid_retriever_instances: Dict[Any, HybridRetriever] = {}
 
 
-def get_cached_hybrid_retriever(k: int = 5, **kwargs) -> HybridRetriever:
-    """获取缓存的检索器实例（按 k 值缓存）
+def _retriever_cache_key(k: int, categories: Optional[List[str]]) -> tuple:
+    return (k, tuple(sorted(categories) if categories else ()))
+
+
+def get_cached_hybrid_retriever(k: int = 5, categories: Optional[List[str]] = None, **kwargs) -> HybridRetriever:
+    """获取缓存的检索器实例（按 (k, categories) 缓存）
 
     v9.16: 不同 K 值需要不同的 HybridRetriever 实例，
     symptom 类型 K=8（多跳推理需更多候选），knowledge 类型 K=5。
+    v9.57: 类别软过滤下，同 k 不同 categories 各需独立实例，缓存 key 用 (k, categories)。
     """
     global _hybrid_retriever_instances
-    if k not in _hybrid_retriever_instances:
-        _hybrid_retriever_instances[k] = get_hybrid_retriever(k=k, **kwargs)
-    return _hybrid_retriever_instances[k]
+    key = _retriever_cache_key(k, categories)
+    if key not in _hybrid_retriever_instances:
+        _hybrid_retriever_instances[key] = get_hybrid_retriever(k=k, categories=categories, **kwargs)
+    return _hybrid_retriever_instances[key]
 
 
 def reset_hybrid_retriever():

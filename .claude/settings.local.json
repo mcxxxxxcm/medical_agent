@@ -157,7 +157,16 @@
       "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" tests/test_intent_clarify.py)",
       "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" -m py_compile app/core/intent_clarify.py tests/test_intent_clarify.py)",
       "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" -m py_compile app/graph/nodes/nodes.py app/graph/nodes/__init__.py app/graph/graph.py app/core/intent_clarify.py)",
-      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" tests/test_self_containment.py)"
+      "Bash(\"D:\\\\Agent\\\\software\\\\envs\\\\my_medical_env\\\\python.exe\" tests/test_self_containment.py)",
+      "Bash([ -d \"$p/envs\" ])",
+      "Bash([ -f \"$p/condabin/conda.bat\" ])",
+      "Bash(/c/Users/86176/Miniconda3/python.exe --version)",
+      "Bash(/c/Users/86176/Miniconda3/python.exe -c \"import langchain_text_splitters; print\\('deps OK'\\)\")",
+      "Bash(cmd.exe /c \"call C:\\\\\\\\Users\\\\\\\\86176\\\\\\\\miniconda3\\\\\\\\Scripts\\\\\\\\activate.bat && conda env list\")",
+      "Bash(command -v node)",
+      "Bash(awk '/<script>/{f=1;next}/<\\\\/script>/{f=0}f' /d/Agent/medical_assistant_agent/app/static/badcase.html)",
+      "Bash(node --check badcase_js_check.js)",
+      "Bash(rm badcase_js_check.js)"
     ]
   },
   "enableAllProjectMcpServers": true,

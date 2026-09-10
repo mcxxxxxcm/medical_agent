@@ -1,5 +1,5 @@
 """Bad Case 证据式标注（L3 半自动标注）
-__version__ = 9.54
+__version__ = 9.56
 
 把审核从"在错误答案上改"降维成"对着证据判句子"：
 
@@ -34,6 +34,31 @@ DRAFT_SENTENCE_MAX = 5
 
 def _case_query(case: Dict) -> str:
     return (case.get("final_question") or case.get("original_query") or "").strip()
+
+
+def _case_intent_meta(case: Dict) -> Dict:
+    """对该 badcase 的查询做全链路意图分类（复用 intent_clarify，判别与线上同源）"""
+    query = _case_query(case)
+    if not query:
+        return {
+            "intent": "general",
+            "intent_label": "一般交流",
+            "missing_slots": [],
+            "clarify_needed": False,
+            "hint": "",
+        }
+    try:
+        from app.core.intent_clarify import classify_intent
+        return classify_intent(query)
+    except Exception as e:
+        logger.warning(f"badcase 意图分类失败：{e}")
+        return {
+            "intent": "general",
+            "intent_label": "一般交流",
+            "missing_slots": [],
+            "clarify_needed": False,
+            "hint": "",
+        }
 
 
 def retrieve_evidence(case: Dict, k: int = EVIDENCE_TOP_K) -> List[Dict]:
@@ -124,7 +149,22 @@ def generate_draft(question: str, fragments: List[Dict], selected: Optional[List
     """基于勾选片段生成可溯源草稿。返回 {draft, notes, drafts_total, used_frag_ids}。
 
     失败降级返回 {draft:"", notes:["草稿生成失败，请人工撰写"], ...}，不抛异常。
+    意图感知：问题缺关键槽位（如"吃了三粒怎么办"缺药名）时直接拒绝成稿——
+    问题本就不可回答，绝不基于弱片段伪造剂量/期望答案（医疗红线，见模块 docstring）。
     """
+    try:
+        from app.core.intent_clarify import classify_intent
+        meta = classify_intent(question or "")
+    except Exception:
+        meta = None
+    if meta and meta.get("clarify_needed"):
+        hint = meta.get("hint") or "此问题缺关键信息"
+        return {
+            "draft": "",
+            "notes": [hint, "线上会对该问题触发澄清追问；不建议基于弱检索结果生成内容草稿，请先补全关键信息再判断。"],
+            "used_frag_ids": [],
+        }
+
     picks = _filter_selected(fragments, selected)
     if not question or not picks:
         return {"draft": "", "notes": ["无可用片段，请人工撰写期望回答"], "used_frag_ids": []}
@@ -151,6 +191,7 @@ def generate_draft(question: str, fragments: List[Dict], selected: Optional[List
 def evidence_payload(case: Dict, selected: Optional[List[str]] = None) -> Dict:
     """组合返回证据面板所需完整载荷，供路由直接输出。"""
     query = _case_query(case)
+    intent = _case_intent_meta(case)
     fragments = retrieve_evidence(case)
     draft_res = generate_draft(query, fragments, selected) if query else {
         "draft": "", "notes": ["问题为空，无法检索"], "used_frag_ids": [],
@@ -158,6 +199,11 @@ def evidence_payload(case: Dict, selected: Optional[List[str]] = None) -> Dict:
     return {
         "case_id": case.get("case_id", ""),
         "query": query,
+        "intent": intent.get("intent", "general"),
+        "intent_label": intent.get("intent_label", "一般交流"),
+        "missing_slots": intent.get("missing_slots", []),
+        "clarify_needed": intent.get("clarify_needed", False),
+        "clarify_hint": intent.get("hint", ""),
         "fragments": fragments,
         "frag_total": len(fragments),
         "draft": draft_res["draft"],

@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节
     MAX_SIBLING_CHARS: int = 1500  # v9.0: 2000→1500，缩短 Prompt token 数，降低 TTFT（~200-300ms）
 
+    # ===== 逻辑分类软过滤配置（阶段一） =====
+    # 知识库阶段一：文档已按 category 打标签（见 app/core/doc_category.py）。开启后按
+    # 意图(drug→drug/exam→report/symptom→disease)对检索做类别软过滤（不缩水、零命中兜底）。
+    # 默认关：先重建知识库索引（category 才落到向量库）并经黄金集验证后再开。
+    # 硬性政策：文档达到 1000+ 篇 或 来源>3 类时，必须物理分库（见 README「逻辑分类与物理分库」）。
+    ENABLE_INTENT_KB_FILTER: bool = False
+
     # ===== HyDE 配置 =====
     ENABLE_HYDE: bool = False  # HyDE 默认关闭（A/B 测试 Recall -13.3%，耗时 +1574ms）
 

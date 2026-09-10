@@ -777,6 +777,25 @@ def _is_drug_consumption_fragment(question: str) -> bool:
     )
 
 
+def _intent_kb_filter_categories(query: str, question_type: str) -> Optional[List[str]]:
+    """按意图对检索做逻辑分类软过滤（v9.57）。
+
+    - `ENABLE_INTENT_KB_FILTER` 默认关 → 返回 None = 不过滤（全库检索）。
+      开启需先重建索引让 `category` 落到向量库并经黄金集验证（见 README「逻辑分类与物理分库」）。
+    - 开启时：drug→drug 药库、exam→report 检查报告、symptom→disease 疾病库；
+      knowledge/general/未知意图 → None（不过滤，避免知识类问题被收窄）。
+    - 任何异常回退 None（全库），保证筛选永远不破坏检索主流程。
+    """
+    try:
+        if not getattr(config, "ENABLE_INTENT_KB_FILTER", False):
+            return None
+        from app.core.intent_clarify import classify_intent
+        from app.core.doc_category import intent_to_categories
+        return intent_to_categories(classify_intent(query or "").get("intent"))
+    except Exception:
+        return None
+
+
 def _is_drug_precaution_followup(question: str, has_med_context: bool) -> bool:
     """当前追问是否指向某个药物（而非症状处理）。
 
@@ -1640,7 +1659,13 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 logger.info(f"病症方向检索词增强：'{search_query}' → '{direction_enriched}'")
                 search_query = direction_enriched
 
-        retriever = get_cached_hybrid_retriever(k=k, alpha=0.5, use_reranker=True, rerank_top_k=10)
+        # v9.57: 逻辑分类软过滤——按意图(drug/drug、exam/report、symptom/disease)定向检索。
+        # ENABLE_INTENT_KB_FILTER 默认关（需先重建索引让 category 落到向量库并验证再开）。
+        # 返回 None 表示不过滤（全库检索）。
+        categories = _intent_kb_filter_categories(search_query, question_type)
+        retriever = get_cached_hybrid_retriever(
+            k=k, alpha=0.5, use_reranker=True, rerank_top_k=10, categories=categories
+        )
 
         # v9.6: 多子问题并行检索
         # v9.27: 多症状单整句（未拆成多子问题）时，按诉求症状分别检索，

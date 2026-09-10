@@ -115,7 +115,7 @@
         /* 审核弹窗 */
         .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 3000; align-items: center; justify-content: center; }
         .modal-mask.show { display: flex; }
-        .modal { background: #fff; border-radius: 12px; padding: 22px; width: 560px; max-width: 92vw; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+        .modal { background: #fff; border-radius: 12px; padding: 22px; width: 560px; max-width: 92vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
         .modal h3 { font-size: 16px; margin-bottom: 6px; color: #333; }
         .modal .modal-desc { font-size: 12px; color: #888; margin-bottom: 14px; }
         .modal label { display: block; font-size: 13px; color: #555; margin: 12px 0 6px; }
@@ -209,6 +209,11 @@
         <div class="modal-desc">勾选下方检索片段作为依据 → 生成草稿 → 人工核对引用与医学正确性后再入库黄金集。不用复审到脸红，逐句对照片段即可。</div>
         <div class="review-hint" id="reviewPriorityHint" style="font-size:12px;color:#e65100;margin:6px 0;background:#fff3e0;padding:6px 10px;border-radius:6px;display:none;"></div>
         <div id="reviewQueryBox" style="font-size:13px;color:#333;background:#f8f9fa;padding:8px 10px;border-radius:8px;margin-bottom:6px;"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span id="reviewIntentBadge" style="display:inline-block;font-size:12px;color:#667eea;background:#eef1ff;padding:2px 10px;border-radius:12px;"></span>
+            <span id="intentMissingSlot" style="font-size:12px;color:#888;"></span>
+        </div>
+        <div id="clarifyWarnBox" style="display:none;font-size:12px;color:#b25317;background:#fff3e0;border:1px solid #ffd9a8;border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.6;"></div>
 
         <label>证据片段（知识库检索，勾选作为期望回答依据）<span id="evidenceState" style="color:#999;font-weight:400"></span></label>
         <div id="evidenceBox" style="max-height:200px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;background:#fafafa;">
@@ -501,6 +506,10 @@ function openReview(caseId) {
     // 证据区与新草稿提示复位
     document.getElementById('evidenceBox').innerHTML = '<div style="color:#999;font-size:13px">证据检索中...</div>';
     document.getElementById('evidenceState').textContent = '';
+    document.getElementById('reviewIntentBadge').textContent = '';
+    document.getElementById('reviewIntentBadge').style.display = 'none';
+    document.getElementById('intentMissingSlot').textContent = '';
+    document.getElementById('clarifyWarnBox').style.display = 'none';
     const gt = document.getElementById('reviewGroundTruth');
     gt.value = '';
     document.getElementById('draftNotes').innerHTML = '';
@@ -517,6 +526,28 @@ async function loadEvidence(caseId) {
         const data = await res.json();
         _reviewEvidence = data;
         renderFragments(data.fragments || [], data.frag_total || 0);
+        // 全链路意图分类：给药/症状/检查等意图 badge + 缺关键槽位澄清警示
+        const badge = document.getElementById('reviewIntentBadge');
+        const missingEl = document.getElementById('intentMissingSlot');
+        const warnBox = document.getElementById('clarifyWarnBox');
+        const missing = data.missing_slots || [];
+        if (data.intent_label) {
+            badge.textContent = `意图：${data.intent_label}`;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.textContent = '';
+            badge.style.display = 'none';
+        }
+        if (data.clarify_needed) {
+            const slotZh = {drug_name:'药物名',user_type:'适用人群',symptom:'症状/部位',duration:'持续时间',exam_name:'检查项目',abnormal_item:'异常指标',measure:'服用剂量'};
+            const names = missing.map(s => slotZh[s] || s).join('、');
+            missingEl.textContent = missing.length ? `缺关键信息：${names}` : '';
+            warnBox.innerHTML = `⚠️ <b>此问题缺关键信息，线上会触发澄清追问</b><br>${esc(data.clarify_hint || '无法可靠检索/成稿。')}<br>建议：先补全关键信息后判断；若确需入库，请按补充的知识确定${missing.includes('drug_name')?'药物名':missing.includes('symptom')?'症状':''}后再写期望回答。`;
+            warnBox.style.display = 'block';
+        } else {
+            missingEl.textContent = '';
+            warnBox.style.display = 'none';
+        }
         // 预填证据草稿（若有）；否则回退原答案作起点
         const gt = document.getElementById('reviewGroundTruth');
         if (data.draft) {

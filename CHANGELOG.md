@@ -1,5 +1,29 @@
 # 系统优化更新日志
 
+## v9.57 - 知识库逻辑分类：检索意图→类别软过滤 + 物理分库硬性政策（app/core/doc_category.py、app/rag/loader.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py、app/core/config.py、app/core/intent_clarify.py、README.md）
+
+背景：医疗知识库语义空间与权威源天然不同，混在一个向量库存放会互相污染、也无法按来源合规隔离。但直接物理分库会让"意图判错 → 零召回"的成本从排序问题升级为干脆查不到。因此分两阶段：阶段一（本版）单库内按 `category` 打标签 + 意图软过滤（零命中兜底）；阶段二为**硬性政策**——文档达 1000+ 篇或来源 >3 类时必须物理分库。
+
+- **文档打标（app/core/doc_category.py 新增 + app/rag/loader.py）**：`classify_doc_category(filename)` 纯文件名关键词判别、零 LLM、确定性，优先级 emergency > report > drug > nurse > disease > guide > general（跨域取高优先级主类，未命中回退 general）。预埋 `PHYSICAL_COLLECTION_NAMES`（disease_kb/drug_kb/…）供阶段二分库直接复用。`add_metadata` 在摄入时为每个 chunk 盖 `category` 元数据，异常兜底 general。
+- **检索意图软过滤（app/rag/hybrid_retriever.py + app/graph/nodes/nodes.py + app/core/config.py）**：`HybridRetriever` 新增 `categories` 字段与 `_hybrid_retriever` 缓存键（k + 排序后 categories 元组）；RRF 融合后、切片前按 `category` 软过滤——命中类别前置顶 `top k`，类别零命中则保留原始候选（**从不缩水、绝兜底到零召回**）。`nodes.py` 检索处接 `_intent_kb_filter_categories`：`drug→drug 药库 / exam→report 检查报告 / symptom→disease 疾病库`，`knowledge/general`→None（全库）。开关 `ENABLE_INTENT_KB_FILTER` **默认关**——启用前提是先重建索引让 category 落到向量库并经黄金集验证。
+- **意图分类修正（app/core/intent_clarify.py，`__version__=9.57`）**：修复 `_EXAM_KEYWORDS` 的"血压"命中疾病名"高血压/低血压"导致"高血压怎么预防"误判为检查→被错误收窄到报告库的问题；剔除疾病名后交由 symptom 判定。修正前后保持 if/elif 优先链（drug > exam > symptom > knowledge > general）不变。
+- **物理分库政策（README.md）**：新增「知识库逻辑分类与物理分库」小节，明确 **1000+ 篇 或 来源 >3 类 时必须物理分库** 的硬性红线、理由（延迟/错检随库增长而劣化、单一 collection 无法来源级合规隔离）与分库方式（按 collection 拆、路由层零改动）。
+- 验证（`my_medical_env`，未重建线上索引）：`classify_intent` 断言——"吃了三粒怎么办"→drug/缺[drug_name,user_type]、"高血压怎么预防"→knowledge/不过滤（修复误判）、"我头痛三天了"→symptom→[disease]"血常规报告怎么看"→exam→[report]、"血压偏高怎么办"→exam→[report]；`_intent_kb_filter_categories` 开关关闭→None、开启→正确映射、异常兜底 None。运行时需先 `scripts/rebuild_vector_store.py` 重建索引、再开 `ENABLE_INTENT_KB_FILTER` 并经黄金集验证。
+
+<footer>v9.57 · app/core/doc_category.py、app/rag/loader.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py、app/core/config.py、app/core/intent_clarify.py、README.md、CHANGELOG.md</footer>
+
+## v9.56 - BadCase 管理双向贯通：取消审核回删黄金集 + 全链路意图分类（app/core/intent_clarify.py、app/core/bad_evidence.py、app/api/routes.py、app/static/badcase.html）
+
+背景：badcase 管理后台存在两处脱节。① v9.53 起审核通过会把 badcase 并入黄金测试集（`golden_test_set.jsonl`，带 `source_doc:"badcase:<case_id>"`），但黄金集"只追加、永不回删"——取消审核（`reviewed=False`）只写 reason、不删黄金条目，残留在测试集里污染评估。② 证据式标注的 `retrieve_evidence` 是裸检索，`retriever.invoke(query)` 完全不经过既有 `intent_clarify` 澄清逻辑；于是"吃了三粒怎么办"这类缺药物主语的审视行为案例会裸检索出无关片段，接着 `generate_draft` 拿这些弱片段"起草期望正确回答"——问题本就缺药名不可回答，等于逼模型/审核者猜剂量，违反"绝不臆造剂量"的医疗红线。
+
+- **取消审核回删黄金集（app/api/routes.py）**：新增 `_remove_badcase_from_golden(case_id)`，在 `_golden_lock` 下读 `GOLDEN_TEST_SET_PATH`，精确过滤 `source_doc == "badcase:{case_id}"` 的行后以临时文件 + replace 原子写回；不匹配任何行时返回 False、不动原文件。精确按 source_doc 而非 query 匹配——多个 badcase 可能共用同一 query，按 query 会误删别的 case。`badcase_review` 的 `not reviewed` 分支接驳该函数，reason 区分"已移除/原未入金集"。
+- **全链路意图分类（app/core/intent_clarify.py + bad_evidence.py）**：新增 `classify_intent(query)`，复用既有 `extract_slots/missing_slots/should_clarify` 与 `keyword_matcher` 的 AC 自动机 matcher（drug/exam/symptom/knowledge/general 五类优先序），返回 `{intent, intent_label, missing_slots, clarify_needed, hint}`。推出 `_CRITICAL_SLOTS`（drug→drug_name、symptom→symptom、exam→exam_name、care→symptom）做关键槽位判定，剔除 user_type/duration/abnormal_item 等安全限定或非必需槽位，避免把"布洛芬怎么吃"这类自包含用药咨询误判为需澄清；`clarify_needed = should_clarify OR 缺关键槽位`。`bad_evidence` 三处接管：`retrieve_evidence` 保留检索但携带意图元数据；`generate_draft` 对 clarify_needed 直接拒绝成稿（返回空 draft + 说明缺哪些槽位、提示线上会澄清），绝不基于弱片段伪造；`evidence_payload`/列表 `_enrich_bad_cases` 透出 intent/intent_label/clarify_needed，审核面板与列表均可见意图、筛选可判需澄清。
+- **前端证据面板（app/static/badcase.html）**：审核弹窗加意图 badge、缺槽位文案与"⚠️ 此问题缺关键信息，线上会触发澄清追问"警示条；打开新 case 时复位这些元素防串值。
+- 兼容性：意图即时计算不落库、不改既有 schema；`general/knowledge` 无 `_REQUIRED_SLOTS` 返回 `missing_slots=[]`，不影响线上路由/澄清行为；clarify_needed 的 case 因 ground_truth 为空，被 `_sync_badcase_to_golden` 的"三真类 + 非空 gt"门槛自然挡在黄金集外，除非审核者先补全信息后手动写答案。
+- 验证（`my_medical_env`）：`classify_intent` 断言——"吃了三粒怎么办"→drug/缺[drug_name,user_type]/clarify_needed=true，"布洛芬怎么吃"→drug/缺[user_type]/false（不误判），"我头痛三天了"→symptom/[]/false，"血常规偏高怎么办"→exam/缺[exam_name,abnormal_item]/true；`evidence_payload` 端到端——"吃了三粒怎么办" draft=空 + 拒绝说明，"头痛三天"正常成稿；`_remove_badcase_from_golden` 临时文件隔离测试——仅删目标 source_doc 行、其余保留、未命中返回 False。运行时需重启 8000 服务在 `/admin/badcases` 目检（证据面板意图警示、审核后取消看黄金集回删）。
+
+<footer>v9.56 · app/core/intent_clarify.py、app/core/bad_evidence.py、app/api/routes.py、app/static/badcase.html、CHANGELOG.md</footer>
+
 ## v9.55 - 意图正交闸：澄清逻辑收敛独立模块 + 可答性/合规闸前置 + 澄清回归集（阶段0/1/2）（app/core/intent_clarify.py、app/graph/nodes/nodes.py、app/graph/nodes/__init__.py、app/graph/graph.py、tests/test_intent_clarify.py、tests/data/clarify_test_set.jsonl）
 
 背景：RAG 检索最重要的是"要不要检索"。此前意图分类走 `general/knowledge/symptom` 三层，其中"知识 vs 症状"本质是检索强化策略而非互斥桶，看不出重合是轴选错；更要紧的是——可答性判定散在下游 `query_rewrite`（要先进 symptom_analysis + LLM 改写才可能澄清），红线合规（诊断/开处方）的拒答函数 `build_out_of_scope_answer` 定义了却从未接线。本次把路由改造成两条正交闸：第一轴（可答性与合规）前置到入口，第二轴（检索策略）保留原三层。

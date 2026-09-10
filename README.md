@@ -185,6 +185,33 @@
 
 文件名经 `_sanitize_kb_filename` 净化（拒绝 `/`、`\`、盘符、`..`），防路径穿越。
 
+### 🗂️ 知识库逻辑分类与物理分库（重要政策）
+
+医疗知识库不能一股脑塞一个向量库：药品说明书、疾病诊疗、检查报告、护理指南、急救处置的
+语义空间与权威源天然不同，混在一个 collection 检索会互相污染，也无法按来源做合规隔离。
+但直接物理分库会让"意图/类型判错 → 零召回"的成本从"排序问题"升级成"干脆查不到"，且需
+维护 N 套独立索引。因此**分两阶段落地**：
+
+**阶段一·逻辑分类（当前，默认关闭）**
+- 文档摄入时按文件名打 `category` 标签（`app/core/doc_category.py`，零 LLM、确定性）：
+  `disease 疾病诊疗 / drug 药品说明 / report 检查报告 / nurse 护理指南 / emergency 急救处置 /
+  guide 就医引导 / general 通用`。落库为 chunk 的 `category` 元数据。
+- 检索时按意图做**软过滤**（`app/rag/hybrid_retriever.py`，`ENABLE_INTENT_KB_FILTER` 开关，
+  默认 `False`）：`drug→drug 药库 / exam→report 检查报告 / symptom→disease 疾病库`。
+- 软过滤**从不缩水、零命中兜底**：类别候选不足时保留原始全库候选，把"意图误判"的代价
+  控制在排序以内，绝不退回零召回。`knowledge/general` 意图不过滤（全库）。
+- **启用前提**：必须先重建知识库索引（`scripts/rebuild_vector_store.py`）让 `category` 落到
+  向量库，并经黄金测试集（RAGAS）验证路由准确率后再开。
+
+**阶段二·物理分库（硬性政策，务必记住）**
+> ⚠️ 当**文档数达到 1000+ 篇 或 来源 > 3 类**时，**必须执行物理分库**，不得继续用一个库。
+
+理由：文档多了之后，类别过滤只是把噪声推到堆外，检索的延迟与错检仍会随库内文档增长而劣化；
+且单一 collection 无法做来源级合规隔离。分库后按 `collection`（`disease_kb / drug_kb /
+report_kb / nurse_kb / emergency_kb / guide_kb / general_kb`）各建独立索引，检索路由层零改动——
+物理库名已在 `app/core/doc_category.py` 的 `PHYSICAL_COLLECTION_NAMES` 预埋，届时直接按
+category 拆 collection 即可。触发该政策时同步更新 `CHANGELOG.md` 并记录。
+
 ### 🛡️ 安全检查引擎
 
 回答生成后由 `safety_check_node` 执行多层核查（`app/skills/`），不依赖单一 LLM 判断：

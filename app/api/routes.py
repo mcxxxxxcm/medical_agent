@@ -789,21 +789,28 @@ def _enrich_bad_cases(cases, cluster_map):
 
     已审核的 case 保留 priority（便于回溯曾有的高风险标记），但 cluster 字段置空，
     避免"已审的重复件"和未审导航混在一起造成困惑。
+    同时即时计算查询意图（全链路意图分类），供列表展示/筛选。
     """
+    from app.core.intent_clarify import classify_intent
+
     enriched = apply_priorities(cases)
     out = []
     for c in enriched:
+        new = dict(c)
+        query = (c.get("final_question") or c.get("original_query") or "").strip()
+        meta = classify_intent(query) if query else {}
+        new["intent"] = meta.get("intent", "general")
+        new["intent_label"] = meta.get("intent_label", "一般交流")
+        new["clarify_needed"] = meta.get("clarify_needed", False)
         if not c.get("reviewed"):
-            c = dict(c)
-            c["dup_of"] = None  # 占位，下面按 cluster_map 实际覆盖
-            c["rep_count"] = 1
-            out.append(c)
+            new["dup_of"] = None  # 占位，下面按 cluster_map 实际覆盖
+            new["rep_count"] = 1
+            out.append(new)
         else:
-            c = dict(c)
-            c["cluster_id"] = None
-            c["rep_count"] = 1
-            c["dup_of"] = None
-            out.append(c)
+            new["cluster_id"] = None
+            new["rep_count"] = 1
+            new["dup_of"] = None
+            out.append(new)
     # 对未审子集应用真实聚类信息（代表件/重复件）
     pending_idx = [i for i, c in enumerate(out) if not c.get("reviewed")]
     pending = [out[i] for i in pending_idx]
@@ -948,6 +955,49 @@ async def _sync_badcase_to_golden(case: Dict, ground_truth: str, category: str) 
         return False
 
 
+async def _remove_badcase_from_golden(case_id: str) -> bool:
+    """按 source_doc == "badcase:{case_id}" 移除黄金测试集对应条目。
+
+    取消审核时回删此前审核通过写入的黄金条目（黄金集"只追加不回删"的补齐）。
+    精确匹配 source_doc 而非 query——多个 badcase 可能共用同一 query，误删会波及别的 case。
+    返回是否实际删除了行；文件不存在或无害时返回 False。
+    """
+    if not case_id:
+        return False
+    marker = f"badcase:{case_id}"
+    removed = False
+    try:
+        async with _golden_lock:
+            if not GOLDEN_TEST_SET_PATH.exists():
+                return False
+            kept = []
+            with open(GOLDEN_TEST_SET_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    is_target = False
+                    try:
+                        item = json.loads(stripped)
+                        is_target = (item.get("source_doc") or "").strip() == marker
+                    except json.JSONDecodeError:
+                        is_target = False
+                    if is_target:
+                        removed = True
+                        continue
+                    kept.append(line)
+            if removed:
+                tmp = GOLDEN_TEST_SET_PATH.with_suffix(GOLDEN_TEST_SET_PATH.suffix + ".tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.writelines(kept)
+                tmp.replace(GOLDEN_TEST_SET_PATH)
+                logger.info(f"badcase 已从黄金测试集移除：{case_id}")
+            return removed
+    except Exception as e:
+        logger.warning(f"badcase 从黄金测试集移除失败：{case_id} - {e}")
+        return False
+
+
 @app.post("/api/admin/badcases/{case_id}/review")
 async def badcase_review(request: Request, case_id: str):
     """人工审核标记 bad case（补填失败大类、期望回答、置为已审核）
@@ -976,10 +1026,12 @@ async def badcase_review(request: Request, case_id: str):
     )
 
     # 审核通过 + 三大失败类之一 + 有期望答案 → 并入黄金测试集
+    # 取消审核 → 回删此前审核通过写入的黄金条目
     synced = False
     reason = ""
     if not reviewed:
-        reason = "取消/未审核，不入黄金集"
+        removed = await _remove_badcase_from_golden(case_id)
+        reason = "取消审核，已从黄金集移除" if removed else "取消/未审核（原未入黄金集或移除失败）"
     elif not category or category not in CATEGORY_ZH or category == "other":
         reason = f"失败大类为「{category_zh(category or 'other')}」，非三大失败类，仅标记审核不入黄金集"
     elif not ground_truth.strip():

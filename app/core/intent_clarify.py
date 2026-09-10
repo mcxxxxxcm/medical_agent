@@ -1,6 +1,6 @@
 """意图澄清判定与槽位抽取（阶段0：收敛澄清逻辑）
 
-__version__ = 9.55
+__version__ = 9.57
 
 背景
 ----
@@ -23,7 +23,7 @@ __version__ = 9.55
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # ============================================================================
 # 槽位词典（新增能力，独立于既有谓词）
@@ -52,6 +52,14 @@ _DURATION_KEYWORDS = [
 ]
 
 _MEASURE_WORDS = ["粒", "片", "颗", "包", "丸", "袋", "毫克", "克", "毫升", "ml"]
+
+# 检查/检验类意图关键词（badcase 全链路意图分类用）
+_EXAM_KEYWORDS = [
+    "化验", "检查", "报告", "指标", "血常规", "尿常规", "大便常规",
+    "肝功能", "肾功能", "血脂", "血糖", "血压",
+    "ct", "核磁", "彩超", "超声", "b超", "胃镜", "肠镜",
+    "报告单", "数值", "偏高", "偏低", "异常",
+]
 
 # 各检索意图的必要槽位（仿 errorLog REQUIRED_SLOTS，按医疗安全调权重）
 _REQUIRED_SLOTS = {
@@ -213,3 +221,106 @@ def build_clarify_question(missing_slots: List[str]) -> str:
         f"{joined}\n\n"
         "⚠️ 若症状明显加重或伴有高热/剧烈疼痛/呼吸困难，请及时就医。"
     )
+
+
+# ============================================================================
+# 全链路意图分类（badcase 管理：检索→草稿→列表→审核共用）
+# ============================================================================
+
+# 各意图必要槽位中的"关键槽位"：缺失即不可可靠检索/成稿。
+# 相比 _REQUIRED_SLOTS，剔除 user_type/duration/abnormal_item 等安全限定或
+# 非必需槽位，避免把"布洛芬怎么吃"这类自包含用药咨询误判为需澄清。
+_CRITICAL_SLOTS = {
+    "symptom": ["symptom"],
+    "drug": ["drug_name"],
+    "exam": ["exam_name"],
+    "care": ["symptom"],
+}
+
+INTENT_LABELS = {
+    "drug": "用药咨询",
+    "exam": "检查/检验",
+    "symptom": "症状咨询",
+    "care": "日常护理",
+    "knowledge": "知识问答",
+    "general": "一般交流",
+}
+
+_SLOT_ZH = {
+    "drug_name": "药物名",
+    "user_type": "适用人群",
+    "symptom": "症状/部位",
+    "duration": "持续时间",
+    "exam_name": "检查项目",
+    "abnormal_item": "异常指标",
+    "measure": "服用剂量",
+}
+
+
+def _clarify_hint(intent: str, missing: List[str], reason: str) -> str:
+    if missing:
+        names = "、".join(_SLOT_ZH.get(s, s) for s in missing)
+        return (
+            f"此问题属「{INTENT_LABELS.get(intent, intent)}」，缺少关键信息：{names}，"
+            "线上会触发澄清追问。"
+        )
+    if reason:
+        return f"此问题缺关键信息：{reason}。"
+    return ""
+
+
+def classify_intent(query: str) -> Dict[str, Any]:
+    """badcase 全链路意图分类：判定查询意图 + 缺失关键槽位。
+
+    返回 {"intent", "intent_label", "missing_slots", "clarify_needed", "hint"}。
+    意图判定优先 drug > exam > symptom > knowledge > general，复用既有
+    keyword_matcher 的 AC 自动机 matcher 与 nodes 的药物审视谓词，保证与
+    线上路由/澄清判定同源，不被坏例后台单独维护一套词表。
+    """
+    empty = {
+        "intent": "general",
+        "intent_label": INTENT_LABELS["general"],
+        "missing_slots": [],
+        "clarify_needed": False,
+        "hint": "",
+    }
+    q = (query or "").strip()
+    if not q:
+        return empty
+
+    from app.core.keyword_matcher import (
+        get_drug_matcher,
+        get_route_knowledge_matcher,
+        get_route_symptom_matcher,
+    )
+
+    # 1. 药：药物名词命中 或 审视行为碎片（"吃了三粒怎么办"）
+    if get_drug_matcher().contains_any(q) or _is_drug_consumption_fragment(q):
+        intent = "drug"
+    # 2. 检查/检验
+    # 例外：_EXAM_KEYWORDS 的"血压"会命中疾病名"高血压/低血压"（如"高血压怎么预防"），
+    # 这类是病症问询而非检查诉求，剔除后交由下方 symptom 判定，避免误收窄到报告库。
+    elif any(kw in q.replace("高血压", "").replace("低血压", "") for kw in _EXAM_KEYWORDS):
+        intent = "exam"
+    # 3. 症状
+    elif get_route_symptom_matcher().contains_any(q, use_boundary=True):
+        intent = "symptom"
+    # 4. 知识
+    elif get_route_knowledge_matcher().contains_any(q, use_boundary=True):
+        intent = "knowledge"
+    # 5. 兜底
+    else:
+        intent = "general"
+
+    missing = missing_slots(q, intent)
+    should_clar, clarify_reason = should_clarify(q)
+    missing_critical = [s for s in _CRITICAL_SLOTS.get(intent, []) if s in missing]
+    clarify_needed = bool(should_clar) or bool(missing_critical)
+    hint = _clarify_hint(intent, missing, clarify_reason) if clarify_needed else ""
+    return {
+        "intent": intent,
+        "intent_label": INTENT_LABELS.get(intent, "general"),
+        "missing_slots": missing,
+        "clarify_needed": clarify_needed,
+        "hint": hint,
+    }
