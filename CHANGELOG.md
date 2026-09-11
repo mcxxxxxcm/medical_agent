@@ -1,5 +1,55 @@
 # 系统优化更新日志
 
+## v9.61 - 保守提速：安全审查收紧 + 语义缓存命中提升（app/graph/nodes/nodes.py、app/core/config.py、app/cache/semantic_cache.py）
+
+背景：基于 `data/metrics/metrics.db`（1015 条 node_metrics）的真实耗时画像定位瓶颈。主链路 avg：答案生成 11273ms（云端主模型流式输出长文，绝对大头）、知识检索 3040ms（云端 embedding+BM25+reranker）、临床快照 1429ms、安全检查 1178ms、查询重写 906ms、用户档案 863ms、问题拆解 569ms。关键事实：① 模型路由——云端 glm-4-flash 只用于最终答案生成（`get_llm(streaming=True)`）与直接问答、症状方向推断；查询重写/问题拆解/路由LLM兜底/档案提取/安全审查LLM/临床快照均走本地 Ollama qwen2.5:1.5b（`.env` `LOCAL_MODEL_ENABLED=True`，覆盖 config.py 默认 False），故上述中间节点 ~1s 耗时属本地推理，非云端；② **L2 语义缓存与查询缓存缓存的是"检索文档"而非"最终答案"**——命中后仍会重新生成答案，只省检索 ~3s；③ 答案生成 11s 取决于云端模型输出长文。
+
+用户选定保守档位：中间节点不启用本地、答案生成不压输出/不换模型/不新增完整回答缓存、安全审查收紧。故本版只做两处确定、可回滚的改动。
+
+- **安全审查收紧（app/graph/nodes/nodes.py `safety_check_node`）**：LLM 深度审查触发条件由 `if risk_tags or status == "revise"` 收窄为 `if status == "block" or {"emergency_risk_missed"} ∩ risk_tags`。用药核对/危险症状组合等 revise 级**措辞修订/免责注入**纯靠规则引擎（已生成 `revised_answer`）完成，不再额外调一次云端 LLM（省 ~1s）；block（拦截）与紧急漏检高危仍走 LLM，保住安全底线。
+- **语义缓存命中提升（app/core/config.py `SEMANTIC_CACHE_THRESHOLD` 0.92→0.90）**：温和放宽相似问法的命中（0.90 仍有区分度），命中时整条检索(3s)+embedding 省掉。命中与被缓存文档仍是"检索文档"，答案照旧重新生成——不降输出、不加完整回答缓存。
+- **语义缓存命中采集（app/cache/semantic_cache.py）**：命中日志追加累计命中率（`hits/total_requests`），此前 `self._stats` 仅存内存、无法复测；改后可按 INFO 日志对比阈值调整前后命中率。
+- 明确不动：不启用本地中间节点、不压答案输出、不新增 query→final_answer 完整缓存、检索 rerank_top_k 不做低收益调整。
+- 诚实结论：在不降质量/不加复杂度/不动模型选择下，本版确定性省下的是安全审查 ~1s + 检索命中时的 ~3s；答案生成 11s 大头在现有约束下无法消除，未来若突破需在"启用本地中间节点 / 新增完整回答缓存 / 换更快生成模型"里选，均另有取舍，另行排期。
+
+<footer>v9.61 · app/graph/nodes/nodes.py、app/core/config.py、app/cache/semantic_cache.py、CHANGELOG.md</footer>
+
+## v9.60 - 紧急求助场景短路 + 元问题闸防御硬化（app/graph/nodes/nodes.py）
+
+背景：errorLog 新案例"现在有人被车撞了，出了很多血，我应该怎么办？"路由到 symptom 检索，Reranker 最高分极低（知识库无覆盖）→ `build_no_results_answer` 冷拒答，参考来源还列冠心病/皮肤指南等无关文档。用户要求此类危急场景应给出"立即拨打120/寻求帮助"的即时指引，而非呆板拒答（仅场景/事故类，用户选定范围）。
+
+- **紧急求助场景短路（`_EMERGENCY_SCENE_RE` + `_detect_emergency` + `build_emergency_help_answer`）**：在 `_entry_intent_gate` 置最高优先级（合规红线之前，场景危急绝不丢失）。正则覆盖明确的场景/事故/中毒：被车撞/撞车/车祸、出很多血/大出血/血流不止/头破血流、昏迷不醒/叫不醒/晕倒在地/不省人事/失去意识、溺水/触电/坠楼/跳楼/高处坠落、刀砍/刺伤、喝农药/服毒/吞药自杀/中毒晕倒、噎到/窒息。命中即短路返回 `("emergency", 紧急120指引+等待救援临时处理+免责声明, "emergency")`，复用既有入口短路机制（router → `entry_refusal` → END），`refusal_type="emergency"` 为自由字符串，与 compliance/clarify 完全同型，不新增图分支。
+- **安全边界**：刻意不含内科急症词（胸痛/呼吸困难/剧烈头痛/持续高烧）——这些仍走正常症状问答，下游 `safety_review_engine.inject_emergency_alert` 已会追加"立即就医/拨打120"；"中毒"不裸触发（需"服毒/喝农药/中毒晕倒"等强场景），防"怎么检测水中毒物"误伤。回复仅 120 指引 + 临时止血/体位处理 + 免责，不涉诊断、不越合规红线。
+- **元问题闸防御硬化（`_entry_intent_gate` 第 1.5 步）**：审计确认 v9.59 已实现"元问题→general→direct_answer（不检索）"。本次在入口闸、`should_clarify` 之前加一记防御性硬化：`_is_meta_or_offtopic(question)` 命中即返回 None 放行第二层（general→direct_answer，不检索、不澄清），防止未来澄清逻辑变更把元问题误清成 query 澄清。仅在合规红线之后判定，`你能给我开处方` 仍先被红线拦截。
+- **无新增"无实体就拦"的蠢门**：`高血压怎么预防` 这类无实体但合法的知识问句仍正常走知识检索；绝不让 `_inject_context_entities` 把历史实体拼进元问题检索词去冲 RAG。
+- 验证（`my_medical_env`）：`_detect_emergency('被车撞了，出了很多血')`→被撞、`昏迷不醒`→昏迷不醒、`被刀砍流血不止`→被砍；`怎么检测水中毒物`→None、`胸痛怎么办`→None、`我头痛三天了`→None；`_is_meta_or_offtopic('你是什么模型/你是谁/你能做什么')`→True，`高血压怎么预防/吃了三粒怎么办/这个药怎么吃`→False；`_entry_intent_gate` 对紧急问题返回 `("emergency",...,"emergency")`、对元问题放行第二层。
+- 并发/抗压（#3）仅评估不落地：在线问答不建议加消息队列（会增时延与复杂度、不解决同步 LLM 阻塞瓶颈）；后续如需再优化，用压测定位瓶颈 + LLM/embedding/reranker 加有界信号量 + SQLite 开 WAL + 后台任务才考虑 MQ。
+
+<footer>v9.60 · app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
+## v9.59 - 修复元问题误走RAG：knowledge意图实体锚定 + 元问题规则层短路（app/graph/nodes/nodes.py）
+
+背景：`route_knowledge_map` 把"是什么/什么是/原因/治疗"等意图词映射为 knowledge，`detect_rule_based_route` 用 `contains_any` 裸触发——用户问"你是什么模型？"仅因含"是什么"被规则路由成 knowledge → 走 RAG。检索对无关查询无真覆盖（Reranker 最高分仅 0.0296），但 `filter_relevant_docs` 对"前2名无条件保留"（nodes.py:2576 `if index < 2 or overlap`），把 0 重叠的头痛/头晕文档留作上下文，LLM 据此编出头痛症状 + 布洛芬用药（幻觉）。
+
+- **元问题规则层短路（`_is_meta_or_offtopic`）**：正向检测"无健康语义地询问本助手身份/能力"（你是什么/你是谁/你能做什么/介绍一下你…），命中即规则层返回 `general`（`direct_answer`，绝不进 RAG）。判断基准是**正向自我指代语义**，绝不误伤含症状/药物/疾病/病痛词/怎么办的健康追问。
+- **knowledge 意图实体锚定（`_is_knowledge_anchored`）**：不再裸"是什么"触发，须满足其一——①命中具体疾病名（映射 `knowledge_disease`，如"高血压是什么病"）；②带医疗限定措辞（是什么病/怎么回事/怎么治/如何预防…）；③命中知识意图词且话里含医疗实体（症状/药物/疾病）。三者皆不满足返回 False。
+- **兼容上下文依赖**：锚定失败的模糊问句（"这个药怎么吃"）返回 None，交给上下文感知路由/入口闸按历史解析，而非硬编码拒答——不冷拒"吃了三粒怎么办"这类依赖语境的追问。
+- 验证（`my_medical_env`）：`你是什么模型/你是谁/你能做什么`→general（直接答，不检索）；`高血压是什么病/贫血的原因是什么/糖尿病的治疗方法/布洛芬的副作用`→knowledge（实体锚定不漏真医疗问题）；`你发烧了怎么办/我头痛三天了/吃了三粒怎么办`→symptom（不误伤、不拒答）。
+- 未覆盖：规则层判 None 的灰色地带（如"今天天气怎么样"）仍交 LLM 路由，本版未加元三元 LLM 判定（用户已选 L2 规则方案）；检索端 `filter_relevant_docs` 前2名无条件保留仍是幻觉放大点，若需进一步收口可另行加固（如离题检询问句做相关性底）。
+
+<footer>v9.59 · app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
+## v9.58 - 零停机重建保留上一代可回滚 + Windows 句柄占用清理重试（app/rag/vector_store.py、README.md）
+
+背景：零停机重建切到新集合后，`schedule_cleanup_old_collection` 在 300s 后把"上一代"（previous）`rmtree` 掉。两个问题：① **回滚窗口只有约 5 分钟**——一旦删除成功，`/api/admin/kb/rollback` 的 `prev_dir.exists()` 校验失败，新集合效果立现不佳时无法紧急回退；② Windows 下 previous 是本进程刚加载过、Chroma 句柄（`data_level0.bin`）仍开着的集合，`rmtree` 抛 `PermissionError [WinError 32]`，日志只记录"清理失败"无后续处理。
+
+- **方案A：保留上一代、只删更旧（app/rag/vector_store.py `schedule_cleanup_old_collection`）**：切换后 active + 紧邻 previous 一代**始终保留**（保证 rollback 能力在线），只删除比上一代更旧的 generation 目录。安全设计：删除清单在**调度时刻**（写锁仍握在重建流程内）做目录快照，只从快照中挑出"不在 keep(active/previous/base) 内且匹配 `medical_kb_v*` 前缀"的目录；之后新起的影子集合不在快照里，永不误删在建集合。keep 集含基础目录，默认集合/`chroma.sqlite3` 等非 generation 内容不受影响。
+- **Windows 句柄占用重试（`_rmtree_retry`）**：`shutil.rmtree` 碰到 `PermissionError/WinError32` 时重试多轮（可配 tries/backoff），仍失败则**保留目录 + 明确告警**（提示句柄由本进程 Chroma 客户端持有、进程重启后释放、可手动删以回收磁盘），不把失败静默当成功。释放后重试即可删。
+- 取舍：为换取始终可回滚，磁盘上每代切换后会保留 active + previous 两代集合（KB 小时代价可忽略；触发物理分库 1000+ 篇时可结合手动清理策略）。
+- 验证（`my_medical_env`，隔离临时目录）：三代 `medical_kb_v1000/2000/3000`，active=3000、previous=2000 → 仅删 1000，保留 2000/3000 与 `chroma.sqlite3`；`_rmtree_retry` 对独占句柄文件重试后不抛异常、目录保留并打 ERROR 日志，释放句柄后再次调用即删除成功。
+
+<footer>v9.58 · app/rag/vector_store.py、README.md、CHANGELOG.md</footer>
+
 ## v9.57 - 知识库逻辑分类：检索意图→类别软过滤 + 物理分库硬性政策（app/core/doc_category.py、app/rag/loader.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py、app/core/config.py、app/core/intent_clarify.py、README.md）
 
 背景：医疗知识库语义空间与权威源天然不同，混在一个向量库存放会互相污染、也无法按来源合规隔离。但直接物理分库会让"意图判错 → 零召回"的成本从排序问题升级为干脆查不到。因此分两阶段：阶段一（本版）单库内按 `category` 打标签 + 意图软过滤（零命中兜底）；阶段二为**硬性政策**——文档达 1000+ 篇或来源 >3 类时必须物理分库。

@@ -163,7 +163,7 @@
 |------|------|
 | 增量更新双缓冲 | 上传后新 chunk 先入 `pending` → 校验 → 激活 `active` → 仅废弃旧版本中已删除的块；0 窗口期 |
 | 版本管理 | 同一文档每次修改 `version_id+1`，`keep_hashes` 保留未变块，避免"改几行整篇丢失" |
-| 零停机全量重建 | 影子集合构建 → 校验 → `kb_active.json` 指针原子切换 → 300s 延迟清理旧集合 |
+| 零停机全量重建 | 影子集合构建 → 校验 → `kb_active.json` 指针原子切换 → 保留上一代+active 供回滚，延迟只清理更旧世代（Windows 句柄占用时带重试、失败留待重启清理） |
 | 软删除 / 恢复 | `status=deprecated` 而非物理删除，支持 `restore` 恢复，BM25 索引同步过滤 |
 | 回滚 | `/api/admin/kb/rollback` 秒级切回旧集合 |
 | 一致性校验 | `run_reconciliation` 比对文档目录与向量库差异，`stale-detect` 探测过期数据 |

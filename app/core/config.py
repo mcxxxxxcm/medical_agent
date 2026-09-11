@@ -128,7 +128,7 @@ class Settings(BaseSettings):
 
     # ===== 语义缓存配置 =====
     ENABLE_SEMANTIC_CACHE: bool = True  # 是否启用语义相似缓存
-    SEMANTIC_CACHE_THRESHOLD: float = 0.92  # 语义相似度阈值（医疗场景要求高精度，0.92 = 92% 相似）
+    SEMANTIC_CACHE_THRESHOLD: float = 0.90  # v9.61: 0.92→0.90，温和放宽相似问法命中（省检索~3s）；0.90仍有区分度，命中仅返回检索文档、答案仍重新生成
 
     # ===== RERANKER_MODEL本地路径 =====
     # Docker 默认路径为 /app/models/...，本地开发可通过环境变量或 .env 覆盖

@@ -298,7 +298,8 @@ class SemanticCache:
 
                 logger.info(
                     f"语义缓存命中：'{query[:20]}...' ≈ '{data.get('query', '')[:20]}...' "
-                    f"(相似度: {similarity:.2%})"
+                    f"(相似度: {similarity:.2%}, 累计命中率 "
+                    f"{self._stats['hits'] / max(1, self._stats['total_requests']):.1%})"
                 )
 
                 return documents, metadata

@@ -655,50 +655,86 @@ class DualCollectionManager:
     # ===== 延迟清理旧集合 =====
 
     def schedule_cleanup_old_collection(self, delay_seconds: int = 300):
-        """延迟清理旧集合（5 分钟后执行）
+        """延迟清理"比上一代更旧"的集合（v9.58，方案A：保留上一代供回滚）。
 
-        确保所有进行中的查询完成后再删除，避免长尾请求报错。
+        原则：active 一代 + 紧邻的 previous 一代**始终保留**（可紧急回滚），
+        只删除比上一代更旧的 generation 目录，避免"新集合效果不如旧集合却无法回退"。
+
+        安全设计：
+        1. 在**调度时刻**（即切换完成、写锁仍握在重建流程内）做目录快照，
+           只从这份快照里挑出该删的目录；之后新起的影子集合不在快照里，永不误删。
+        2. 快照中除 keep(active/previous/base) 外的 `medical_kb_v*` 目录即为更旧世代。
+        3. 删除使用 `_rmtree_retry`：Windows 下句柄未释放时重试多次，
+           仍失败则保留目录、明确告警，待进程重启释放句柄后手动清理——不静默当成功。
         """
-        old_config = self.get_active_config()
-        old_dir = old_config.get("previous_persist_dir")
-        old_name = old_config.get("previous_collection")
+        base_dir = self.chroma_base_dir
+        config_now = self.get_active_config()
 
-        if not old_dir or not old_name:
-            logger.info("无旧集合需要清理")
+        keep_resolved = {str(base_dir.resolve())}
+        for key in ("active_persist_dir", "previous_persist_dir"):
+            d = config_now.get(key)
+            if d:
+                keep_resolved.add(str(Path(d).resolve()))
+
+        # 调度时刻快照：该删的这代目录（不在 keep 内、且匹配 generation 前缀）
+        to_delete = [
+            child
+            for child in base_dir.iterdir()
+            if child.is_dir()
+            and child.name.startswith("medical_kb_v")
+            and str(child.resolve()) not in keep_resolved
+        ]
+
+        if not to_delete:
+            logger.info("无更旧世代需要清理")
             return
 
-        # 当前活跃集合不清理
-        if old_name == old_config.get("active_collection"):
-            return
+        names = ", ".join(p.name for p in to_delete)
+        logger.info(f"保留上一代供回滚；{delay_seconds}s 后清理更旧世代：{names}")
 
         def _cleanup():
-            try:
-                import time
-                logger.info(f"旧集合清理：{delay_seconds}s 后清理 {old_name}")
-                time.sleep(delay_seconds)
-
-                old_path = Path(old_dir)
-                if old_path.exists() and old_path.is_dir():
-                    # 安全检查：不删除活跃集合
-                    active_name = self.get_active_collection_name()
-                    if old_name == active_name:
-                        logger.warning(f"旧集合 {old_name} 已是活跃集合，跳过清理")
-                        return
-                    # 不删除基础目录：它承载默认集合（回退路径）且包含影子集合子目录，
-                    # 首次切换时 previous_persist_dir 默认指向它，误删会毁掉活跃的影子集合
-                    if old_path.resolve() == self.chroma_base_dir.resolve():
-                        logger.info(f"旧集合为基础目录（{old_dir}），跳过清理以保留默认集合")
-                        return
-
-                    shutil.rmtree(old_path)
-                    logger.info(f"旧集合已清理：{old_name}（目录：{old_dir}）")
-                else:
-                    logger.info(f"旧集合目录不存在，跳过清理：{old_dir}")
-            except Exception as e:
-                logger.error(f"旧集合清理失败：{e}")
+            import time
+            time.sleep(delay_seconds)
+            for path in to_delete:
+                if not path.exists():
+                    # 可能已被其它清理/手动移除，跳过
+                    continue
+                self._rmtree_retry(path)
 
         cleanup_thread = threading.Thread(target=_cleanup, daemon=True)
         cleanup_thread.start()
+
+    @staticmethod
+    def _rmtree_retry(path: Path, tries: int = 3, backoff: float = 2.0) -> None:
+        """删除目录，Windows 句柄未释放时重试多次。
+
+        Chroma 对加载过的 collection 会持有 `data_level0.bin` 等文件句柄，
+        Windows 无"删除打开中文件"语义，故 rmtree 可能抛 PermissionError/WinError32。
+        重试数轮仍失败则保留目录、明确告警（句柄将于进程重启后释放，可稍后手动删），
+        不把失败静默当成功。
+        """
+        import time
+        for attempt in range(1, tries + 1):
+            try:
+                shutil.rmtree(path)
+                logger.info(f"旧集合已清理：{path.name}")
+                return
+            except FileNotFoundError:
+                logger.info(f"旧集合已不存在：{path.name}")
+                return
+            except (PermissionError, OSError) as e:
+                if attempt < tries:
+                    logger.warning(
+                        f"旧集合 {path.name} 被占用（{e.__class__.__name__}: {e}），"
+                        f"{backoff}s 后第 {attempt + 1}/{tries} 次重试"
+                    )
+                    time.sleep(backoff)
+                else:
+                    logger.error(
+                        f"旧集合 {path.name} 清理失败（重试 {tries} 次仍占用）：{e.__class__.__name__}: {e}。"
+                        "该 collection 句柄可能仍被本进程 Chroma 客户端持有，将在进程重启后释放；"
+                        "可待重启后手动删除以回收磁盘。"
+                    )
 
     # ===== 回滚 =====
 

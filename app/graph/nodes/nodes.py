@@ -73,6 +73,89 @@ from .models import (
 )
 
 
+# ===== v9.59 L2：知识意图实体锚定 + 元问题短路 =====
+# 背景：route_knowledge_map 把"是什么/什么是/原因/治疗"等意图词映射为 knowledge，
+# 且 detect_rule_based_route 用 contains_any 裸触发——于是"你是什么模型？"仅因含"是什么"
+# 被规则路由成 knowledge → 走 RAG → 检索到头痛/头晕文档（Reranker 前2名无条件保留）
+# → 生成幻觉的头痛/布洛芬回答。修法两层：
+#   1) _is_meta_or_offtopic：无健康语义地询问本助手身份/能力 → 规则层直接 general（直接答，
+#      绝不进 RAG），并就地在规则层短路——避免掉进上下文/LLM 层又被当知识检索。
+#   2) _is_knowledge_anchored：knowledge 意图"实体锚定"——命中具体疾病名 / 带医疗限定措辞 /
+#      或意图词+话里含医疗实体 才判 knowledge；裸"是什么"不再触发。
+# 兼容：锚定失败的模糊问句返回 None，交给上下文感知路由（真实医疗追问如"这个病是什么"
+# 靠历史正确续答），而非硬编码拒答——不破坏"吃了三粒怎么办"这类上下文依赖追问。
+_KB_INTENT_WORDS = {
+    "是什么", "什么是", "原因", "治疗", "预防", "护理", "诊断",
+    "检查", "怎么吃", "注意什么", "禁忌", "副作用", "用量", "用法",
+}
+_KB_MEDICAL_QUALIFIERS = (
+    "是什么病", "是什么疾病", "是什么原因", "是怎么回事",
+    "是什么引起", "是什么导致", "什么引起的", "什么导致",
+    "怎么治", "怎么治疗", "如何治疗", "怎么预防", "如何预防",
+)
+# 对本助手身份/能力的询问（仅当整句无健康语义时生效，避免误伤"你发烧了"等）
+_META_SELF_PATTERNS = (
+    "你是什么", "你是谁", "你是做什么", "能做什么", "你叫什么",
+    "介绍一下你", "介绍一下助手", "你是个什么", "你会什么", "你有什么功能",
+)
+
+
+def _is_meta_or_offtopic(text: str) -> bool:
+    """是否"无关健康"的元问题（询问本助手身份/能力等）。
+
+    判断基准是**正向的自我指代语义**，而非"没有医疗实体就拒"——因此绝不误伤
+    "你发烧了怎么办"（有症状）或"吃了三粒怎么办"（剂量语气，上下文依赖）这类
+    健康域追问。整句只要含健康信号（症状/药物/疾病/病痛感官词/怎么办等）即不判元。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    from app.core.keyword_matcher import (
+        get_drug_matcher,
+        get_route_symptom_matcher,
+    )
+    health_signal = (
+        get_route_symptom_matcher().contains_any(t, use_boundary=True)
+        or get_drug_matcher().contains_any(t)
+        or any(w in t for w in ("病", "药", "痛", "痒", "难受", "不舒服", "症状", "怎么办", "怎么"))
+    )
+    if health_signal:
+        return False
+    return any(pat in t for pat in _META_SELF_PATTERNS)
+
+
+def _is_knowledge_anchored(text: str, matcher) -> bool:
+    """knowledge 意图实体锚定判定。
+
+    任一命中即判 knowledge：
+      1. 命中具体疾病名（matcher 映射为 knowledge_disease）——如"高血压是什么病"
+      2. 带医疗限定措辞——如"是什么病/怎么回事/怎么治/如何预防"
+      3. 命中知识意图词（是什么/原因/治疗/预防…）且话里含医疗实体（症状/药物/疾病）
+    三者皆不满足则返回 False：避免"你是什么模型"因裸"是什么"误判 knowledge。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    matched_vals = matcher.get_matched_keywords(t, use_boundary=True)
+    if not matched_vals:
+        return False
+    if "knowledge_disease" in matched_vals:
+        return True
+    if any(ph in t for ph in _KB_MEDICAL_QUALIFIERS):
+        return True
+    matched_orig = matcher.get_matched_originals(t, use_boundary=True)
+    if any(o in _KB_INTENT_WORDS for o in matched_orig):
+        from app.core.keyword_matcher import get_drug_matcher, get_route_symptom_matcher
+        has_med_subject = (
+            get_route_symptom_matcher().contains_any(t, use_boundary=True)
+            or get_drug_matcher().contains_any(t)
+            or "knowledge_disease" in matched_vals
+        )
+        if has_med_subject:
+            return True
+    return False
+
+
 def detect_rule_based_route(question: str) -> Optional[str]:
     """优先使用规则快速判断路由（优先级：symptom > knowledge > general）
 
@@ -96,9 +179,14 @@ def detect_rule_based_route(question: str) -> Optional[str]:
     if symptom_matcher.contains_any(text, use_boundary=True):
         return "symptom"
 
-    # 2. 再检查知识关键词 —— AC 自动机 O(m)
+    # v9.59 L2：元问题（无健康语义地询问本助手身份/能力）→ 直接回答，绝不进 RAG。
+    # 就地在规则层短路为 general，避免掉进上下文/LLM 层又被误当知识检索。
+    if _is_meta_or_offtopic(text):
+        return "general"
+
+    # 2. 检查知识关键词——实体锚定：不再裸"是什么"触发（见 _is_knowledge_anchored）
     knowledge_matcher = get_route_knowledge_matcher()
-    if knowledge_matcher.contains_any(text, use_boundary=True):
+    if _is_knowledge_anchored(text, knowledge_matcher):
         return "knowledge"
 
     # 3. 最后检查 general（精确匹配，避免误判）
@@ -622,6 +710,42 @@ _COMPLIANCE_REDLINE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 紧急求助场景关键词（v9.60）：仅覆盖明确危急的场景/事故/中毒，宁缺毋滥。
+# 刻意不含内科急症词（胸痛/呼吸困难/剧烈头痛/持续高烧）——这些仍走正常症状问答，
+# 下游 safety_review_engine.inject_emergency_alert 会追加"立即就医/拨打120"。
+# "中毒"不裸触发（需"服毒/喝农药/中毒晕倒"等强场景），防"怎么检测水中毒物"误伤。
+_EMERGENCY_SCENE_RE = re.compile(
+    r'被(?:车|汽车|轿车|货车|摩托|电动?)撞|撞车|车祸|被撞'
+    r'|出了很多血|出(?:了)?大量血|血流不止|大出血|头破血流|一直流(?:血|不停)'
+    r'|昏迷不醒|叫不醒|晕倒在地|晕死|不省人事|失去(?:了)?意识'
+    r'|溺水|被水淹|触电|电击'
+    r'|坠楼|跳楼|从(?:几|高)?楼(?:上)?摔|高处坠落'
+    r'|刀(?:砍|刺)|被砍|被(?:人|刀)刺|砍伤|刺伤'
+    r'|喝[了]?(?:农药|毒药|清洁剂|不明液体)|服毒|吞药(?:自杀)?|吃药自杀|中毒晕倒|中毒昏迷'
+    r'|噎到|窒息',
+    re.IGNORECASE,
+)
+
+
+def _detect_emergency(question: str) -> Optional[str]:
+    """检测当前问句是否命中明确的紧急求助场景，命中返回命中的触发词，否则 None。"""
+    m = _EMERGENCY_SCENE_RE.search(question or "")
+    return m.group(0) if m else None
+
+
+def build_emergency_help_answer(question: str, matched: str) -> str:
+    """紧急求助回复：立即 120 指引 + 等待救援期间的临时处理 + 免责声明（不涉诊断，不越红线）。"""
+    return (
+        f"检测到您提到“{matched}”，这可能是需要立即处理的情况。\n\n"
+        f"⚠️ 请立即拨打 120 急救电话，或让身边人帮忙呼救；如涉及人身安全请同时拨打 110。\n"
+        f"在等待专业救援时：\n"
+        f"1. 保持伤者安静，尽量不要随意搬动（尤其疑似骨折/脊柱损伤时）；\n"
+        f"2. 对大出血，用干净毛巾/衣物持续按压出血部位，勿频繁掀开查看；\n"
+        f"3. 若意识不清、无呼吸，请按 120 调度员指引进行心肺复苏（CPR）；\n"
+        f"4. 保持伤者呼吸通畅，勿随意喂水或喂药。\n\n"
+        f"⚠️ 我不是执业医师，以上仅为等待专业救援时的临时处理指引，请务必尽快联系专业急救人员。"
+    )
+
 
 def _compliance_redline(question: str) -> str:
     """命中合规红线返回说明文案，否则返回空串。"""
@@ -638,11 +762,24 @@ def _entry_intent_gate(state: MedicalAssistantState) -> Optional[tuple]:
     """
     question = state.get("question", "")
 
+    # --- 0. 紧急求助场景短路（v9.60，最高优先级：场景危急绝不丢失） ---
+    _emergency = _detect_emergency(question)
+    if _emergency:
+        logger.info(f"[入口闸] 紧急求助短路({_emergency})：{question[:30]}")
+        return ("emergency", build_emergency_help_answer(question, _emergency), "emergency")
+
     # --- 1. 合规红线置前（真新增：build_out_of_scope_answer 此前未接线） ---
     redline = _compliance_redline(question)
     if redline:
         logger.info(f"[入口闸] 合规红线短路：{redline[:30]} | {question[:30]}")
         return ("compliance", build_out_of_scope_answer(question), "compliance")
+
+    # --- 1.5 元问题防御性硬化（v9.60，合规红线之后） ---
+    # 无健康语义的本回合元询问（"你是什么模型/你能做什么"）→ 放行到第二层 general→direct_answer，
+    # 不检索、不澄清。放在澄清块之前，防止 should_clarify 误把元问题清成 query 澄清。
+    if _is_meta_or_offtopic(question):
+        logger.info(f"[入口闸] 元问题/无健康实体的本回合询问，交第二层 general→direct_answer（不检索）：{question[:30]}")
+        return None
 
     # --- 2. 可答性澄清前置（复用 intent_clarify 判定链，与 _decode_answerable 一致） ---
     # 用路由器时间点的上下文（历史摘要 + 临床快照升级）喂 _context_has_entity，
@@ -3374,10 +3511,15 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     logger.info(f"规则引擎审查完成：status={status}, risk_tags={risk_tags}, "
                 f"耗时={(time.time() - start_time) * 1000:.1f}ms")
 
-    # ===== 第二步：LLM 深度审查（仅高风险时触发） =====
+    # ===== 第二步：LLM 深度审查（v9.61 收紧：仅高危/拦截才触发） =====
+    # 原"risk_tags or status==revise"会让规则引擎判 revise 的用药核对/症状组合
+    # 也额外调用一次云端 LLM（~1s）。这些 revise 是措辞修订/免责注入，规则引擎已生成
+    # revised_answer，无需再调 LLM。收紧为仅 block（拦截）或高危 emergency_risk_missed
+    # 走云端深度审查，保住安全底线同时省去 revise 类的一次云端调用。
+    _LLM_SAFETY_TRIGGER_TAGS = {"emergency_risk_missed"}
     warnings = []
 
-    if risk_tags or status == "revise":
+    if status == "block" or _LLM_SAFETY_TRIGGER_TAGS.intersection(risk_tags):
         try:
             from app.graph.nodes.prompts import SAFETY_CHECK_PROMPT
             from app.graph.nodes.structured_output import invoke_structured
