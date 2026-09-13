@@ -1,5 +1,42 @@
 # 系统优化更新日志
 
+## v9.64 - 实体覆盖兜底补全：修复精排把正确文档挤出 top-k（app/rag/hybrid_retriever.py、app/rag/entity_overlap.py、app/graph/nodes/nodes.py）
+
+背景：v9.63 后「布洛芬每天最大剂量」不再答降压药，但剂量详情（200-400mg/≤1200mg）仍答不出。定位：正确剂量 chunk 本就被 dense/sparse 召回（在融合候选池 top8），但被 **Reranker 排到 top-k 截断线之外**、反把内容无关的"氨氯地平最大10mg""足疗程足剂量原则"排前，导致后续实体过滤面对的是无实体的集合。根因是**精排取舍**，不是召回数量——正好对应"不动召回数量参数"的方向。
+
+- **实体兜底补全（hybrid_retriever.invoke `_entity_backfill`）**：精排得到 final_docs 后、来源多样性过滤前，若最终文档整体不含 query 核心实体(jieba)，从**已召回的候选池（reranker_input）**里把含实体文档补回并前置、去重。只重新引入已召回文档参与取舍，**不加深 dense/sparse/k 召回量**；无实体可判（纯泛化问句）或候选池无含实体文档时原样返回，不误动正常查询。
+- **实体逻辑抽到共享模块（app/rag/entity_overlap.py）**：`extract_entity_terms`/`has_query_overlap` 从 nodes.py 抽出，供 graph 过滤与 retriever 兜底两处复用，避免 hybrid_retriever 反向 import nodes.py（循环导入）。nodes.py 改为 import 复用。
+- 验证（`my_medical_env`，`ENABLE_SEMANTIC_CACHE=false`）：「布洛芬每天最大剂量」不再答降压药/氨氯地平，改为按文档诚实话述（未提供具体数值则建议咨询医生）——**主题错位已消除**；高血压/胸痛/感冒/烫伤等正常查询首文均命中本主题，兜底不再触发，无回归。
+- 诚实残留：剂量详情 chunk（每次200-400mg/≤1200mg）**未被 dense/sparse 召回**，A 的兜底只能在"已被召回"的文档里补，故暂时取不到精确数值。若要拿到精确剂量，需在不动召回量的前提下做"实体锚定召回"（按 jieba 实体词定向拉取含该实体的 chunk）——另案待评估，见 v9.64 之后的排期。
+
+<footer>v9.64 · app/rag/hybrid_retriever.py、app/rag/entity_overlap.py、app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
+## v9.63 - 检索错位修复：jieba 实体重叠过滤 + 移除前2名无条件保留（app/graph/nodes/nodes.py、app/rag/evaluation.py）
+
+背景：黄金测试集逐条诊断锁定一类**检索跑题** badcase——问「布洛芬每天最大剂量是多少」召回并答出「氨氯地平（降压药）」、问狗咬伤答烫伤、流鼻血答鼻炎等。根因链：① 召回 top 太浅（dense k*2=6）真文档未进候选；② Reranker 把内容无关但句子相似的分段排到最高；③ `filter_relevant_docs` 里「前2名无条件保留」把误召回硬塞进生成。旧 `has_query_overlap` 用 re.findall，把中文整句当单个 token，「布洛芬每天最大剂量是多少」无法与任何文档匹配，几乎恒判"不相关"或恒判"相关"，启发式过滤形同虚设。
+
+- **`has_query_overlap` 改为 jieba 实体重叠（nodes.py）**：新增 `_GENERIC_TERMS` 泛词表 + `_extract_entity_terms`（jieba 切词，滤掉"多少/怎么办/治疗"等问句泛词），取出 query 实质实体（药名/症状/疾病，如「布洛芬」）；文档含任一实体词即判相关。无实体可判（纯泛化问句）时返回 True，不误杀合法知识问询。
+- **`filter_relevant_docs` 移除「前2名无条件保留」（nodes.py，Reranker 分支）**：改为所有文档一视同仁过实体重叠校验；被滤空时返回空列表、交由上层走无结果兜底，**绝不喂不相关文档给 LLM**（原回退 top2 会把氨氯地平塞回生成）。
+- **评测检索路径对齐生产（evaluation.py `run_retrieval`）**：此前 `RAGEvaluator` 直接调 `get_hybrid_retriever().invoke()`，绕过 graph 的 `filter_relevant_docs`，检索错位类 badcase 无法在评测里复现、也无法验证修复。改为检索后同样过 `filter_relevant_docs`。
+- 验证（`my_medical_env`，`ENABLE_SEMANTIC_CACHE=false` 关缓存）：布洛芬 6 条中，「布洛芬每天最大剂量」**不再答降压药**（改为无直接命中兜底），其余 5 条含布洛芬文档均被正确保留并正常作答。
+- 说明：本案 dose 片段未被召回（0/6 含布洛芬），实体过滤只滤噪声、补不回升缺失的真文档——#4 剂量查询仍答不出属**召回深度**问题，B'（过滤）外另一待办，另案处理。
+
+<footer>v9.63 · app/graph/nodes/nodes.py、app/rag/evaluation.py、CHANGELOG.md</footer>
+
+## v9.62 - 黄金测试集答案匹配判定脚本（scripts/evaluate_golden_match.py）
+
+背景：RAGAS 四维指标（faithfulness/relevance/context_*）只衡量「回答是否基于上下文、是否切题」，不回答「系统答的内容与金标答案是否一致」。黄金测试集每条自带 `key_facts`（金标要点），本可用作确定性判定，但初版若用「归一化后字面子串匹配」，实测 55 条仅 3 条通过——绝大多数是**假阴性**：系统答对但换同义词/语序/括号引用/更具体化，字面未中即判失败（例：问「孕妇吃布洛芬」，系统答「妊娠晚期禁用」≠ 要点「孕妇禁用布洛芬」；问「感冒流感区分」，答「不建议一起使用」≠「不建议联合使用」）。字面子串虽快但粒度过苛，评估分数失真、不可信。真正混在其中的少数是**检索跑题/答非所问**（问布洛芬剂量答出降压药氨氯地平、问感冒流感答鼻塞护理）——那才是该修的真 badcase，但占比小，不能凭 3/55 断言系统崩坏。
+
+- **新增 `scripts/evaluate_golden_match.py`（两级判定，可并行）**：
+  1. 先归一化字面子串匹配（快、省调用）；
+  2. 对「字面未命中」的要点用 LLM 判定 answer 是否覆盖其语义（同义/更具体/换说法都算命中），一次调用判一批（按编号映射，防 LLM 改写原文导致失配）。
+  报告除 pass/fail 外，统计「被 LLM 语义复审挽回的假阴性数」，量化评测苛刻度。
+- 验证（`my_medical_env`）：孕妇布洛芬案例（字面 2/3）剩余要点经 LLM 判「孕妇禁用布洛芬」语义命中 → 3/3 ✅ 假阴性被挽回；布洛芬禁忌案例系统确未答出消化性溃疡/妊娠晚期/阿司匹林哮喘等，LLM 判定全未命中仍 ❌（不过放），且因系统确已答到「肝肾功能不全者慎用」将「严重肝肾功能不全」判命中——判定准确。
+- **并行**：ThreadPoolExecutor（`--concurrent` 默认 3），每样本独立 worker 线程各自 asyncio 并发调云端 embedding+LLM，遇限流/空答案指数退避重试，把分钟级串行压到秒级。`--no-semantic` 可回退纯字面子串、`--limit N` 快速试跑。
+- 复用 `RAGEvaluator` 检索+生成链路，不改动现有评估逻辑；输出 `data/golden_match_report.json`。Windows GBK 控制台强制 stdout UTF-8 打印 ✅/❌。
+
+<footer>v9.62 · scripts/evaluate_golden_match.py、CHANGELOG.md</footer>
+
 ## v9.61 - 保守提速：安全审查收紧 + 语义缓存命中提升（app/graph/nodes/nodes.py、app/core/config.py、app/cache/semantic_cache.py）
 
 背景：基于 `data/metrics/metrics.db`（1015 条 node_metrics）的真实耗时画像定位瓶颈。主链路 avg：答案生成 11273ms（云端主模型流式输出长文，绝对大头）、知识检索 3040ms（云端 embedding+BM25+reranker）、临床快照 1429ms、安全检查 1178ms、查询重写 906ms、用户档案 863ms、问题拆解 569ms。关键事实：① 模型路由——云端 glm-4-flash 只用于最终答案生成（`get_llm(streaming=True)`）与直接问答、症状方向推断；查询重写/问题拆解/路由LLM兜底/档案提取/安全审查LLM/临床快照均走本地 Ollama qwen2.5:1.5b（`.env` `LOCAL_MODEL_ENABLED=True`，覆盖 config.py 默认 False），故上述中间节点 ~1s 耗时属本地推理，非云端；② **L2 语义缓存与查询缓存缓存的是"检索文档"而非"最终答案"**——命中后仍会重新生成答案，只省检索 ~3s；③ 答案生成 11s 取决于云端模型输出长文。

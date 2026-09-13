@@ -244,7 +244,11 @@ class RAGEvaluator:
     # -----------------------------------------------------------------------
 
     def run_retrieval(self, question: str) -> Dict:
-        """执行检索，返回 {contexts: [...], scores: [...], docs: [...]}"""
+        """执行检索，返回 {contexts: [...], scores: [...], docs: [...]}
+
+        对齐生产 graph：检索后同样经过 filter_relevant_docs 实体重叠过滤，
+        否则评测走的检索路径与线上不一致，检索错位类 badcase 无法在评测里复现。
+        """
         retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
         try:
             docs = retriever.invoke(question, original_query=question)
@@ -252,6 +256,9 @@ class RAGEvaluator:
             logger.error(f"检索失败: {e}")
             return {"contexts": [], "scores": [], "docs": []}
 
+        from app.graph.nodes import filter_relevant_docs
+
+        docs = filter_relevant_docs(question, docs)
         contexts = [doc.page_content for doc in docs]
         scores = [doc.metadata.get("rerank_score", 0.0) for doc in docs]
         return {"contexts": contexts, "scores": scores, "docs": docs}

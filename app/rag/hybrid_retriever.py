@@ -28,6 +28,7 @@ except ImportError:
     from langchain_classic.retrievers import EnsembleRetriever
 
 from app.cache.semantic_cache import get_semantic_cache
+from app.rag.entity_overlap import extract_entity_terms, has_query_overlap
 from app.rag.reranker import get_reranker
 from app.rag.vector_store import get_vector_store, load_documents_from_store
 from app.rag.parent_child_store import get_parent_child_manager
@@ -395,6 +396,42 @@ class HybridRetriever(BaseRetriever):
         ranked_keys = sorted(score_map.keys(), key=lambda key: score_map[key], reverse=True)
         return [doc_map[key] for key in ranked_keys]
 
+    def _entity_backfill(self, query: str, pool: List[Document],
+                         final_docs: List[Document]) -> List[Document]:
+        """实体覆盖兜底补全（v9.64）
+
+        精排把含 query 核心实体的文档挤出 top-k、反而留下内容无关文档时，从已召回
+        的候选池（pool）里把含实体文档补回并前置，去重后返回。仅在 final_docs 整体
+        不含实体时触发；无实体可判时原样返回，避免动无关查询。
+        """
+        entities = extract_entity_terms(query)
+        if not entities or not final_docs:
+            return final_docs
+        final_has = any(has_query_overlap(query, d.page_content) for d in final_docs)
+        if final_has:
+            return final_docs
+        backfill = [d for d in (pool or []) if has_query_overlap(query, d.page_content)]
+        if not backfill:
+            logger.info(f"实体兜底补全：候选池无含实体文档，维持原精排结果（query={query[:30]}）")
+            return final_docs
+        seen = set()
+        merged: List[Document] = []
+        for d in backfill + final_docs:
+            key = (
+                d.metadata.get("chunk_id")
+                or d.metadata.get("content_hash")
+                or getattr(d, "id", None)
+                or f"{d.metadata.get('source', '')}:{hash(d.page_content)}"
+            )
+            if key not in seen:
+                seen.add(key)
+                merged.append(d)
+        logger.info(
+            f"实体兜底补全：精排结果无实体命中({entities[:3]})，从候选池补回 "
+            f"{len(backfill)} 条实体文档，合并后 {len(final_docs)} -> {len(merged)}"
+        )
+        return merged
+
     def _should_skip_reranker(self, query: str, candidates: List[Document],
                                top1_dense_score: float = 0.0) -> bool:
         """判断是否可以跳过 Reranker，降低首 token 延迟。
@@ -634,6 +671,12 @@ class HybridRetriever(BaseRetriever):
                     f"跳过 Reranker：candidate_count={len(candidates)}, k={self.k}, rerank_top_k={self.rerank_top_k}, query={query[:50]}"
                 )
             final_docs = candidates[:self.k]
+
+        # v9.64 实体覆盖兜底补全：若精排结果不含 query 核心实体，而候选池(已召回的
+        # 精排输入)里有含实体文档，说明精排把正确文档挤出了 top-k（如"布洛芬剂量"
+        # 误排成"降压药最大10mg"）。把含实体候选补回并前置——只把召回过的文档重新
+        # 引入取舍，不加深 dense/sparse 召回量。无实体可判（纯泛化问句）时跳过。
+        final_docs = self._entity_backfill(query, reranker_input, final_docs)
 
         # v9.4→v9.6.1: 文档来源多样性过滤——同一来源文档最多保留 max_per_source 个 chunk
         # 避免"感冒"类高频主题全部命中同一文档，导致其他文档的补充信息丢失

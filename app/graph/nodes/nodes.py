@@ -2633,33 +2633,7 @@ def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit:
     return sources
 
 
-def has_query_overlap(question: str, doc_content: str) -> bool:
-    """基于关键词重叠的轻量相关性判断
-
-    改进：
-    1. 要求至少2个关键词命中才算相关，避免单字/泛化词误匹配
-    2. 过滤口语虚词（怎么办/怎么样/好不好等），避免因这些词不命中文档
-       而把真正相关的文档（如含"头痛"的文档）误判为不相关
-    """
-    # 口语虚词过滤：这些词在正式医学文档中几乎不会出现，
-    # 但用户查询中很常见（如"头痛怎么办"中的"怎么办"）
-    ORAL_FILLERS = {"怎么办", "怎么样", "好不好", "怎么治", "怎么处理",
-                    "怎么缓解", "什么药", "吃什么", "如何", "该如何"}
-
-    tokens = [token for token in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower())
-              if len(token) >= 2 and token not in ORAL_FILLERS]
-    if not tokens:
-        # 查询只剩口语虚词时，降级为单字匹配
-        raw_tokens = [t for t in re.findall(r"[一-鿿A-Za-z0-9]+", question.lower()) if len(t) >= 2]
-        if not raw_tokens:
-            return False
-        content = (doc_content or "").lower()
-        return any(t in content for t in raw_tokens)
-
-    content = (doc_content or "").lower()
-    match_count = sum(1 for token in tokens if token in content)
-    # 至少匹配1个实质关键词（过滤掉虚词后，1个关键词命中即算相关）
-    return match_count >= 1
+from app.rag.entity_overlap import extract_entity_terms, has_query_overlap
 
 
 def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
@@ -2707,15 +2681,15 @@ def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
     if has_rerank_scores:
         # 单一问题 Reranker 排序：信任排序结果，保留 Top 文档
         filtered_docs = []
-        for index, doc in enumerate(retrieved_docs):
+        for doc in retrieved_docs:
             overlap = has_query_overlap(question, doc.page_content)
-            # 前2名无条件保留（Reranker排序可信），其余需关键词重叠
-            if index < 2 or overlap:
+            if overlap:
                 filtered_docs.append(doc)
             else:
-                logger.info(f"文档启发式过滤（Reranker排序靠后+无重叠）：{doc.page_content[:50]}...")
+                logger.info(f"文档启发式过滤（Reranker排序+无查询实体重叠）：{doc.page_content[:50]}...")
 
-        # Reranker 已执行时，至少保留前2名（Reranker排序可信）
+        # 校验通过的重叠文档已剔除与 query 内容无关的误召回（如剂量问题误召降压药片段）
+        # 全部被滤空时返回空列表，交由上层走无结果兜底（不喂不相关内容给 LLM 是本次修复要点）
         return filtered_docs
 
     # 单一问题 + Reranker 未执行：用关键词重叠做启发式过滤

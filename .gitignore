@@ -16,3 +16,15 @@ __pycache__/
 *.pyc
 # Office 临时锁定文件（Excel/Word 打开时产生的 ~$ 开头文件，勿提交）
 ~$*
+
+# ---- 可重建的运行时/缓存数据（勿提交）----
+# 向量知识库（可重建）
+data/chroma_db/
+# 序列化检索缓存
+data/*.pkl
+data/*.db
+app/api/data/metrics/*.db
+# 调试输出
+scripts/chroma_chunks.txt
+# agent worktree 标记
+.claude/worktrees/
