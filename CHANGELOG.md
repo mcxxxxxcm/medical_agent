@@ -1,5 +1,16 @@
 # 系统优化更新日志
 
+## v9.65 - 两层修复 A 类检索失败：过滤层同义词对齐 + 召回层实体锚定（app/rag/entity_overlap.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py）
+
+背景：黄金测试集语义评估定位一批 A 类 badcase——**文档里一字不差有完整答案，但 RAG 检索/过滤后 0 分（多数空答案）**。排查确认失败集中在两层同一根因（检索词与过滤判定对"同义词/实体对齐"处理不一致）：① **过滤层**：`has_query_overlap` 用纯字面子串匹配，query"发烧"∥文档"发热"、"流鼻血"∥"鼻出血"、"宝宝"∥"婴儿" 判成不相关 → 相关文档被整个滤成 0 → 空答案（"6个月宝宝发烧""流鼻血"）；② **召回层**："被狗咬伤了怎么处理" → 犬咬伤章节（急诊指南）含全部 6 个要点，但 dense/BM25 根本没召回，`_entity_backfill` 只从已召回 pool 补、救不了没被召回的文档。
+
+- **过滤层同义词对齐（entity_overlap.py）**：新增共享同义词表 `SYMPTOM_SYNONYMS`（抽取 nodes.py `symptom_alias` 原 9 条 + `_SYMPTOM_CANONICAL` 无冲突条目 + 实测缺口"流鼻血→鼻出血""宝宝→婴儿"），构建反向等价类 `expand_term`，`has_query_overlap` 改为**任一等价形式命中即算重叠**（双向覆盖"发烧/发热"等）。签名不变 → `filter_relevant_docs` 与 `_entity_backfill` 两处调用方零改动自动受益。nodes.py `_infer_disease_direction` 改引用共享表，方向推断输出逐字节不变；`_SYMPTOM_CANONICAL`（答案清洗专用）保持独立。
+- **召回层实体锚定（hybrid_retriever.py `_entity_backfill` stage-2 兜底）**：当 final_docs 与候选池均无含 query 核心实体文档时（正确文档根本未被召回），按 query 实体词（`_is_anchor_term` 滤掉"怎么/症状"等过泛词，`ANCHOR_SKIP_TERMS`）做**定向检索** `_entity_anchored_search`——复用 `_dense_search`，用规范词（normalize_term）拉取含实体文档补回候选，去重 + 上限 self.k，全程 try/except 降级。仅在失败路径触发，正常查询零开销。
+- 验证（`my_medical_env`，`ENABLE_SEMANTIC_CACHE=false` 关缓存）：检索冒烟 6 个 A 类案例 filtered 0→≥1 且来源正确（狗咬伤→急诊指南、宝宝发烧→儿童护理+发热指南、布洛芬剂量→常见药物指南）；黄金评测「被狗咬伤了怎么处理」0/6 空答案 → 6/6 通过、「3个月以下婴儿发烧」通过、「6个月宝宝发烧」0→0.4、「流鼻血」0→0.67。全量通过率与改动前持平（26/55），关键 A 类案例质量提升、无新增检索回归；高血压/胸痛等无别名词条零变化。
+- 诚实结论：布洛芬剂量/胃食管反流仍 0 分，因召回的是**表格概览/含实体但非剂量详情**的 chunk（真正 200-400mg/1200mg 数值行未进候选）——属 v9.64 已标注的"剂量详情 chunk 召回"遗留，另案处理；部分剩余失败（流鼻血漏冰袋/时长、头痛/扭伤等）是**生成层要点覆盖不全**，非本两层修复范围。
+
+<footer>v9.65 · app/rag/entity_overlap.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
 ## v9.64 - 实体覆盖兜底补全：修复精排把正确文档挤出 top-k（app/rag/hybrid_retriever.py、app/rag/entity_overlap.py、app/graph/nodes/nodes.py）
 
 背景：v9.63 后「布洛芬每天最大剂量」不再答降压药，但剂量详情（200-400mg/≤1200mg）仍答不出。定位：正确剂量 chunk 本就被 dense/sparse 召回（在融合候选池 top8），但被 **Reranker 排到 top-k 截断线之外**、反把内容无关的"氨氯地平最大10mg""足疗程足剂量原则"排前，导致后续实体过滤面对的是无实体的集合。根因是**精排取舍**，不是召回数量——正好对应"不动召回数量参数"的方向。

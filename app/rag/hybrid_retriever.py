@@ -28,7 +28,12 @@ except ImportError:
     from langchain_classic.retrievers import EnsembleRetriever
 
 from app.cache.semantic_cache import get_semantic_cache
-from app.rag.entity_overlap import extract_entity_terms, has_query_overlap
+from app.rag.entity_overlap import (
+    ANCHOR_SKIP_TERMS,
+    extract_entity_terms,
+    has_query_overlap,
+    normalize_term,
+)
 from app.rag.reranker import get_reranker
 from app.rag.vector_store import get_vector_store, load_documents_from_store
 from app.rag.parent_child_store import get_parent_child_manager
@@ -398,11 +403,15 @@ class HybridRetriever(BaseRetriever):
 
     def _entity_backfill(self, query: str, pool: List[Document],
                          final_docs: List[Document]) -> List[Document]:
-        """实体覆盖兜底补全（v9.64）
+        """实体覆盖兜底补全（v9.64/v9.65）
 
         精排把含 query 核心实体的文档挤出 top-k、反而留下内容无关文档时，从已召回
         的候选池（pool）里把含实体文档补回并前置，去重后返回。仅在 final_docs 整体
         不含实体时触发；无实体可判时原样返回，避免动无关查询。
+
+        v9.65 stage-2（纵深兜底）：pool 也无含实体文档时，说明正确文档根本未被
+        dense/BM25 召回（如"被狗咬伤"漏犬咬伤章节）。此时按 query 实体词做一次
+        定向检索（_entity_anchored_search）把含实体文档补回。仅在失败路径触发。
         """
         entities = extract_entity_terms(query)
         if not entities or not final_docs:
@@ -412,11 +421,29 @@ class HybridRetriever(BaseRetriever):
             return final_docs
         backfill = [d for d in (pool or []) if has_query_overlap(query, d.page_content)]
         if not backfill:
-            logger.info(f"实体兜底补全：候选池无含实体文档，维持原精排结果（query={query[:30]}）")
-            return final_docs
+            # stage-2：候选池也无含实体文档 → 正确文档没被召回，按实体词定向检索兜底
+            anchored = self._entity_anchored_search(query, entities)
+            if not anchored:
+                logger.info(
+                    f"实体兜底补全：精排与候选池均无含实体文档，定向检索也无结果，"
+                    f"维持原精排结果（query={query[:30]}）"
+                )
+                return final_docs
+            logger.info(
+                f"实体兜底补全：精排与候选池均无含实体文档，定向检索补回 "
+                f"{len(anchored)} 条（query={query[:30]}）"
+            )
+            return self._merge_deduped(anchored + final_docs)
+        logger.info(
+            f"实体兜底补全：精排结果无实体命中，从候选池补回 {len(backfill)} 条（query={query[:30]}）"
+        )
+        return self._merge_deduped(backfill + final_docs)
+
+    def _merge_deduped(self, docs: List[Document]) -> List[Document]:
+        """按 chunk_id/content_hash/id/source:hash 去重，保序。"""
         seen = set()
         merged: List[Document] = []
-        for d in backfill + final_docs:
+        for d in docs:
             key = (
                 d.metadata.get("chunk_id")
                 or d.metadata.get("content_hash")
@@ -426,11 +453,42 @@ class HybridRetriever(BaseRetriever):
             if key not in seen:
                 seen.add(key)
                 merged.append(d)
-        logger.info(
-            f"实体兜底补全：精排结果无实体命中({entities[:3]})，从候选池补回 "
-            f"{len(backfill)} 条实体文档，合并后 {len(final_docs)} -> {len(merged)}"
-        )
         return merged
+
+    def _is_anchor_term(self, term: str) -> bool:
+        """判断实体词是否适合作为定向检索锚词。过泛/单字词跳过。"""
+        if not term or len(term) < 2:
+            return False
+        if term in ANCHOR_SKIP_TERMS:
+            return False
+        return True
+
+    def _entity_anchored_search(self, query: str, entities: List[str]) -> List[Document]:
+        """实体锚定定向检索（v9.65 stage-2 兜底）
+
+        当正确文档未被 dense/BM25 召回时，按 query 的实质实体词在向量库额外检索
+        一次，把含该实体的文档补进候选。仅失败路径触发，正常查询零开销。
+
+        用规范词（normalize_term）检索——文档侧常用规范写法；再经同义词感知的
+        has_query_overlap 过滤，避免锚词本身召回无关文档。结果按命中实体数降序、
+        总上限 self.k，全程 try/except 降级。
+        """
+        anchors = [t for t in entities if self._is_anchor_term(t)]
+        if not anchors:
+            return []
+        collected: List[Document] = []
+        for t in anchors:
+            phrase = normalize_term(t)
+            try:
+                docs, _ = self._dense_search(phrase, query_embedding=None)
+            except Exception as e:
+                logger.warning(f"实体定向检索失败（{phrase}）：{e}")
+                continue
+            for d in docs:
+                if not has_query_overlap(query, d.page_content):
+                    continue
+                collected.append(d)
+        return self._merge_deduped(collected)[:self.k]
 
     def _should_skip_reranker(self, query: str, candidates: List[Document],
                                top1_dense_score: float = 0.0) -> bool:

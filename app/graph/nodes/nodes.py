@@ -1558,9 +1558,9 @@ def _infer_disease_direction(question: str, rule_result: Dict[str, Any]) -> List
     # v9.52：规则词已改为 keyword_matcher 实际产出的标准词（"嗓子疼"而非"咽痛"），
     # 故别名统一向标准词对齐（"咽痛/咽喉痛/喉咙痛"→"嗓子疼"、"发烧"→"发热"），
     # 使口语变体能精确命中规则，避免落入 LLM 兜底（v9.51 漏掉"嗓子疼"导致咽痛类必走LLM）。
-    symptom_alias = {"咽痛": "嗓子疼", "咽喉痛": "嗓子疼", "喉咙痛": "嗓子疼",
-                     "咽喉炎": "咽炎", "头昏": "头晕", "流涕": "流鼻涕",
-                     "发烧": "发热", "咽喉": "嗓子", "腹疼": "腹痛"}
+    # v9.65：原局部 symptom_alias 抽到 entity_overlap.SYMPTOM_SYNONYMS 共享（供过滤/召回复用），
+    # 本处改为引用共享表，方向与输出逐字节不变；_SYMPTOM_CANONICAL（答案清洗）保持独立。
+    symptom_alias = SYMPTOM_SYNONYMS
     symptom_set = set(symptoms or [])
     for s in list(symptom_set):
         al = symptom_alias.get(s)
@@ -2633,7 +2633,7 @@ def format_retrieved_sources(retrieved_docs: Optional[List[Any]], content_limit:
     return sources
 
 
-from app.rag.entity_overlap import extract_entity_terms, has_query_overlap
+from app.rag.entity_overlap import SYMPTOM_SYNONYMS, extract_entity_terms, has_query_overlap
 
 
 def filter_relevant_docs(question: str, retrieved_docs: List[Any]) -> List[Any]:
