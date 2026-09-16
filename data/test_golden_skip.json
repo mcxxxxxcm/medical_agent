@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-09-15 03:32:21",
+  "total": 0,
+  "passed": 0,
+  "failed": 0,
+  "pass_rate": 0.0,
+  "avg_hit_ratio": 0.0,
+  "threshold": 0.7,
+  "concurrency": 1,
+  "semantic_judge": true,
+  "facts_llm_judged": 0,
+  "llm_recovered": 0,
+  "skipped_no_facts": 1,
+  "per_sample": [],
+  "skipped_samples": [
+    {
+      "question": "我现在体温37.8度，伴有头痛。",
+      "reason": "key_facts空缺(0个要点)"
+    }
+  ]
+}
