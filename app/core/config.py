@@ -69,7 +69,8 @@ class Settings(BaseSettings):
 
     # v9.16: 动态K值配置（按问题类型调整检索候选数量）
     RETRIEVAL_K_SYMPTOM: int = 8     # symptom类型检索K值（多跳推理需要更多候选）
-    RETRIEVAL_K_KNOWLEDGE: int = 5   # knowledge类型检索K值（单事实查询5个足够）
+    RETRIEVAL_K_KNOWLEDGE: int = 5     # knowledge类型检索K值（单事实查询5个足够）
+    RETRIEVAL_K_KNOWLEDGE_DETAIL: int = 8  # v9.66: 细则索取型knowledge检索K值（剂量/禁忌/识别/止血等。实测这类 query 细则/数值行排名常略靠后，5 会被 rerank top-k 截掉，8 能救回；非细则型仍用5避免引入噪声）
     RETRIEVAL_K_DEFAULT: int = 5     # 默认K值
 
     # ===== 邻域扩展配置 =====

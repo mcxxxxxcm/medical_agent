@@ -249,7 +249,17 @@ class RAGEvaluator:
         对齐生产 graph：检索后同样经过 filter_relevant_docs 实体重叠过滤，
         否则评测走的检索路径与线上不一致，检索错位类 badcase 无法在评测里复现。
         """
-        retriever = get_hybrid_retriever(k=3, alpha=0.5, use_reranker=True, rerank_top_k=8)
+        # v9.66: 评测检索深度与生产对齐（此前固定 k=3 比生产还浅，细则/数值 chunk 更召不回，
+        # 评测一直在用"半残系统"打分）。与生产 knowledge 分支一致：细则索取型用 8、其余 5。
+        from app.core.config import get_config
+        from app.graph.nodes.nodes import _is_detail_soliciting_query
+        _cfg = get_config()
+        _k = (_cfg.RETRIEVAL_K_KNOWLEDGE_DETAIL
+              if _is_detail_soliciting_query("knowledge", question)
+              else _cfg.RETRIEVAL_K_KNOWLEDGE)
+        retriever = get_hybrid_retriever(
+            k=_k, alpha=0.5, use_reranker=True, rerank_top_k=10
+        )
         try:
             docs = retriever.invoke(question, original_query=question)
         except Exception as e:

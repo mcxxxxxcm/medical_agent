@@ -206,9 +206,48 @@ class HybridRetriever(BaseRetriever):
         self.use_reranker = use_reranker
         self.rerank_top_k = rerank_top_k
         self.categories = categories
+        self._bm25_documents: List[Document] = []
 
         # 初始化 EnsembleRetriever
         self._init_ensemble_retriever(documents, use_cache)
+
+    def _complete_tables(self, docs: List[Document]) -> List[Document]:
+        """表格行级 chunk 整表补齐（v9.67）。
+
+        命中的常是行级表格 chunk（query 匹配到少数字段行）。top-k 截断 + 来源多样性
+        (max_per_source=3) 会把同表的其他关键行丢弃——如比对表命中"退热/止痛/起效"行、
+        却漏掉含"代谢途径/是否同服/剂量上限"的行，导致 LLM 拿不到完整表格信息而答不出
+        （实测"布洛芬和对乙酰氨基酚"召回 7 行全是适用年龄/退热，缺"肝代谢/肾排泄"）。
+
+        处理：一旦命中了任一 table_row chunk，就按 (source, table_title) 从全库文档集
+        `self._bm25_documents` 把该表的**全部行**补齐，保证 LLM 获得完整表格。
+        只影响带 table_title 的行级表格 chunk；非表格文档原样返回，不加深检索量。
+        """
+        rows = [d for d in docs if d.metadata.get("chunk_type") == "table_row"]
+        if not rows:
+            return docs
+        pool = self._bm25_documents
+        if not pool:
+            return docs
+        seen = {d.page_content or "" for d in docs}
+        full = list(docs)
+        for row in rows:
+            src = row.metadata.get("source")
+            title = row.metadata.get("table_title")
+            if not src or not title:
+                continue
+            for cand in pool:
+                if cand.metadata.get("chunk_type") != "table_row":
+                    continue
+                if cand.metadata.get("source") != src or cand.metadata.get("table_title") != title:
+                    continue
+                content = cand.page_content or ""
+                if content and content not in seen:
+                    seen.add(content)
+                    full.append(cand)
+        if len(full) > len(docs):
+            logger.info(f"表格整表补齐：{len(docs)} -> {len(full)}（补 {len(full) - len(docs)} 行）")
+        return full
 
     def _init_ensemble_retriever(self, documents: List[Document] = None, use_cache: bool = True):
         """构建 EnsembleRetriever（向量检索 + BM25 检索）"""
@@ -221,6 +260,8 @@ class HybridRetriever(BaseRetriever):
         # 2. 加载文档用于 BM25
         if documents is None:
             documents = self._load_bm25_documents(use_cache)
+        # v9.67: 保留全库 child chunks 供表格整表补齐（_complete_tables 需要按表名聚合所有行）
+        self._bm25_documents = documents
 
         if not documents:
             logger.warning("无可用文档，仅使用向量检索")
@@ -741,6 +782,10 @@ class HybridRetriever(BaseRetriever):
         # max_per_source=2→3：多子问题检索时需要更多同源文档覆盖不同子问题
         MAX_PER_SOURCE = 3
         final_docs = _apply_source_diversity(final_docs, max_per_source=MAX_PER_SOURCE)
+
+        # v9.67 表格整表补齐：放来源多样性**之后**，避免补的表格行又被同源 max_per_source=3 截断。
+        # 命中任一表行即把该表全部行补回，保证对比表/剂量表的关键行不因 top-k 截断丢失。
+        final_docs = self._complete_tables(final_docs)
 
         retrieval_time = (time.time() - retrieval_start) * 1000
 

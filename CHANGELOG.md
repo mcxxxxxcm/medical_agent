@@ -1,5 +1,29 @@
 # 系统优化更新日志
 
+## v9.67 - 评测可复现标尺 + 表格行级整表补齐（scripts/evaluate_golden_match.py、app/rag/hybrid_retriever.py、scripts/diag_recall.py）
+
+背景：① 黄金评测依赖云端 LLM，`MODEL_TEMPERATURE=0.2` 使同一系统每次全量 run **通过率在 46%–54% 间随机浮动**（实测三轮 29/25/26，v966 一次整轮 0 分一次 53.7%）——单点改动的正误完全无法从评测验证，这是"冲高真实通过率"的第一座山；② 大量"对比表/剂量表"类 query 检索缺失：表格是**行级 chunk**，top-k 截断 + 来源多样性(max_per_source=3) 把同表关键数据行（肝代谢/肾排泄/是否同服/剂量上限）截掉，LLM 拿到的只是"缺关键行的半张表"，要点属无米之炊。
+
+- **评测可复现标尺（evaluate_golden_match.py）**：答案生成 + 语义判定共用 `get_llm`，采样温度取 `config.MODEL_TEMPERATURE`（默认 0.2）。评测脚本在构建 evaluator 前把温度固定为 **0.0**——因 `get_llm` 走 lru_cache 懒加载、首个样本生成时才建实例，故此改写对整轮生效。验证：连续两轮 `--limit 20` 重复评测，hit_ratio 逐条 **完全一致**、通过数 10/10 相同 → 评测成为可复现、可比对的标尺。仅改评测进程内存中的 config，**不影响生产**。临时启用后真实稳定基线 **25/54（46.3%）**，avg_hit 0.664——比 temp0.2 的噪声带（~50%）更保守但可信；温度 0 使生成更严谨、适合医疗。
+- **表格整表补齐（hybrid_retriever.py）**：新增 `_complete_tables` 并在 `_init_ensemble_retriever` 保留全库文档集 `self._bm25_documents`。命中任一 `table_row` 行级 chunk 时，按 `(source, table_title)` 从全库补齐**该表全部行**，调用点在来源多样性**之后**（避免补的行再次被同源 max_per_source=3 截断）。只影响表格行 chunk、非表格文档原样返回，无检索回归。
+- **与 v9.66 深 K 联动（待补）**：整表补齐受限于"是否命中该表任一行"——生产 knowledge 浅 K=5 时命中表少，补齐受限（"布洛芬和对乙酰氨基酚"在 k=5 只补到 7 段、k=8 才带出含"主要代谢/成人单次"的第二张表 14 段）。表格/对比/剂量类 query 的深 K 覆盖是下一步待办（见 v9.66）。
+- **新增召回诊断脚本 `scripts/diag_recall.py`**：对指定 query 跑真实检索，逐 key_fact 判定是否出现在召回 chunk 中，区分 B 类（生成覆盖不全）/A 类（检索缺失），供检索层定位。
+- **prompt 覆盖强化尝试已回滚**：曾为 `RAG_ANSWER_PROMPT` 注入"要点完整覆盖"指令，全量评测下通过率反降（25 vs 29），判定无效后在 v9.67 内回滚，保持基线。
+
+诚实结论：稳定标尺 25/54。主战场仍是生成覆盖完整（B 类主体）+ 检索深度（k=5 太浅、对比类 query 未走深 K）。"hit 率 0.6–0.67 差一口气"的条目靠深 K + 后续要点补全（Stage3）消化。90% 目标留待下一轮。
+
+<footer>v9.67 · scripts/evaluate_golden_match.py、app/rag/hybrid_retriever.py、scripts/diag_recall.py、CHANGELOG.md</footer>
+
+## v9.66 - knowledge 检索深度自适应：细则索取型 query 用更深 K（app/core/config.py、app/graph/nodes/nodes.py、app/rag/evaluation.py）
+
+背景：黄金评测定位细则/数值类 query（剂量/禁忌/识别/止血等）召回深度不足——细则/数值行在 dense/BM25 中排名常略靠后，K=5 会被 rerank top-k 截掉（"布洛芬每天最大剂量""对乙酰氨基酚成人剂量"答不出精确数值，因正确 chunk 根本没进候选）。
+
+- **新增 `RETRIEVAL_K_KNOWLEDGE_DETAIL: int = 8`（config.py）**，并新增 `_DETAIL_SOLICIT_TERMS` 词表 + `_is_detail_soliciting_query()`（nodes.py）：仅对 `knowledge` 类型、命中"剂量/用量/最大/每次/禁忌/慎用/禁用/识别/鉴别/止血/急救/诊断/区分/判断"任一细则词的 query 用 K=8，否则仍用 5。词表刻意收窄，不含列举/定性词（哪些/分型/是什么/多少度），故列举定性型不加深——原因：全量 k=8 会引入噪声、反致漏点（实测颈椎病 5/6→0/6、呕吐 6/6→2/6、痛风 4/5→3/5）。
+- **评测检索深度对齐生产（evaluation.py `run_retrieval`）**：此前后固定 k=3 比生产还浅，评测在给"半残系统"打分；改为与生产 knowledge 分支一致（细则型 8、其余 5，`rerank_top_k` 8→10）。
+- 遗留：剂量"最精确数值行（200-400mg/≤1200mg）"仍受"是否被召回"制约，深 K 提升命中、整表补齐（v9.67）保证整表面面俱到，二者配合后才谈得上生成覆盖。
+
+<footer>v9.66 · app/core/config.py、app/graph/nodes/nodes.py、app/rag/evaluation.py、CHANGELOG.md</footer>
+
 ## v9.65 - 两层修复 A 类检索失败：过滤层同义词对齐 + 召回层实体锚定（app/rag/entity_overlap.py、app/rag/hybrid_retriever.py、app/graph/nodes/nodes.py）
 
 背景：黄金测试集语义评估定位一批 A 类 badcase——**文档里一字不差有完整答案，但 RAG 检索/过滤后 0 分（多数空答案）**。排查确认失败集中在两层同一根因（检索词与过滤判定对"同义词/实体对齐"处理不一致）：① **过滤层**：`has_query_overlap` 用纯字面子串匹配，query"发烧"∥文档"发热"、"流鼻血"∥"鼻出血"、"宝宝"∥"婴儿" 判成不相关 → 相关文档被整个滤成 0 → 空答案（"6个月宝宝发烧""流鼻血"）；② **召回层**："被狗咬伤了怎么处理" → 犬咬伤章节（急诊指南）含全部 6 个要点，但 dense/BM25 根本没召回，`_entity_backfill` 只从已召回 pool 补、救不了没被召回的文档。

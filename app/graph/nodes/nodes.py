@@ -1394,6 +1394,28 @@ _SYMPTOM_CARE_KEYWORDS = {
 _GENERIC_TREATMENT_KEYWORDS = "治疗 处理 药物 用药 缓解 护理 注意事项 家庭护理"
 
 
+# v9.66: knowledge 检索深度自适应——细则索取型 query 用更深 K（默认5→8）。
+# 词表刻意收窄，只覆盖"实测加深确有收益"的明细索取（剂量/禁忌/识别/止血/急救/诊断/
+# 区分等）。词表内不含列举词（哪些/分型/是什么/多少度 等），故列举/定性型天然不触发，
+# 不会加深。理由：全量 k=8 会救回靠后的细则 chunk，但也会给"分型/什么病/治疗"这类
+# query 引入噪声、反致漏点（实验：颈椎病 5/6→0/6、呕吐 6/6→2/6、痛风 4/5→3/5）。
+_DETAIL_SOLICIT_TERMS = ("剂量", "用量", "最大", "每次", "禁忌", "慎用", "禁用",
+                         "识别", "鉴别", "止血", "急救", "诊断", "区分", "判断")
+
+
+def _is_detail_soliciting_query(question_type: str, question: str) -> bool:
+    """是否细则索取型 knowledge query（需更深检索召回靠后的剂量/禁忌/步骤 chunk）。
+
+    仅对 knowledge 类型评估；任一细则词命中即加深。列举/定性型（哪些/分型/是什么）
+    不含细则词，自然不加深。
+    """
+    if question_type != "knowledge":
+        return False
+    if not question:
+        return False
+    return any(t in question for t in _DETAIL_SOLICIT_TERMS)
+
+
 def _enrich_treatment_query(query: str) -> str:
     """症状处理类问题检索词增强：命中治疗意图时，按症状追加护理/治疗专属关键词。
 
@@ -1776,7 +1798,13 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
         if question_type == "symptom":
             k = config.RETRIEVAL_K_SYMPTOM
         elif question_type == "knowledge":
-            k = config.RETRIEVAL_K_KNOWLEDGE
+            # v9.66: knowledge 内再分——细则索取型（剂量/禁忌/识别/急救/止血等）用更深 K，
+            # 否则用默认 5。实测此类 query 细则/数值行排名常略靠后，5 会被 rerank top-k 截掉；
+            # 而"分型/什么病/治疗"类不加深（实测加深易引入噪声、反而漏点）。
+            if _is_detail_soliciting_query(question_type, question):
+                k = config.RETRIEVAL_K_KNOWLEDGE_DETAIL
+            else:
+                k = config.RETRIEVAL_K_KNOWLEDGE
         else:
             k = config.RETRIEVAL_K_DEFAULT
 

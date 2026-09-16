@@ -49,6 +49,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 from app.rag.evaluation import RAGEvaluator
 from app.core.app_logging import get_logger
+from app.core.config import get_config
 
 logger = get_logger(__name__)
 
@@ -230,11 +231,11 @@ def run_one(evaluator: RAGEvaluator, sample: Dict, threshold: float,
 
 
 def _print_report(results, passed, failed, avg_hit, llm_recovered_total,
-                  facts_llm_judged, total, threshold, duration) -> None:
+                  facts_llm_judged, total, threshold, duration, skipped=0) -> None:
     print("\n" + "=" * 60)
     print("黄金测试集匹配判定报告")
     print("=" * 60)
-    print(f"  总样本:      {total}")
+    print(f"  总样本:      {total}" + (f"（另有 {skipped} 条因缺 key_facts 跳过统计）" if skipped else ""))
     print(f"  通过:        {len(passed)}   ❌未通过: {len(failed)}")
     print(f"  通过率:      {len(passed) / total:.1%}" if total else "  通过率:      -")
     print(f"  平均要点命中率: {avg_hit:.1%}")
@@ -275,11 +276,22 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="只评估前 N 条（0=全部）")
     parser.add_argument("--concurrent", type=int, default=3, help="并行 worker 数（默认 3；云端并发越高越易限流）")
     parser.add_argument("--no-semantic", action="store_true", help="关闭 LLM 语义复审，只用字面子串匹配")
-    parser.add_argument("--store-contexts", action="store_true",
-                        help="把每条检索召回的前3段写进报告（诊断检索错位用）")
+    parser.add_argument("--store-contexts", dest="store_contexts", action="store_true", default=True,
+                        help="把每条检索召回的前3段写进报告（诊断检索错位用，默认开启）")
+    parser.add_argument("--no-contexts", dest="store_contexts", action="store_false",
+                        help="不把检索召回写进报告（省体积）")
     parser.add_argument("--only", type=str, default="", metavar="子串",
                         help="只评估 question 包含该子串的样本（如 --only 布洛芬），多个用 | 分隔")
     args = parser.parse_args()
+
+    # v9.67: 评测可复现标尺——固定 LLM 采样温度为 0。
+    # 答案生成 + 语义判定共用 get_llm（lru_cache 懒加载：首个样本生成时才建实例），
+    # 因此在构建 evaluator 前改写 config.MODEL_TEMPERATURE（默认 0.2）即可让整轮以确定性
+    # 采样，消除云端 LLM 随机性带来的 pass 波动，使全量通过率成为可复现、可比对的标尺。
+    # 说明：只影响评测进程内后续新建的 LLM 实例，不改变生产配置。
+    _cfg = get_config()
+    _cfg.MODEL_TEMPERATURE = 0.0
+    logger.info("评测确定性模式：MODEL_TEMPERATURE 已固定为 0.0")
 
     if args.concurrent < 1:
         logger.error("--concurrent 必须 >= 1")
@@ -346,8 +358,14 @@ def main():
                 done += 1
                 logger.info(f"进度 [{done}/{total}] 完成: {results[idx].get('question', '')[:30]}...")
 
+    # 过滤掉无要点（fact_total=0）的样本：0/0 必然 failed，是数据缺 key_facts 而非系统能力，
+    # 不让它进统计、也不算失败，单独计入 skipped。
+    skipped = [r for r in results if r.get("fact_total", 0) == 0]
+    results = [r for r in results if r.get("fact_total", 0) > 0]
+
     passed = [r for r in results if r.get("passed")]
     failed = [r for r in results if not r.get("passed")]
+    total = len(results)
     avg_hit = round(
         sum(r.get("hit_ratio", 0.0) for r in results) / len(results), 4
     ) if results else 0.0
@@ -357,7 +375,7 @@ def main():
     )
 
     _print_report(results, passed, failed, avg_hit, llm_recovered_total,
-                  facts_llm_judged, total, args.threshold, time.time() - start)
+                  facts_llm_judged, total, args.threshold, time.time() - start, skipped=len(skipped))
 
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -371,7 +389,10 @@ def main():
         "semantic_judge": use_semantic,
         "facts_llm_judged": facts_llm_judged,
         "llm_recovered": llm_recovered_total,
+        "skipped_no_facts": len(skipped),
         "per_sample": results,
+        "skipped_samples": [{"question": s.get("question", ""),
+                             "reason": f"key_facts空缺({s.get('fact_total', 0)}个要点)"} for s in skipped],
     }
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
