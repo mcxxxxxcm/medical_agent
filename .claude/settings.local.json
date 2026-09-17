@@ -218,7 +218,8 @@
       "Bash(ENABLE_SEMANTIC_CACHE=false \"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/diag_recall.py --only \"胃食管反流|一氧化碳|对乙酰氨基酚|布洛芬\")",
       "Bash(ENABLE_SEMANTIC_CACHE=false \"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/evaluate_golden_match.py --output data/golden_match_report_v968_table.json --concurrent 3)",
       "Bash(ENABLE_SEMANTIC_CACHE=false \"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/diag_recall.py --only \"胃食管反流\")",
-      "Bash(ENABLE_SEMANTIC_CACHE=false \"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/evaluate_golden_match.py --output data/golden_match_report_deterministic.json --concurrent 3)"
+      "Bash(ENABLE_SEMANTIC_CACHE=false \"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/evaluate_golden_match.py --output data/golden_match_report_deterministic.json --concurrent 3)",
+      "Bash(ENABLE_SEMANTIC_CACHE=false /d/Agent/software/envs/my_medical_env/python.exe scripts/diag_recall.py --only \"布洛芬的禁忌症|布洛芬每天最大剂量\")"
     ]
   },
   "enableAllProjectMcpServers": true,
