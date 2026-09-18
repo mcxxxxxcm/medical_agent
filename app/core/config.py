@@ -74,8 +74,11 @@ class Settings(BaseSettings):
     RETRIEVAL_K_DEFAULT: int = 5     # 默认K值
 
     # ===== 邻域扩展配置 =====
-    SIBLING_WINDOW: int = 1  # 邻域窗口大小，1 表示前后各取 1 个兄弟章节
-    MAX_SIBLING_CHARS: int = 1500  # v9.0: 2000→1500，缩短 Prompt token 数，降低 TTFT（~200-300ms）
+    # v9.69: SIBLING_WINDOW 1→2、MAX_SIBLING_CHARS 1500→2800，修复"多要点聚合型"查询
+    # （拨打120/高血压日常注意/狗咬伤流程等需跨多个章节/表）兄弟扩展被上限截断、
+    # 共用要点召不齐的问题。取舍：适度拉宽上下文预算换要点覆盖，TTFT 少量上升。
+    SIBLING_WINDOW: int = 2  # 邻域窗口大小，2 表示前后各取 2 个兄弟章节
+    MAX_SIBLING_CHARS: int = 2800  # v9.0: 2000→1500；v9.69: 1500→2800 修多要点聚合截断
 
     # ===== 逻辑分类软过滤配置（阶段一） =====
     # 知识库阶段一：文档已按 category 打标签（见 app/core/doc_category.py）。开启后按

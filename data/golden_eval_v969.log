@@ -1,0 +1,2963 @@
+D:\Agent\software\envs\my_medical_env\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-09-18 22:53:38 - app.rag.evaluation - INFO - ragas 未安装，将使用规则引擎简易评估
+2026-09-18 22:53:38 - __main__ - INFO - 评测确定性模式：MODEL_TEMPERATURE 已固定为 0.0
+2026-09-18 22:53:38 - app.rag.evaluation - INFO - RAG 评估器初始化完成，输出目录: data\evaluation
+2026-09-18 22:53:38 - app.rag.evaluation - INFO - 加载测试集: D:\Agent\medical_assistant_agent\tests\data\golden_test_set.jsonl，样本数: 55
+2026-09-18 22:53:38 - __main__ - INFO - 并行度 3，共 55 条开始评估，启用 LLM 语义复审
+2026-09-18 22:53:38 - app.rag.vector_store - INFO - 向量库加载活跃集合：medical_kb_v20260911_025855（D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855）
+2026-09-18 22:53:38 - app.rag.vector_store - INFO - 向量库加载活跃集合：medical_kb_v20260911_025855（D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855）
+2026-09-18 22:53:38 - app.rag.vector_store - INFO - 向量库加载活跃集合：medical_kb_v20260911_025855（D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855）
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855
+从D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855加载现有向量库。
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855
+从D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855加载现有向量库。
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855
+从D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855加载现有向量库。
+2026-09-18 22:53:39 - __main__ - ERROR - 执行失败(Could not connect to tenant default_tenant. Are you sure it exists?)，0.5s 后重试 [1/2]: 布洛芬的禁忌症有哪些？...
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：901
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：901
+Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\86176\AppData\Local\Temp\jieba.cache
+向量库位于：D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855
+从D:\Agent\medical_assistant_agent\data\chroma_db\medical_kb_v20260911_025855加载现有向量库。
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - 从磁盘加载 BM25 缓存：D:\Agent\medical_assistant_agent\data\bm25_index.pkl
+2026-09-18 22:53:39 - app.rag.hybrid_retriever - INFO - BM25 缓存加载成功，文档数：901
+Loading model cost 0.582 seconds.
+Prefix dict has been built successfully.
+2026-09-18 22:53:40 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-09-18 22:53:40 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-09-18 22:53:40 - app.rag.hybrid_retriever - INFO - EnsembleRetriever 初始化完成 (alpha=0.5, c=60)
+2026-09-18 22:53:40 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-09-18 22:53:40 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-09-18 22:53:40 - app.cache.redis_cache - INFO - ✅ Redis 连接成功：redis://localhost:6379/0
+2026-09-18 22:53:41 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:53:41 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:53:41 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3941
+2026-09-18 22:53:41 - app.core.adaptive_threshold - INFO - 自适应阈值 [HIGH_CONFIDENCE_THRESHOLD] 注册：默认值=0.08, 策略=percentile, 百分位=5.0
+2026-09-18 22:53:41 - app.core.adaptive_threshold - INFO - 自适应阈值 [RERANKER_THRESHOLD] 注册：默认值=0.005, 策略=percentile, 百分位=5.0
+2026-09-18 22:53:41 - app.core.adaptive_threshold - INFO - 自适应阈值 [SEMANTIC_CACHE_THRESHOLD] 注册：默认值=0.92, 策略=percentile, 百分位=95.0
+2026-09-18 22:53:41 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2342
+2026-09-18 22:53:41 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:53:41 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4028
+2026-09-18 22:53:44 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+2026-09-18 22:53:44 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+2026-09-18 22:53:44 - app.rag.reranker - INFO - 正在加载 ONNX Reranker 模型：D:\Agent\medical_assistant_agent\bge-reranker-onnx
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-09-18 22:53:51 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-09-18 22:53:51 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:53:51 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+The tokenizer you are loading from 'D:\Agent\medical_assistant_agent\bge-reranker-onnx' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+2026-09-18 22:53:51 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:53:51 - app.rag.reranker - INFO - ONNX Reranker 模型加载成功
+2026-09-18 22:53:51 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:53:56 - app.rag.reranker - INFO - 重排序完成：10 -> 3 （最高分：0.3629）
+2026-09-18 22:53:56 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 3
+2026-09-18 22:53:56 - app.rag.hybrid_retriever - INFO - 表格整表补齐：3 -> 16（补 13 行）
+2026-09-18 22:53:56 - app.rag.parent_child_store - INFO - Parent store 从磁盘加载成功：D:\Agent\medical_assistant_agent\data\parent_store.pkl（619 条）
+2026-09-18 22:53:56 - app.rag.parent_child_store - INFO - 邻域扩展索引已加载：29 个文档，619 个章节
+2026-09-18 22:53:56 - app.rag.parent_child_store - INFO - 父子映射：16 个 child → 9 个 parent（去重 7 个）
+2026-09-18 22:53:56 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 8 个兄弟章节）
+2026-09-18 22:53:56 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 17 个完整父文档
+2026-09-18 22:53:56 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：15273.40ms（query_embedding=688.13ms, semantic_lookup=0.00ms, dense=7.30ms, sparse=699.48ms, fusion=0.00ms, rerank=4938.09ms, parent_lookup=1.00ms, top1_dense_dist=0.4028）
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 特殊人群注意...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：常见药物使用指南...
+2026-09-18 22:53:57 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:53:57 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.8199）
+2026-09-18 22:53:57 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:53:57 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 11（补 6 行）
+2026-09-18 22:53:57 - app.rag.parent_child_store - INFO - 父子映射：11 个 child → 9 个 parent（去重 2 个）
+2026-09-18 22:53:57 - app.rag.parent_child_store - INFO - 邻域扩展：9 个原始 Parent → 25 个（+16 个兄弟章节），总字符数=2676
+2026-09-18 22:53:57 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 25 个完整父文档
+2026-09-18 22:53:57 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：16718.35ms（query_embedding=441.83ms, semantic_lookup=0.00ms, dense=55.77ms, sparse=502.71ms, fusion=0.00ms, rerank=6134.25ms, parent_lookup=0.00ms, top1_dense_dist=0.3941）
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 特殊人群注意...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童发热
+1. 精神状态比体温数值更重要
+2. 活泼好动、饮食正常：不必急于退热
+3. 精神...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 老年人发热
+1. 老年人发热反应可能不明显，感染时体温可能不高
+2. 出现精神状态改变、食欲...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 服用抗生素期间禁忌
+1. 服用头孢类、甲硝唑期间及停药后1周内**禁忌饮酒**（可能诱发双硫...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 耐药性危害（认识抗生素滥用后果）
+1. 细菌逐渐对常用药"刀枪不入"，导致治疗失败
+2. 未来...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 需立即就医的危险信号
+1. 服药后出现皮疹、瘙痒、呼吸困难（警惕过敏/过敏性休克）
+2. 严重...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 免责声明
+本指南仅供家庭用药教育参考，不能替代医生诊断。抗生素是处方药，使用须凭医师处方并严格...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常管理
+1. 规律服药：抗血小板药（阿司匹林）、他汀类、β受体阻滞剂、ACEI/ARB
+2...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 慢性阻塞性肺疾病  
+### 概述
+慢性阻塞性肺疾病（COPD）是一种以持续气流受限为特征的慢...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性加重识别
+- 咳嗽加重、痰量增多或痰液变脓性
+- 气短加重，日常活动受限
+- 需增加急救...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 脑卒中  
+### 概述
+脑卒中（中风）分为缺血性和出血性，是高血压最严重的并发症之一。早期识...
+2026-09-18 22:53:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 需立即就医的危险信号
+1. 发热伴抽搐、意识不清、呼吸急促
+2. 用药后出现呕吐、上腹剧痛
+3...
+2026-09-18 22:53:58 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:53:58 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9890）
+2026-09-18 22:53:58 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:53:58 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 11（补 6 行）
+2026-09-18 22:53:58 - app.rag.parent_child_store - INFO - 父子映射：11 个 child → 9 个 parent（去重 2 个）
+2026-09-18 22:53:58 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 10 个兄弟章节）
+2026-09-18 22:53:58 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 19 个完整父文档
+2026-09-18 22:53:58 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：16788.12ms（query_embedding=456.71ms, semantic_lookup=0.00ms, dense=47.72ms, sparse=508.48ms, fusion=0.00ms, rerank=6221.90ms, parent_lookup=0.00ms, top1_dense_dist=0.2342）
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：特殊人群用药安全指南_20260826.md
+表格：常见安全注意
+字段：事项,...
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：特殊人群用药安全指南_20260826.md
+表格：常见安全注意
+字段：事项,...
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：特殊人群用药安全指南_20260826.md
+表格：常见安全注意
+字段：事项,...
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:53:58 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:53:58 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:53:59 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:53:59 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:00 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:08 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：193字符，耗时：10926.19ms
+2026-09-18 22:54:08 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：11243.58ms
+2026-09-18 22:54:12 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:12 - __main__ - INFO - 进度 [1/55] 完成: 布洛芬的禁忌症有哪些？...
+2026-09-18 22:54:12 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:12 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3363
+2026-09-18 22:54:12 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:13 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9922）
+2026-09-18 22:54:13 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:54:13 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：5 -> 3（max_per_source=3）
+2026-09-18 22:54:13 - app.rag.hybrid_retriever - INFO - 表格整表补齐：3 -> 14（补 11 行）
+2026-09-18 22:54:13 - app.rag.parent_child_store - INFO - 父子映射：14 个 child → 7 个 parent（去重 7 个）
+2026-09-18 22:54:13 - app.rag.parent_child_store - INFO - 邻域扩展：7 个原始 Parent → 11 个（+4 个兄弟章节），总字符数=1814
+2026-09-18 22:54:13 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 11 个完整父文档
+2026-09-18 22:54:13 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1537.44ms（query_embedding=226.37ms, semantic_lookup=0.00ms, dense=43.46ms, sparse=269.82ms, fusion=0.00ms, rerank=1491.91ms, parent_lookup=0.00ms, top1_dense_dist=0.3363）
+2026-09-18 22:54:13 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:13 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:13 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：281字符，耗时：15504.05ms
+2026-09-18 22:54:13 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：15516.41ms
+2026-09-18 22:54:14 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:17 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：496字符，耗时：19881.14ms
+2026-09-18 22:54:17 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：19892.67ms
+2026-09-18 22:54:18 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:18 - __main__ - INFO - 进度 [2/55] 完成: 儿童发烧能用阿司匹林退烧吗？...
+2026-09-18 22:54:18 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:18 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4105
+2026-09-18 22:54:18 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:20 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9665）
+2026-09-18 22:54:20 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:54:20 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 20（补 15 行）
+2026-09-18 22:54:20 - app.rag.parent_child_store - INFO - 父子映射：20 个 child → 11 个 parent（去重 9 个）
+2026-09-18 22:54:20 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 4 个兄弟章节）
+2026-09-18 22:54:20 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 15 个完整父文档
+2026-09-18 22:54:20 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1973.21ms（query_embedding=232.57ms, semantic_lookup=0.00ms, dense=8.54ms, sparse=241.12ms, fusion=0.00ms, rerank=1963.67ms, parent_lookup=1.18ms, top1_dense_dist=0.4105）
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 常见误区纠正
+1. 感冒咳嗽就吃"消炎药" x 多数为病毒，吃抗生素无效
+2. 症状好点就停药...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 阿司匹林
+- 适应症：发热、疼痛、抗血小板聚集（小剂量）
+- 用法用量：解热镇痛每次300-...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 抗病毒药物
+- 奥司他韦：用于流感的早期治疗（48小时内使用效果最佳）
+- 成人剂量：每次7...
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:54:20 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:20 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:21 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:23 - __main__ - INFO - 进度 [3/55] 完成: 孕妇感冒了能吃布洛芬吗？...
+2026-09-18 22:54:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:23 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3786
+2026-09-18 22:54:23 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:25 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.9326）
+2026-09-18 22:54:25 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:54:25 - app.rag.hybrid_retriever - INFO - 表格整表补齐：4 -> 17（补 13 行）
+2026-09-18 22:54:25 - app.rag.parent_child_store - INFO - 父子映射：17 个 child → 10 个 parent（去重 7 个）
+2026-09-18 22:54:25 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 2 个兄弟章节）
+2026-09-18 22:54:25 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 12 个完整父文档
+2026-09-18 22:54:25 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2015.20ms（query_embedding=164.84ms, semantic_lookup=0.00ms, dense=6.45ms, sparse=171.29ms, fusion=0.00ms, rerank=2006.73ms, parent_lookup=0.00ms, top1_dense_dist=0.3786）
+2026-09-18 22:54:25 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 出血与止血  
+**出血分类：**
+- 动脉出血：血液鲜红，呈喷射状，出血量大，最危险...
+2026-09-18 22:54:25 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:25 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:25 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：244字符，耗时：11910.63ms
+2026-09-18 22:54:25 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：11918.25ms
+2026-09-18 22:54:26 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:33 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：325字符，耗时：13424.16ms
+2026-09-18 22:54:33 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：13431.22ms
+2026-09-18 22:54:34 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:34 - __main__ - INFO - 进度 [4/55] 完成: 布洛芬和对乙酰氨基酚可以一起吃吗？...
+2026-09-18 22:54:35 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:35 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4232
+2026-09-18 22:54:35 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:54:36 - app.rag.reranker - INFO - 重排序完成：10 -> 2 （最高分：0.0165）
+2026-09-18 22:54:36 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 2
+2026-09-18 22:54:36 - app.rag.hybrid_retriever - INFO - 实体兜底补全：精排结果无实体命中，从候选池补回 5 条（query=布洛芬每天最大剂量是多少？）
+2026-09-18 22:54:36 - app.rag.hybrid_retriever - INFO - 表格整表补齐：7 -> 19（补 12 行）
+2026-09-18 22:54:36 - app.rag.parent_child_store - INFO - 父子映射：19 个 child → 13 个 parent（去重 6 个）
+2026-09-18 22:54:36 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 1 个兄弟章节）
+2026-09-18 22:54:36 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 14 个完整父文档
+2026-09-18 22:54:36 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1631.49ms（query_embedding=265.69ms, semantic_lookup=0.00ms, dense=9.00ms, sparse=274.69ms, fusion=0.00ms, rerank=1619.98ms, parent_lookup=0.00ms, top1_dense_dist=0.4232）
+2026-09-18 22:54:36 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 降压药  
+### 氨氯地平
+- 适应症：高血压、稳定型心绞痛
+- 用法用量：起始5mg每日1...
+2026-09-18 22:54:36 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 2. 足疗程、足剂量
+1. 严格按医生规定的剂量和疗程服用，不得擅自减量或提前停药
+2. 症...
+2026-09-18 22:54:36 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 药物对照表  ...
+2026-09-18 22:54:36 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:36 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:38 - __main__ - INFO - 进度 [5/55] 完成: 复方感冒药能同时吃两种吗？...
+2026-09-18 22:54:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:38 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3992
+2026-09-18 22:54:38 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:54:39 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：43字符，耗时：3097.55ms
+2026-09-18 22:54:39 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：3110.46ms
+2026-09-18 22:54:40 - app.rag.reranker - INFO - 重排序完成：10 -> 3 （最高分：0.1101）
+2026-09-18 22:54:40 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 3
+2026-09-18 22:54:40 - app.rag.hybrid_retriever - INFO - 表格整表补齐：3 -> 16（补 13 行）
+2026-09-18 22:54:40 - app.rag.parent_child_store - INFO - 父子映射：16 个 child → 9 个 parent（去重 7 个）
+2026-09-18 22:54:40 - app.rag.parent_child_store - INFO - 邻域扩展：9 个原始 Parent → 19 个（+10 个兄弟章节），总字符数=2371
+2026-09-18 22:54:40 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 19 个完整父文档
+2026-09-18 22:54:40 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1803.33ms（query_embedding=201.53ms, semantic_lookup=0.00ms, dense=9.41ms, sparse=210.94ms, fusion=0.00ms, rerank=1791.92ms, parent_lookup=0.00ms, top1_dense_dist=0.3992）
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 物理降温
+1. 温水擦浴（32-34℃）
+2. 减少衣物
+3. 多饮温水
+4. 禁忌：酒精擦...
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童感冒  
+### 概述
+儿童感冒比成人更频繁，学龄前儿童每年可感冒6-8次。多为病毒感染，...
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 退热药物选择  
+### 对乙酰氨基酚 vs 布洛芬对比...
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 退热药使用原则
+1. 体温≥38.5℃或明显不适时可使用退热药
+2. 优先选择单一成分退热药...
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童退热用药
+1. 2-6月龄：仅用对乙酰氨基酚（每次10-15mg/kg）
+2. 6月龄以...
+2026-09-18 22:54:40 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:40 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:41 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:43 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：425字符，耗时：18303.30ms
+2026-09-18 22:54:43 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：18310.56ms
+2026-09-18 22:54:45 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：186字符，耗时：5504.39ms
+2026-09-18 22:54:45 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5515.68ms
+2026-09-18 22:54:47 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:47 - __main__ - INFO - 进度 [6/55] 完成: 布洛芬每天最大剂量是多少？...
+2026-09-18 22:54:47 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:47 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3780
+2026-09-18 22:54:47 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:49 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.8730）
+2026-09-18 22:54:49 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:54:49 - app.rag.hybrid_retriever - INFO - 表格整表补齐：4 -> 10（补 6 行）
+2026-09-18 22:54:49 - app.rag.parent_child_store - INFO - 父子映射：10 个 child → 8 个 parent（去重 2 个）
+2026-09-18 22:54:49 - app.rag.parent_child_store - INFO - 邻域扩展：8 个原始 Parent → 22 个（+14 个兄弟章节），总字符数=2692
+2026-09-18 22:54:49 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 22 个完整父文档
+2026-09-18 22:54:49 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1777.10ms（query_embedding=261.05ms, semantic_lookup=0.00ms, dense=7.82ms, sparse=268.87ms, fusion=0.00ms, rerank=1769.28ms, parent_lookup=1.05ms, top1_dense_dist=0.3780）
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 物理降温
+1. 温水擦浴（32-34℃）
+2. 减少衣物
+3. 多饮温水
+4. 禁忌：酒精擦...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童感冒  
+### 概述
+儿童感冒比成人更频繁，学龄前儿童每年可感冒6-8次。多为病毒感染，...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 感冒用药  
+### 复方感冒药
+常见成分及作用：
+- 对乙酰氨基酚：退热止痛
+- 伪麻黄碱：...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 特殊人群注意...
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格概览】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段：...
+2026-09-18 22:54:49 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:49 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:52 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:52 - __main__ - INFO - 进度 [7/55] 完成: 对乙酰氨基酚成人每天最多吃多少？...
+2026-09-18 22:54:52 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:52 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3663
+2026-09-18 22:54:52 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:53 - __main__ - INFO - 进度 [8/55] 完成: 6个月宝宝发烧吃什么药？剂量怎么算？...
+2026-09-18 22:54:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:54:53 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4260
+2026-09-18 22:54:53 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:54:54 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：167字符，耗时：5588.37ms
+2026-09-18 22:54:54 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5599.50ms
+2026-09-18 22:54:55 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.9684）
+2026-09-18 22:54:55 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:54:55 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:54:55 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 13 个兄弟章节）
+2026-09-18 22:54:55 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 17 个完整父文档
+2026-09-18 22:54:55 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2349.30ms（query_embedding=214.05ms, semantic_lookup=0.00ms, dense=9.00ms, sparse=223.05ms, fusion=0.00ms, rerank=2339.30ms, parent_lookup=0.00ms, top1_dense_dist=0.3663）
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 感冒用药  
+### 复方感冒药
+常见成分及作用：
+- 对乙酰氨基酚：退热止痛
+- 伪麻黄碱：...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 氨溴索
+- 适应症：急慢性支气管炎、支气管哮喘等伴有痰液粘稠的呼吸道疾病
+- 用法用量：成人...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 流行性感冒  
+### 概述
+流感是由流感病毒引起的急性呼吸道传染病，传染性强，全身症状重。高...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 急起高热（39-40℃），伴寒战
+2. 头痛、肌肉酸痛、乏力明显
+3. 可伴...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 预防
+1. 每年接种流感疫苗（最有效）
+2. 勤洗手，避免接触流感患者
+3. 流感季节避免去...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性支气管炎  
+### 概述
+急性支气管炎是支气管黏膜的急性炎症，常由病毒或细菌感染引起。主...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 分型
+1. 1型糖尿病：胰岛素绝对缺乏，需终身胰岛素治疗，多见于青少年
+2. 2型糖尿病：胰...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 非药物治疗
+1. 饮食控制：
+- 总热量控制，合理分配三大营养素
+- 碳水化合物占总热量50...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 低血糖处理
+- 识别症状：心慌、手抖、出冷汗、饥饿感、头晕
+- 紧急处理：立即进食15-20...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 糖尿病足护理
+1. 每日检查足部有无破损、水疱
+2. 温水洗脚（水温<37℃），擦干趾缝
+3...
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 22:54:55 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:55 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:55 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:54:56 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9935）
+2026-09-18 22:54:56 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:54:56 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:54:56 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 13 个兄弟章节）
+2026-09-18 22:54:56 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 22:54:56 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2484.57ms（query_embedding=255.63ms, semantic_lookup=0.00ms, dense=13.77ms, sparse=269.40ms, fusion=0.00ms, rerank=2470.80ms, parent_lookup=1.06ms, top1_dense_dist=0.4260）
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 头晕  
+### 概述
+头晕是常见症状，但含义模糊，需区分眩晕、晕厥前状态、不平衡感和头昏。...
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 分类与鉴别  
+1. 眩晕（天旋地转感）：
+- 周围性眩晕（前庭系统）：
+- 良性阵发性位置...
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 麻木与感觉异常  
+### 常见原因
+1. 周围神经病变：
+- 糖尿病性神经病变：手套-袜子样...
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴皮疹
+1. 幼儿急疹：热退疹出，3天高热后出疹
+2. 风疹：发热1-2天后出疹，耳后淋...
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴咳嗽
+1. 普通感冒：轻咳、流涕
+2. 急性支气管炎：咳嗽加重，可有痰
+3. 肺炎：高...
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童
+1. 3月龄以下婴儿任何发热
+2. 3-6月龄婴儿体温>39℃
+3. 发热伴抽搐
+4....
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 发热后的家庭护理  
+### 饮食建议
+1. 多饮温水或淡盐水，每日2000ml以上
+2. 进...
+2026-09-18 22:54:56 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:54:56 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:54:57 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：28字符，耗时：2269.60ms
+2026-09-18 22:54:57 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：2276.43ms
+2026-09-18 22:54:57 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:00 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:00 - __main__ - INFO - 进度 [9/55] 完成: 3个月以下婴儿发烧怎么办？...
+2026-09-18 22:55:00 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:00 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3285
+2026-09-18 22:55:00 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:55:02 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.9788）
+2026-09-18 22:55:02 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:55:02 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：4 -> 3（max_per_source=3）
+2026-09-18 22:55:02 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 2 个 parent（去重 1 个）
+2026-09-18 22:55:02 - app.rag.parent_child_store - INFO - 邻域扩展：2 个原始 Parent → 7 个（+5 个兄弟章节），总字符数=1069
+2026-09-18 22:55:02 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 7 个完整父文档
+2026-09-18 22:55:02 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1761.33ms（query_embedding=224.83ms, semantic_lookup=0.00ms, dense=7.07ms, sparse=231.90ms, fusion=0.00ms, rerank=1753.03ms, parent_lookup=0.00ms, top1_dense_dist=0.3285）
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- "一生中最痛的头痛"
+- 伴呕吐、意识障碍
+- 需立即拨打120  
+4. 颅内占位（肿瘤等）：...
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 头痛危险信号（红旗征）
+出现以下情况需立即就医：
+1. 突发剧烈头痛（"雷击样"）
+2. 头...
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 头晕  
+### 概述
+头晕是常见症状，但含义模糊，需区分眩晕、晕厥前状态、不平衡感和头昏。...
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：神经系统症状鉴别指南...
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 头痛  
+### 概述
+头痛是最常见的神经系统症状之一，病因多样，绝大多数为良性，但部分需警惕...
+2026-09-18 22:55:02 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:02 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:02 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:08 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:08 - __main__ - INFO - 进度 [10/55] 完成: 奥司他韦什么时候用效果最好？...
+2026-09-18 22:55:08 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:08 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3081
+2026-09-18 22:55:08 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:55:10 - app.rag.reranker - INFO - 重排序完成：10 -> 8 （最高分：0.9968）
+2026-09-18 22:55:10 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 8
+2026-09-18 22:55:10 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：8 -> 7（max_per_source=3）
+2026-09-18 22:55:10 - app.rag.hybrid_retriever - INFO - 表格整表补齐：7 -> 12（补 5 行）
+2026-09-18 22:55:10 - app.rag.parent_child_store - INFO - 父子映射：12 个 child → 10 个 parent（去重 2 个）
+2026-09-18 22:55:10 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 13 个兄弟章节）
+2026-09-18 22:55:10 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 23 个完整父文档
+2026-09-18 22:55:10 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1705.31ms（query_embedding=233.97ms, semantic_lookup=0.00ms, dense=7.67ms, sparse=241.63ms, fusion=0.00ms, rerank=1695.43ms, parent_lookup=0.00ms, top1_dense_dist=0.3081）
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 常用降压药选择
+- 无合并症首选：CCB（氨氯地平）、ACEI/ARB（缬沙坦）、噻嗪类利尿...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 糖尿病  
+### 概述
+糖尿病是一种以高血糖为特征的代谢性疾病，主要症状为多饮、多食、多尿、...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 诊断标准
+- 空腹血糖≥7.0mmol/L
+- 餐后2小时血糖≥11.1mmol/L
+- 糖...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 稳定期管理
+1. 戒烟（最重要）
+2. 规律使用吸入药物：支气管扩张剂+吸入激素
+3. 肺康...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性脑卒中概述  
+### 什么是脑卒中
+脑卒中（中风）是脑血管突然堵塞（缺血性）或破裂（出血...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 类型
+1. 缺血性卒中：占多数（约80%），血管堵塞
+2. 出血性卒中：血管破裂（脑出血、蛛...
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：慢性病管理与用药指南...
+2026-09-18 22:55:10 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:10 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:11 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:11 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：185字符，耗时：9272.69ms
+2026-09-18 22:55:11 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：9279.80ms
+2026-09-18 22:55:19 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:19 - __main__ - INFO - 进度 [11/55] 完成: 偏头痛发作应该吃什么药？...
+2026-09-18 22:55:19 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:19 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3816
+2026-09-18 22:55:19 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:55:21 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9908）
+2026-09-18 22:55:21 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:55:21 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:55:21 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 11 个兄弟章节）
+2026-09-18 22:55:21 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 22:55:21 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1723.66ms（query_embedding=234.87ms, semantic_lookup=0.00ms, dense=6.78ms, sparse=241.65ms, fusion=0.00ms, rerank=1716.89ms, parent_lookup=1.01ms, top1_dense_dist=0.3816）
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性发作处理
+1. 轻度发作：
+- 吸入短效β2受体激动剂（沙丁胺醇气雾剂）1-2喷
+- 2...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭急救正确做法  
+### 正确步骤
+1. **立即呼救拨打120/急救电话**
+2. **...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 糖尿病足护理
+1. 每日检查足部有无破损、水疱
+2. 温水洗脚（水温<37℃），擦干趾缝
+3...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 冠心病  
+### 概述
+冠心病是冠状动脉粥样硬化导致管腔狭窄或闭塞，引起心肌缺血缺氧的心脏病...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：糖尿病日常管理与用药指南_20260826.md
+表格：常用口服降糖药
+字段：...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 糖尿病并发症与危险信号（及时就医）
+1. 足部：伤口红肿、发热、颜色发暗、足背动脉搏动弱 — ...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 02 呼吸困难  
+**急性呼吸困难常见原因：**
+- 支气管哮喘：呼气性呼吸困难，伴哮鸣音...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 急性腹痛  
+**需立即就医的腹痛：**
+- 突发剧烈腹痛
+- 腹痛伴发热
+- 腹痛伴...
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 过敏反应  
+**轻度过敏：**
+- 荨麻疹、皮肤瘙痒
+- 轻度面部水肿
+- 处理：口...
+2026-09-18 22:55:21 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:21 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:22 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:22 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：610字符，耗时：26252.51ms
+2026-09-18 22:55:22 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：26261.08ms
+2026-09-18 22:55:32 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:32 - __main__ - INFO - 进度 [12/55] 完成: 头痛什么情况下需要立即就医？...
+2026-09-18 22:55:32 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:32 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3621
+2026-09-18 22:55:32 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:55:34 - app.rag.reranker - INFO - 重排序完成：10 -> 8 （最高分：0.9762）
+2026-09-18 22:55:34 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 8
+2026-09-18 22:55:34 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：8 -> 5（max_per_source=3）
+2026-09-18 22:55:34 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 9（补 4 行）
+2026-09-18 22:55:34 - app.rag.parent_child_store - INFO - 父子映射：9 个 child → 7 个 parent（去重 2 个）
+2026-09-18 22:55:34 - app.rag.parent_child_store - INFO - 邻域扩展：7 个原始 Parent → 21 个（+14 个兄弟章节），总字符数=2619
+2026-09-18 22:55:34 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 21 个完整父文档
+2026-09-18 22:55:34 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1992.04ms（query_embedding=397.50ms, semantic_lookup=0.00ms, dense=8.73ms, sparse=406.22ms, fusion=0.00ms, rerank=1981.28ms, parent_lookup=0.00ms, top1_dense_dist=0.3621）
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 其他卒中信号（不要忽略）
+1. 突然剧烈头痛（"雷击样"，警惕出血）
+2. 突然面部、肢体麻...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭急救正确做法  
+### 正确步骤
+1. **立即拨打120/急救电话**，告知疑似卒中、...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 类型
+1. 缺血性卒中：占多数（约80%），血管堵塞
+2. 出血性卒中：血管破裂（脑出血、蛛...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 稳定期管理
+1. 戒烟（最重要）
+2. 规律使用吸入药物：支气管扩张剂+吸入激素
+3. 肺康...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 危险因素控制
+1. 高血压：最重要的可干预危险因素，目标<140/90mmHg
+2. 糖尿病...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 过敏性休克概述  
+### 什么是过敏性休克
+过敏性休克是接触过敏原后，机体发生迅速、剧烈的全...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 常见诱因
+1. 药物：青霉素等抗生素、造影剂、阿司匹林/NSAID
+2. 食物：花生、坚果、...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 表现清单
+1. **皮肤**：全身荨麻疹、瘙痒、面部唇舌肿胀
+2. **呼吸道**：喉头水肿...
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 危险信号（提示休克/气道狭窄，须立即处置）
+1. 呼吸困难、喉头肿胀感、喘鸣
+2. 头晕、眼...
+2026-09-18 22:55:34 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:34 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:35 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:37 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：589字符，耗时：26779.35ms
+2026-09-18 22:55:37 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：26789.29ms
+2026-09-18 22:55:43 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:43 - __main__ - INFO - 进度 [13/55] 完成: 高血压急症怎么识别？...
+2026-09-18 22:55:43 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:43 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4159
+2026-09-18 22:55:43 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:55:43 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：268字符，耗时：9043.51ms
+2026-09-18 22:55:43 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：9052.69ms
+2026-09-18 22:55:45 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9756）
+2026-09-18 22:55:45 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:55:45 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：5 -> 3（max_per_source=3）
+2026-09-18 22:55:45 - app.rag.hybrid_retriever - INFO - 表格整表补齐：3 -> 7（补 4 行）
+2026-09-18 22:55:45 - app.rag.parent_child_store - INFO - 父子映射：7 个 child → 5 个 parent（去重 2 个）
+2026-09-18 22:55:45 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 9 个（+4 个兄弟章节），总字符数=1220
+2026-09-18 22:55:45 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 9 个完整父文档
+2026-09-18 22:55:45 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2026.59ms（query_embedding=217.00ms, semantic_lookup=0.00ms, dense=8.53ms, sparse=226.53ms, fusion=0.00ms, rerank=2014.55ms, parent_lookup=1.00ms, top1_dense_dist=0.4159）
+2026-09-18 22:55:45 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 家庭护理
+1. 多饮温水，每日1500-2000ml
+2. 充分休息，避免劳累
+3. 保持室...
+2026-09-18 22:55:45 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:45 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:46 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:55:54 - __main__ - INFO - 进度 [14/55] 完成: 脑卒中怎么快速识别？...
+2026-09-18 22:55:55 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:55:55 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3111
+2026-09-18 22:55:55 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:55:56 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：284字符，耗时：10600.87ms
+2026-09-18 22:55:56 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：10611.39ms
+2026-09-18 22:55:57 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.8524）
+2026-09-18 22:55:57 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:55:57 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:55:57 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 18 个（+14 个兄弟章节），总字符数=2201
+2026-09-18 22:55:57 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 22:55:57 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2054.87ms（query_embedding=233.91ms, semantic_lookup=0.00ms, dense=6.58ms, sparse=240.49ms, fusion=0.00ms, rerank=2048.29ms, parent_lookup=1.02ms, top1_dense_dist=0.3111）
+2026-09-18 22:55:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 常见疾病症状与家庭护理指南...
+2026-09-18 22:55:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 01 呼吸系统常见疾病...
+2026-09-18 22:55:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 02 消化系统常见疾病...
+2026-09-18 22:55:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:55:57 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:55:57 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:55:58 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:04 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：933字符，耗时：43380.80ms
+2026-09-18 22:56:04 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：43388.77ms
+2026-09-18 22:56:09 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：300字符，耗时：11996.60ms
+2026-09-18 22:56:09 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：12005.81ms
+2026-09-18 22:56:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:10 - __main__ - INFO - 进度 [15/55] 完成: 感冒和流感怎么区分？...
+2026-09-18 22:56:11 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:11 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:11 - __main__ - INFO - 进度 [16/55] 完成: 低血糖怎么紧急处理？...
+2026-09-18 22:56:11 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3998
+2026-09-18 22:56:11 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:11 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:11 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3710
+2026-09-18 22:56:11 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:14 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.5914）
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:56:14 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:56:14 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 16 个（+12 个兄弟章节），总字符数=2323
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3187.75ms（query_embedding=310.97ms, semantic_lookup=0.00ms, dense=7.11ms, sparse=318.09ms, fusion=0.00ms, rerank=3180.64ms, parent_lookup=0.00ms, top1_dense_dist=0.3998）
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴皮疹
+1. 幼儿急疹：热退疹出，3天高热后出疹
+2. 风疹：发热1-2天后出疹，耳后淋...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴咳嗽
+1. 普通感冒：轻咳、流涕
+2. 急性支气管炎：咳嗽加重，可有痰
+3. 肺炎：高...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 发热后的家庭护理  
+### 饮食建议
+1. 多饮温水或淡盐水，每日2000ml以上
+2. 进...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药原则
+1. 所有抗栓、降脂药物需长期规律服用，不可擅自停药
+2. 出现牙龈/皮肤出血、黑...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 就医与随访
+1. 稳定期冠心病建议每3-6个月门诊复查
+2. 定期查血脂、肝肾功能、心电图、心...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性发作处理
+1. 轻度发作：
+- 吸入短效β2受体激动剂（沙丁胺醇气雾剂）1-2喷
+- 2...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 长期管理
+1. 规律使用控制药物：吸入糖皮质激素+长效β2受体激动剂
+2. 随身携带急救药物...
+2026-09-18 22:56:14 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:14 - app.rag.reranker - INFO - 重排序完成：10 -> 3 （最高分：0.9786）
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 3
+2026-09-18 22:56:14 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 1 个 parent（去重 2 个）
+2026-09-18 22:56:14 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 5 个（+4 个兄弟章节），总字符数=1446
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 5 个完整父文档
+2026-09-18 22:56:14 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3272.58ms（query_embedding=259.37ms, semantic_lookup=0.00ms, dense=12.11ms, sparse=271.48ms, fusion=0.00ms, rerank=3260.47ms, parent_lookup=0.00ms, top1_dense_dist=0.3710）
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 意识障碍  
+**常见原因：**
+- 低血糖：出冷汗、心悸、意识模糊，糖尿病患者最常见...
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 过敏反应  
+**轻度过敏：**
+- 荨麻疹、皮肤瘙痒
+- 轻度面部水肿
+- 处理：口...
+2026-09-18 22:56:14 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:14 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:15 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:15 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:17 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:17 - __main__ - INFO - 进度 [17/55] 完成: 发烧多少度需要吃退烧药？...
+2026-09-18 22:56:17 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:17 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4130
+2026-09-18 22:56:17 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:19 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.1174）
+2026-09-18 22:56:19 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:56:19 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:56:19 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 18 个（+14 个兄弟章节），总字符数=2559
+2026-09-18 22:56:19 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 22:56:19 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2033.27ms（query_embedding=221.34ms, semantic_lookup=0.00ms, dense=6.55ms, sparse=227.89ms, fusion=0.00ms, rerank=2026.73ms, parent_lookup=0.00ms, top1_dense_dist=0.4130）
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 需要立即就医的危险信号
+1. 胸痛持续>15分钟不缓解
+2. 含服硝酸甘油无改善
+3. 伴大...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 避免搔抓，以免加重皮损
+2. 穿宽松棉质衣物
+3. 避免热水烫洗
+4. 饮食...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 湿疹  
+### 概述
+湿疹是由多种内外因素引起的皮肤炎症反应，主要症状为皮肤出现红斑、丘疹、...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴皮疹
+1. 幼儿急疹：热退疹出，3天高热后出疹
+2. 风疹：发热1-2天后出疹，耳后淋...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴咳嗽
+1. 普通感冒：轻咳、流涕
+2. 急性支气管炎：咳嗽加重，可有痰
+3. 肺炎：高...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童
+1. 3月龄以下婴儿任何发热
+2. 3-6月龄婴儿体温>39℃
+3. 发热伴抽搐
+4....
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 发热后的家庭护理  
+### 饮食建议
+1. 多饮温水或淡盐水，每日2000ml以上
+2. 进...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 典型症状与识别  
+### 心绞痛典型表现
+1. 胸骨后压榨样、紧缩感疼痛，可向左臂、颈部、下...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 与心梗的鉴别（重要）
+1. 心梗疼痛更剧烈，持续>20分钟，休息/含服硝酸甘油不缓解
+2. ...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭生活方式管理  
+### 饮食管理
+1. 低盐（<5g/日）、低脂、低糖饮食
+2. 减少饱...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 运动管理
+1. 病情稳定者每周150分钟中等强度有氧运动（快走、游泳）
+2. 用"谈话测试"...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 出血与止血  
+**出血分类：**
+- 动脉出血：血液鲜红，呈喷射状，出血量大，最危险...
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 常见外伤用药  
+**外用消毒：**
+- 碘伏：适用于皮肤和黏膜消毒，刺激性小，为首选...
+2026-09-18 22:56:19 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:19 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:20 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:23 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：177字符，耗时：8756.99ms
+2026-09-18 22:56:23 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：8763.49ms
+2026-09-18 22:56:24 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：247字符，耗时：9950.97ms
+2026-09-18 22:56:24 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：9959.70ms
+2026-09-18 22:56:27 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:27 - __main__ - INFO - 进度 [18/55] 完成: 急性腹痛能吃止痛药吗？...
+2026-09-18 22:56:27 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:27 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3418
+2026-09-18 22:56:27 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:29 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.7789）
+2026-09-18 22:56:29 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:56:29 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：5 -> 3（max_per_source=3）
+2026-09-18 22:56:29 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 2 个 parent（去重 1 个）
+2026-09-18 22:56:29 - app.rag.parent_child_store - INFO - 邻域扩展：2 个原始 Parent → 5 个（+3 个兄弟章节），总字符数=1585
+2026-09-18 22:56:29 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 5 个完整父文档
+2026-09-18 22:56:29 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2039.01ms（query_embedding=235.64ms, semantic_lookup=0.00ms, dense=6.00ms, sparse=242.65ms, fusion=0.00ms, rerank=2032.01ms, parent_lookup=0.00ms, top1_dense_dist=0.3418）
+2026-09-18 22:56:29 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- 如出现明显畸形、骨擦音、异常活动，可能合并骨折，应立即就医
+- 开放性伤口需在6-8小时内清创缝...
+2026-09-18 22:56:29 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- 患肢明显畸形或缩短
+- 开放性伤口伴骨外露
+- 患肢远端感觉减退或脉搏消失（提示血管神经损伤）
+...
+2026-09-18 22:56:29 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:29 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:30 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:42 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：283字符，耗时：12916.08ms
+2026-09-18 22:56:42 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：12922.62ms
+2026-09-18 22:56:43 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:43 - __main__ - INFO - 进度 [19/55] 完成: 胸痛可能是什么严重疾病？...
+2026-09-18 22:56:44 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:44 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3923
+2026-09-18 22:56:44 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:56:45 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：595字符，耗时：26201.95ms
+2026-09-18 22:56:45 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：26212.24ms
+2026-09-18 22:56:46 - app.rag.reranker - INFO - 重排序完成：10 -> 8 （最高分：0.9922）
+2026-09-18 22:56:46 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 8
+2026-09-18 22:56:46 - app.rag.parent_child_store - INFO - 父子映射：8 个 child → 8 个 parent（去重 0 个）
+2026-09-18 22:56:46 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 2 个兄弟章节）
+2026-09-18 22:56:46 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 10 个完整父文档
+2026-09-18 22:56:46 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1924.38ms（query_embedding=229.72ms, semantic_lookup=0.00ms, dense=7.52ms, sparse=237.24ms, fusion=0.00ms, rerank=1915.48ms, parent_lookup=0.00ms, top1_dense_dist=0.3923）
+2026-09-18 22:56:46 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- 患肢明显畸形或缩短
+- 开放性伤口伴骨外露
+- 患肢远端感觉减退或脉搏消失（提示血管神经损伤）
+...
+2026-09-18 22:56:46 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 头部外伤  
+头部外伤是常见的外伤类型，需特别注意颅内损伤的可能。  
+**轻度头部外...
+2026-09-18 22:56:46 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:46 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:47 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:49 - __main__ - INFO - 进度 [20/55] 完成: 扭伤后应该冷敷还是热敷？...
+2026-09-18 22:56:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:49 - __main__ - INFO - 进度 [21/55] 完成: 荨麻疹什么情况下需要急诊？...
+2026-09-18 22:56:49 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3797
+2026-09-18 22:56:49 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:50 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:56:50 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4253
+2026-09-18 22:56:50 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:56:52 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.9921）
+2026-09-18 22:56:52 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:56:52 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:56:52 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 19 个（+15 个兄弟章节），总字符数=2001
+2026-09-18 22:56:52 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 19 个完整父文档
+2026-09-18 22:56:52 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3046.51ms（query_embedding=470.33ms, semantic_lookup=0.00ms, dense=7.10ms, sparse=477.43ms, fusion=0.00ms, rerank=3039.41ms, parent_lookup=1.00ms, top1_dense_dist=0.3797）
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性发作处理
+1. 轻度发作：
+- 吸入短效β2受体激动剂（沙丁胺醇气雾剂）1-2喷
+- 2...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 低血糖处理
+- 识别症状：心慌、手抖、出冷汗、饥饿感、头晕
+- 紧急处理：立即进食15-20...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 鼻塞处理：
+- 生理盐水滴鼻/喷鼻
+- 吸鼻器清理鼻腔（婴儿）
+- 房间使用加湿...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 退热药物选择
+1. 2-6月龄：对乙酰氨基酚（每次10-15mg/kg），4-6小时一次，2...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 物理降温
+1. 温水擦浴（32-34℃）
+2. 减少衣物
+3. 多饮温水
+4. 禁忌：酒精擦...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 需立即就医
+1. 3月龄以下婴儿任何发热
+2. 发热伴精神萎靡、拒食
+3. 发热伴皮疹
+4....
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童感冒  
+### 概述
+儿童感冒比成人更频繁，学龄前儿童每年可感冒6-8次。多为病毒感染，...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 哮喘  
+### 概述
+哮喘是一种慢性气道炎症性疾病，表现为反复发作的喘息、呼吸困难、胸闷、咳...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 诱发因素
+1. 过敏原：尘螨、花粉、动物皮屑
+2. 感染：上呼吸道感染
+3. 运动：运动性哮...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 长期管理
+1. 规律使用控制药物：吸入糖皮质激素+长效β2受体激动剂
+2. 随身携带急救药物...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 呼吸系统疾病就医指征  
+1. 高热（>39℃）持续3天以上
+2. 呼吸困难、气促
+3. 胸痛...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 非药物治疗
+1. 饮食控制：
+- 总热量控制，合理分配三大营养素
+- 碳水化合物占总热量50...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 药物治疗
+1. 2型糖尿病一线用药：二甲双胍
+2. 二线用药选择：
+- SGLT2抑制剂（达...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 糖尿病足护理
+1. 每日检查足部有无破损、水疱
+2. 温水洗脚（水温<37℃），擦干趾缝
+3...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 冠心病  
+### 概述
+冠心病是冠状动脉粥样硬化导致管腔狭窄或闭塞，引起心肌缺血缺氧的心脏病...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药安全
+1. 6岁以下儿童不建议使用复方感冒药
+2. 不建议使用含伪麻黄碱的药物
+3. 不...
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童腹泻  
+### 概述
+儿童腹泻常见，多由病毒感染引起（轮状病毒、诺如病毒）。主要风险是脱...
+2026-09-18 22:56:52 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:52 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:53 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9657）
+2026-09-18 22:56:53 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:56:53 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 22:56:53 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 5 个兄弟章节）
+2026-09-18 22:56:53 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 9 个完整父文档
+2026-09-18 22:56:53 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3093.83ms（query_embedding=438.39ms, semantic_lookup=0.00ms, dense=12.94ms, sparse=451.33ms, fusion=0.00ms, rerank=3080.89ms, parent_lookup=0.00ms, top1_dense_dist=0.4253）
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 烧烫伤  
+**分级：**
+- I度烧伤：仅伤及表皮，皮肤发红、疼痛，无水疱，3-5天...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 外伤急救与处理指南  
+### 01 软组织损伤  
+软组织损伤是指皮肤、肌肉、肌腱、韧带等组...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 免责声明
+本指南仅供公众急救教育与识别参考，不能替代专业医疗急救。疑似卒中必须争分夺秒拨打12...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 中毒  
+**一氧化碳中毒：**
+- 表现：头痛、头晕、恶心、呕吐、意识障碍
+- 处理...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 烧伤与电击伤  
+**烧伤面积评估（九分法）：**
+- 头颈部：9%
+- 双上肢：9%...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 09 溺水  
+**现场急救：**
+1. 将溺水者救出水面
+2. 检查意识和呼吸
+3. 无呼...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 10 家庭急救箱配置  
+**推荐配置：**
+- 碘伏棉签/碘伏溶液
+- 无菌纱布和绷带
+-...
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 骨折  
+骨折是指骨的完整性或连续性遭到破坏，是较严重的外伤。  
+**分类：**
+-...
+2026-09-18 22:56:53 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:56:53 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:56:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:56:56 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：245字符，耗时：10264.70ms
+2026-09-18 22:56:56 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：10272.95ms
+2026-09-18 22:56:57 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：122字符，耗时：4808.52ms
+2026-09-18 22:56:57 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：4816.55ms
+2026-09-18 22:57:01 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：162字符，耗时：8157.66ms
+2026-09-18 22:57:01 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：8163.67ms
+2026-09-18 22:57:05 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:05 - __main__ - INFO - 进度 [22/55] 完成: 烧烫伤怎么急救处理？...
+2026-09-18 22:57:05 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:05 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4143
+2026-09-18 22:57:05 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:57:05 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:05 - __main__ - INFO - 进度 [23/55] 完成: 被狗咬伤了怎么处理？...
+2026-09-18 22:57:06 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:06 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:06 - __main__ - INFO - 进度 [24/55] 完成: 热性惊厥怎么处理？...
+2026-09-18 22:57:06 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2880
+2026-09-18 22:57:06 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:06 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:06 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3348
+2026-09-18 22:57:06 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:08 - app.rag.reranker - INFO - 重排序完成：10 -> 6 （最高分：0.9308）
+2026-09-18 22:57:08 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 6
+2026-09-18 22:57:08 - app.rag.parent_child_store - INFO - 父子映射：6 个 child → 6 个 parent（去重 0 个）
+2026-09-18 22:57:08 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 7 个兄弟章节）
+2026-09-18 22:57:08 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 13 个完整父文档
+2026-09-18 22:57:08 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3535.76ms（query_embedding=286.76ms, semantic_lookup=0.00ms, dense=8.16ms, sparse=294.91ms, fusion=0.00ms, rerank=3527.61ms, parent_lookup=1.00ms, top1_dense_dist=0.4143）
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 烧伤与电击伤  
+**烧伤面积评估（九分法）：**
+- 头颈部：9%
+- 双上肢：9%...
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 08 动物咬伤  
+**犬咬伤：**
+1. 立即用肥皂水和流动清水交替冲洗伤口15分钟
+2....
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 02 呼吸困难  
+**急性呼吸困难常见原因：**
+- 支气管哮喘：呼气性呼吸困难，伴哮鸣音...
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 急性腹痛  
+**需立即就医的腹痛：**
+- 突发剧烈腹痛
+- 腹痛伴发热
+- 腹痛伴...
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 禁忌（请勿做）
+1. 切勿让患者站立或行走（可加重休克致倒地）
+2. 切勿喂水、喂药（吞咽困...
+2026-09-18 22:57:08 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:08 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:09 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.5003）
+2026-09-18 22:57:09 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:09 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:57:09 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 19 个（+14 个兄弟章节），总字符数=2175
+2026-09-18 22:57:09 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 19 个完整父文档
+2026-09-18 22:57:09 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3669.94ms（query_embedding=227.91ms, semantic_lookup=0.00ms, dense=13.39ms, sparse=241.31ms, fusion=0.00ms, rerank=3656.54ms, parent_lookup=0.00ms, top1_dense_dist=0.2880）
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 阿司匹林
+- 适应症：发热、疼痛、抗血小板聚集（小剂量）
+- 用法用量：解热镇痛每次300-...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 抗病毒药物
+- 奥司他韦：用于流感的早期治疗（48小时内使用效果最佳）
+- 成人剂量：每次7...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 血压分级...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭血压管理  
+### 正确的家庭测量方法
+1. 安静休息5分钟后测量
+2. 采用上臂式电子...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 糠酸莫米松乳膏
+- 适应症：湿疹、神经性皮炎、银屑病等炎症性皮肤病
+- 用法：薄涂患处，每日...
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 降糖药  
+### 二甲双胍
+- 适应症：2型糖尿病一线用药
+- 用法用量：起始500mg每日...
+2026-09-18 22:57:09 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:09 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:10 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9963）
+2026-09-18 22:57:10 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:10 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 22:57:10 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 10 个兄弟章节）
+2026-09-18 22:57:10 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 14 个完整父文档
+2026-09-18 22:57:10 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3711.45ms（query_embedding=245.89ms, semantic_lookup=0.00ms, dense=14.67ms, sparse=260.56ms, fusion=0.00ms, rerank=3696.78ms, parent_lookup=0.00ms, top1_dense_dist=0.3348）
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 非药物治疗
+1. 饮食控制：
+- 总热量控制，合理分配三大营养素
+- 碳水化合物占总热量50...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 低血糖处理
+- 识别症状：心慌、手抖、出冷汗、饥饿感、头晕
+- 紧急处理：立即进食15-20...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 缬沙坦
+- 适应症：高血压
+- 用法用量：80mg每日1次
+- 禁忌：妊娠、双侧肾动脉狭窄
+...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 硝苯地平控释片
+- 适应症：高血压、心绞痛
+- 用法用量：30mg每日1次
+- 注意：必须整...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 用药安全常识  
+### 药物过敏处理
+1. 立即停药
+2. 轻度过敏（皮疹、瘙痒）：口服抗组...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 22:57:10 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:10 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:11 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:11 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：17字符，耗时：1525.52ms
+2026-09-18 22:57:11 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：1532.85ms
+2026-09-18 22:57:14 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：107字符，耗时：5204.66ms
+2026-09-18 22:57:14 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5212.69ms
+2026-09-18 22:57:17 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:17 - __main__ - INFO - 进度 [25/55] 完成: 2型糖尿病一线用药是什么？...
+2026-09-18 22:57:17 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:17 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4181
+2026-09-18 22:57:17 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:19 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9615）
+2026-09-18 22:57:19 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:19 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 11（补 6 行）
+2026-09-18 22:57:19 - app.rag.parent_child_store - INFO - 父子映射：11 个 child → 10 个 parent（去重 1 个）
+2026-09-18 22:57:19 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 10 个兄弟章节）
+2026-09-18 22:57:19 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 20 个完整父文档
+2026-09-18 22:57:19 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1753.88ms（query_embedding=234.95ms, semantic_lookup=0.00ms, dense=6.63ms, sparse=241.58ms, fusion=0.00ms, rerank=1745.98ms, parent_lookup=0.00ms, top1_dense_dist=0.4181）
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 心绞痛识别
+- 典型表现：胸骨后压榨性疼痛，持续3-5分钟
+- 诱因：体力活动、情绪激动、饱...
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 慢性阻塞性肺疾病  
+### 概述
+慢性阻塞性肺疾病（COPD）是一种以持续气流受限为特征的慢...
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 危险因素（可控与不可控）...
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 硝酸甘油急救使用要点
+1. 出现胸痛时立即舌下含服1片（0.5mg）
+2. 平卧位含服（避免...
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药原则
+1. 所有抗栓、降脂药物需长期规律服用，不可擅自停药
+2. 出现牙龈/皮肤出血、黑...
+2026-09-18 22:57:19 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:19 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:20 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:21 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:21 - __main__ - INFO - 进度 [26/55] 完成: 一氧化碳中毒怎么急救？...
+2026-09-18 22:57:22 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:22 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2900
+2026-09-18 22:57:22 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:24 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9126）
+2026-09-18 22:57:24 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:24 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 22:57:24 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 7 个兄弟章节）
+2026-09-18 22:57:24 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 11 个完整父文档
+2026-09-18 22:57:24 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2335.53ms（query_embedding=254.49ms, semantic_lookup=0.00ms, dense=7.34ms, sparse=261.83ms, fusion=0.00ms, rerank=2328.19ms, parent_lookup=0.00ms, top1_dense_dist=0.2900）
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 诱发因素
+1. 过敏原：尘螨、花粉、动物皮屑
+2. 感染：上呼吸道感染
+3. 运动：运动性哮...
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 长期管理
+1. 规律使用控制药物：吸入糖皮质激素+长效β2受体激动剂
+2. 随身携带急救药物...
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- 关节腔注射：玻璃酸钠（润滑关节），每周1次，3-5次为一疗程
+- 氨基葡萄糖：500mg/次，每...
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 肩周炎（冻结肩）  
+肩周炎是肩关节囊及周围软组织的慢性炎症，导致肩关节疼痛和活动受限...
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 骨质疏松症  
+骨质疏松症是以骨量减少和骨微结构破坏为特征的代谢性骨病，骨折风险增加。...
+2026-09-18 22:57:24 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:24 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:25 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:25 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：288字符，耗时：15859.80ms
+2026-09-18 22:57:25 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：15867.70ms
+2026-09-18 22:57:34 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：256字符，耗时：10362.78ms
+2026-09-18 22:57:34 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：10369.79ms
+2026-09-18 22:57:36 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:36 - __main__ - INFO - 进度 [27/55] 完成: 高血压患者日常应该注意什么？...
+2026-09-18 22:57:36 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:37 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3452
+2026-09-18 22:57:37 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:39 - app.rag.reranker - INFO - 重排序完成：10 -> 2 （最高分：0.0512）
+2026-09-18 22:57:39 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 2
+2026-09-18 22:57:39 - app.rag.hybrid_retriever - INFO - 表格整表补齐：2 -> 8（补 6 行）
+2026-09-18 22:57:39 - app.rag.parent_child_store - INFO - 父子映射：8 个 child → 6 个 parent（去重 2 个）
+2026-09-18 22:57:39 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 6 个兄弟章节）
+2026-09-18 22:57:39 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 12 个完整父文档
+2026-09-18 22:57:39 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2275.86ms（query_embedding=228.72ms, semantic_lookup=0.00ms, dense=8.37ms, sparse=237.10ms, fusion=0.00ms, rerank=2266.48ms, parent_lookup=1.00ms, top1_dense_dist=0.3452）
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：- 关节腔注射：玻璃酸钠（润滑关节），每周1次，3-5次为一疗程
+- 氨基葡萄糖：500mg/次，每...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 肩周炎（冻结肩）  
+肩周炎是肩关节囊及周围软组织的慢性炎症，导致肩关节疼痛和活动受限...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 运动损伤  
+**跑步膝（髌股关节疼痛综合征）：**
+- 表现：膝前疼痛，上下楼梯和久...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 需立即就医的危险信号
+1. 发热伴抽搐、意识不清、呼吸急促
+2. 用药后出现呕吐、上腹剧痛
+3...
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 特殊人群注意...
+2026-09-18 22:57:39 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:39 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:40 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:43 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：527字符，耗时：24030.33ms
+2026-09-18 22:57:43 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：24038.33ms
+2026-09-18 22:57:45 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:45 - __main__ - INFO - 进度 [28/55] 完成: 痛风急性发作怎么治疗？...
+2026-09-18 22:57:46 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:46 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4056
+2026-09-18 22:57:46 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:46 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：120字符，耗时：7074.40ms
+2026-09-18 22:57:46 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：7083.41ms
+2026-09-18 22:57:47 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:47 - __main__ - INFO - 进度 [29/55] 完成: 冠心病患者日常怎么管理？...
+2026-09-18 22:57:47 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:47 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3698
+2026-09-18 22:57:47 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:48 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9890）
+2026-09-18 22:57:48 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:48 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:57:48 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 20 个（+15 个兄弟章节），总字符数=2115
+2026-09-18 22:57:48 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 20 个完整父文档
+2026-09-18 22:57:48 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2461.14ms（query_embedding=252.01ms, semantic_lookup=0.00ms, dense=6.65ms, sparse=258.66ms, fusion=0.00ms, rerank=2453.48ms, parent_lookup=0.00ms, top1_dense_dist=0.4056）
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 家庭护理
+1. 多饮温水，每日1500-2000ml
+2. 充分休息，避免劳累
+3. 保持室...
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 急起高热（39-40℃），伴寒战
+2. 头痛、肌肉酸痛、乏力明显
+3. 可伴...
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 2. 足疗程、足剂量
+1. 严格按医生规定的剂量和疗程服用，不得擅自减量或提前停药
+2. 症...
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 阿司匹林
+- 适应症：发热、疼痛、抗血小板聚集（小剂量）
+- 用法用量：解热镇痛每次300-...
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:57:48 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:48 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:49 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9966）
+2026-09-18 22:57:49 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:49 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:57:49 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 18 个（+13 个兄弟章节），总字符数=2207
+2026-09-18 22:57:49 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 22:57:49 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2584.83ms（query_embedding=218.70ms, semantic_lookup=0.00ms, dense=13.37ms, sparse=232.07ms, fusion=0.00ms, rerank=2570.45ms, parent_lookup=0.00ms, top1_dense_dist=0.3698）
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 脱水评估
+1. 无脱水：精神好、口唇湿润、尿量正常
+2. 轻度脱水：口渴、口唇稍干、尿量略少...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 抗病毒药物
+- 奥司他韦：用于流感的早期治疗（48小时内使用效果最佳）
+- 成人剂量：每次7...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 解热镇痛药  
+### 布洛芬
+- 适应症：轻至中度疼痛（头痛、牙痛、关节痛、肌肉痛、痛经）、...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：呼吸系统疾病诊疗指南.txt
+表格：与流感鉴别
+字段：症状, 普通感冒, 流感...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：呼吸系统疾病诊疗指南.txt
+表格：与流感鉴别
+字段：症状, 普通感冒, 流感...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 家庭护理
+1. 多饮温水，每日1500-2000ml
+2. 充分休息，避免劳累
+3. 保持室...
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 抗生素使用
+- 普通感冒无需使用抗生素
+- 抗生素对病毒无效，滥用可导致耐药
+- 仅在合并细...
+2026-09-18 22:57:49 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:49 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:57:51 - __main__ - INFO - 进度 [30/55] 完成: 痛风患者饮食要注意什么？...
+2026-09-18 22:57:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:57:51 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4278
+2026-09-18 22:57:51 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:57:53 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9447）
+2026-09-18 22:57:53 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:57:53 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 22:57:53 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 16 个（+12 个兄弟章节），总字符数=1844
+2026-09-18 22:57:53 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 22:57:53 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1893.80ms（query_embedding=191.68ms, semantic_lookup=0.00ms, dense=7.02ms, sparse=198.70ms, fusion=0.00ms, rerank=1886.78ms, parent_lookup=1.04ms, top1_dense_dist=0.4278）
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 02 消化系统常见疾病...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性胃肠炎  
+急性胃肠炎多由饮⻝不当、暴饮暴⻝或⻝⽤不洁⻝物引起，主要症状为恶⼼、呕吐、腹痛...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 03 皮肤常见疾病...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 荨麻疹  
+荨⿇疹是⼀种常⻅的过敏性⽪肤病，主要表现为⽪肤上出现⼤⼩不等、形状不规则的⻛团，伴...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 肠易激综合征  
+### 概述
+肠易激综合征是一种功能性肠病，表现为腹痛、腹胀伴排便习惯改变，...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 消化系统疾病就医指征  
+1. 吞咽困难
+2. 持续性呕吐
+3. 呕血或黑便
+4. 不明原因体...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：消化系统疾病诊疗指南...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 病因
+1. 饮食因素：膳食纤维摄入不足、饮水量不足
+2. 生活习惯：缺乏运动、忽视排便信号
+...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 饮食调整（首选）：
+- 增加膳食纤维摄入：燕麦、糙米、芹菜、苹果、香蕉、火龙果
+...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 腹泻  
+### 概述
+腹泻是指排便次数增多（每日>3次）、粪便量增加、粪便稀薄或水样。急性腹...
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 分类
+1. 急性腹泻：病程<2周
+2. 慢性腹泻：病程>4周...
+2026-09-18 22:57:53 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:57:53 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:57:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:01 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：237字符，耗时：13311.06ms
+2026-09-18 22:58:01 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：13321.41ms
+2026-09-18 22:58:04 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：255字符，耗时：14792.39ms
+2026-09-18 22:58:04 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：14798.43ms
+2026-09-18 22:58:06 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:06 - __main__ - INFO - 进度 [31/55] 完成: 感冒需要吃抗生素吗？...
+2026-09-18 22:58:06 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:06 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3783
+2026-09-18 22:58:06 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:08 - app.rag.reranker - INFO - 重排序完成：10 -> 2 （最高分：0.2154）
+2026-09-18 22:58:08 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 2
+2026-09-18 22:58:08 - app.rag.parent_child_store - INFO - 父子映射：2 个 child → 2 个 parent（去重 0 个）
+2026-09-18 22:58:08 - app.rag.parent_child_store - INFO - 邻域扩展：2 个原始 Parent → 10 个（+8 个兄弟章节），总字符数=955
+2026-09-18 22:58:08 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 10 个完整父文档
+2026-09-18 22:58:08 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2122.90ms（query_embedding=241.20ms, semantic_lookup=0.00ms, dense=6.64ms, sparse=247.83ms, fusion=0.00ms, rerank=2116.27ms, parent_lookup=0.00ms, top1_dense_dist=0.3783）
+2026-09-18 22:58:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 脱水评估
+1. 无脱水：精神好、口唇湿润、尿量正常
+2. 轻度脱水：口渴、口唇稍干、尿量略少...
+2026-09-18 22:58:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童湿疹  
+### 概述
+儿童湿疹（特应性皮炎）很常见，约20%儿童受影响。多始于婴儿期，表...
+2026-09-18 22:58:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 饮食调整（首选）：
+- 增加膳食纤维摄入：燕麦、糙米、芹菜、苹果、香蕉、火龙果
+...
+2026-09-18 22:58:08 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 注意事项
+1. 避免长期依赖刺激性泻药
+2. 便秘伴便血、体重下降需就医排除器质性疾病
+3....
+2026-09-18 22:58:09 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:09 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:09 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：305字符，耗时：16332.49ms
+2026-09-18 22:58:09 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：16340.04ms
+2026-09-18 22:58:09 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:14 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:14 - __main__ - INFO - 进度 [32/55] 完成: 6岁以下儿童能用复方感冒药吗？...
+2026-09-18 22:58:15 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:15 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2960
+2026-09-18 22:58:15 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:17 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.8946）
+2026-09-18 22:58:17 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:58:17 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:58:17 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 21 个（+16 个兄弟章节），总字符数=2440
+2026-09-18 22:58:17 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 21 个完整父文档
+2026-09-18 22:58:17 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2058.04ms（query_embedding=411.59ms, semantic_lookup=0.00ms, dense=6.61ms, sparse=418.20ms, fusion=0.00ms, rerank=2051.44ms, parent_lookup=0.00ms, top1_dense_dist=0.2960）
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 麻木与感觉异常  
+### 常见原因
+1. 周围神经病变：
+- 糖尿病性神经病变：手套-袜子样...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：神经系统症状鉴别指南...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴皮疹
+1. 幼儿急疹：热退疹出，3天高热后出疹
+2. 风疹：发热1-2天后出疹，耳后淋...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发热伴咳嗽
+1. 普通感冒：轻咳、流涕
+2. 急性支气管炎：咳嗽加重，可有痰
+3. 肺炎：高...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 孕妇发热
+1. 首选对乙酰氨基酚
+2. 禁用布洛芬（妊娠晚期）
+3. 持续高热需就医...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 发病原因
+1. 原发性高血压：占绝大多数，与遗传、高盐饮食、肥胖、缺乏运动、精神紧张有关
+2...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭血压管理  
+### 正确的家庭测量方法
+1. 安静休息5分钟后测量
+2. 采用上臂式电子...
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 生活方式干预...
+2026-09-18 22:58:17 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:17 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:18 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:18 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：194字符，耗时：9830.91ms
+2026-09-18 22:58:18 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：9839.18ms
+2026-09-18 22:58:20 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:20 - __main__ - INFO - 进度 [33/55] 完成: 便秘怎么治疗？...
+2026-09-18 22:58:20 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:21 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4038
+2026-09-18 22:58:21 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:22 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.9239）
+2026-09-18 22:58:22 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:58:22 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 3 个 parent（去重 1 个）
+2026-09-18 22:58:22 - app.rag.parent_child_store - INFO - 邻域扩展：3 个原始 Parent → 9 个（+6 个兄弟章节），总字符数=2086
+2026-09-18 22:58:22 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 9 个完整父文档
+2026-09-18 22:58:22 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1954.37ms（query_embedding=223.73ms, semantic_lookup=0.00ms, dense=7.11ms, sparse=230.83ms, fusion=0.00ms, rerank=1946.26ms, parent_lookup=0.00ms, top1_dense_dist=0.4038）
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 02 腰椎间盘突出症  
+腰椎间盘突出症是引起腰腿痛的常见原因，好发于20-50岁人群。  ...
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 骨关节炎  
+骨关节炎是最常见的关节疾病，以关节软骨退变和骨质增生为特征。  
+**好...
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 病因
+1. 食物过敏：海鲜、坚果、鸡蛋、牛奶、食品添加剂
+2. 药物过敏：青霉素、磺胺类、非...
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 风团：皮肤上突然出现红色或苍白色隆起，大小形态不一
+2. 瘙痒：剧烈瘙痒，夜...
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 去除病因：避免已知过敏原
+2. 抗组胺药（首选）：
+- 第二代抗组胺药：氯雷他定...
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急诊指征
+当出现以下情况时需立即就医：
+1. 喉头水肿：呼吸困难、声音嘶哑、吞咽困难
+2. ...
+2026-09-18 22:58:22 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:22 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:23 - __main__ - INFO - 进度 [34/55] 完成: 腹泻最重要的是什么？...
+2026-09-18 22:58:24 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:24 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4125
+2026-09-18 22:58:24 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:26 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.6304）
+2026-09-18 22:58:26 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:58:26 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 3 个 parent（去重 1 个）
+2026-09-18 22:58:26 - app.rag.parent_child_store - INFO - 邻域扩展：3 个原始 Parent → 15 个（+12 个兄弟章节），总字符数=1445
+2026-09-18 22:58:26 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 15 个完整父文档
+2026-09-18 22:58:26 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2155.56ms（query_embedding=269.06ms, semantic_lookup=0.00ms, dense=7.54ms, sparse=276.59ms, fusion=0.00ms, rerank=2148.03ms, parent_lookup=1.32ms, top1_dense_dist=0.4125）
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 前驱期：出疹前1-5天，局部疼痛、灼热感
+2. 出疹期：沿神经走行出现红斑→...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 痤疮  
+### 概述
+痤疮是毛囊皮脂腺的慢性炎症性疾病，好发于面部、胸背部，表现为粉刺、丘疹...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 流行性感冒  
+### 概述
+流感是由流感病毒引起的急性呼吸道传染病，传染性强，全身症状重。高...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 急起高热（39-40℃），伴寒战
+2. 头痛、肌肉酸痛、乏力明显
+3. 可伴...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 预防
+1. 每年接种流感疫苗（最有效）
+2. 勤洗手，避免接触流感患者
+3. 流感季节避免去...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性支气管炎  
+### 概述
+急性支气管炎是支气管黏膜的急性炎症，常由病毒或细菌感染引起。主...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 双氯芬酸钠
+- 适应症：类风湿关节炎、骨关节炎、急性疼痛
+- 用法用量：每次25-50mg，...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 感冒用药  
+### 复方感冒药
+常见成分及作用：
+- 对乙酰氨基酚：退热止痛
+- 伪麻黄碱：...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 止咳祛痰药  
+### 右美沙芬
+- 适应症：干咳（无痰咳嗽）
+- 用法用量：成人每次15-3...
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 氨溴索
+- 适应症：急慢性支气管炎、支气管哮喘等伴有痰液粘稠的呼吸道疾病
+- 用法用量：成人...
+2026-09-18 22:58:26 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:26 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:27 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:32 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：344字符，耗时：15068.34ms
+2026-09-18 22:58:32 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：15076.75ms
+2026-09-18 22:58:37 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：307字符，耗时：11143.59ms
+2026-09-18 22:58:37 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：11150.75ms
+2026-09-18 22:58:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:37 - __main__ - INFO - 进度 [35/55] 完成: 呕吐伴剧烈头痛可能是什么病？...
+2026-09-18 22:58:37 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:38 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2762
+2026-09-18 22:58:38 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:40 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9754）
+2026-09-18 22:58:40 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:58:40 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 3 个 parent（去重 2 个）
+2026-09-18 22:58:40 - app.rag.parent_child_store - INFO - 邻域扩展：3 个原始 Parent → 11 个（+8 个兄弟章节），总字符数=1946
+2026-09-18 22:58:40 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 11 个完整父文档
+2026-09-18 22:58:40 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2179.94ms（query_embedding=228.30ms, semantic_lookup=0.00ms, dense=5.11ms, sparse=233.40ms, fusion=0.00ms, rerank=2173.33ms, parent_lookup=0.00ms, top1_dense_dist=0.2762）
+2026-09-18 22:58:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 避免接触过敏原
+2. 鼻用糖皮质激素（一线治疗）：糠酸莫米松鼻喷剂、丙酸氟替卡松...
+2026-09-18 22:58:40 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 定期清洗床上用品（60℃以上热水）
+2. 使用防螨床罩
+3. 花粉季节减少户...
+2026-09-18 22:58:40 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:40 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:41 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:45 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：515字符，耗时：22895.14ms
+2026-09-18 22:58:45 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：22901.97ms
+2026-09-18 22:58:48 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:48 - __main__ - INFO - 进度 [36/55] 完成: 带状疱疹什么时候开始抗病毒治疗最好？...
+2026-09-18 22:58:49 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:49 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3934
+2026-09-18 22:58:49 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:51 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9966）
+2026-09-18 22:58:51 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:58:51 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 26（补 21 行）
+2026-09-18 22:58:51 - app.rag.parent_child_store - INFO - 父子映射：26 个 child → 16 个 parent（去重 10 个）
+2026-09-18 22:58:51 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 0 个兄弟章节）
+2026-09-18 22:58:51 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 22:58:51 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2033.98ms（query_embedding=228.09ms, semantic_lookup=0.00ms, dense=6.76ms, sparse=234.85ms, fusion=0.00ms, rerank=2025.06ms, parent_lookup=0.00ms, top1_dense_dist=0.3934）
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：药物相互作用与禁忌对照表_20260826.md
+表格：重点药物相互作用对照
+...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常用退热镇痛药安全使用对照表_20260826.md
+表格：特殊人群注意
+字段...
+2026-09-18 22:58:51 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:51 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:51 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:52 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：329字符，耗时：12500.55ms
+2026-09-18 22:58:52 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：12507.73ms
+2026-09-18 22:58:52 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:52 - __main__ - INFO - 进度 [37/55] 完成: 颈椎病有哪些分型？...
+2026-09-18 22:58:53 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:58:53 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3038
+2026-09-18 22:58:53 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:58:54 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9625）
+2026-09-18 22:58:54 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:58:54 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:58:54 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 20 个（+15 个兄弟章节），总字符数=2683
+2026-09-18 22:58:54 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 20 个完整父文档
+2026-09-18 22:58:54 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1801.87ms（query_embedding=247.26ms, semantic_lookup=0.00ms, dense=6.21ms, sparse=253.47ms, fusion=0.00ms, rerank=1795.66ms, parent_lookup=1.04ms, top1_dense_dist=0.3038）
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 体股癣
+- 表现：环形或多环形红斑，边缘隆起，中心消退
+- 治疗：外用抗真菌药2-4周
+- ...
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 甲癣（灰指甲）
+- 表现：甲板增厚、变色、变形、脆裂
+- 治疗：
+- 轻度：外用阿莫罗芬搽剂...
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 休息与环境
+1. 充分休息，避免剧烈活动
+2. 保持室内通风，温度适宜（22-26℃）
+3....
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 物理降温
+1. 温水擦浴（32-34℃）
+2. 减少衣物
+3. 多饮温水
+4. 禁忌：酒精擦...
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童感冒  
+### 概述
+儿童感冒比成人更频繁，学龄前儿童每年可感冒6-8次。多为病毒感染，...
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 意识障碍  
+**常见原因：**
+- 低血糖：出冷汗、心悸、意识模糊，糖尿病患者最常见...
+2026-09-18 22:58:54 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:58:54 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:58:55 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:58:56 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：125字符，耗时：5444.63ms
+2026-09-18 22:58:56 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5451.50ms
+2026-09-18 22:59:00 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:00 - __main__ - INFO - 进度 [38/55] 完成: 哮喘急性发作怎么处理？...
+2026-09-18 22:59:00 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:00 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3074
+2026-09-18 22:59:00 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:01 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9996）
+2026-09-18 22:59:01 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:59:01 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：5 -> 3（max_per_source=3）
+2026-09-18 22:59:01 - app.rag.hybrid_retriever - INFO - 表格整表补齐：3 -> 14（补 11 行）
+2026-09-18 22:59:01 - app.rag.parent_child_store - INFO - 父子映射：14 个 child → 7 个 parent（去重 7 个）
+2026-09-18 22:59:01 - app.rag.parent_child_store - INFO - 邻域扩展：7 个原始 Parent → 11 个（+4 个兄弟章节），总字符数=1814
+2026-09-18 22:59:01 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 11 个完整父文档
+2026-09-18 22:59:01 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：898.07ms（query_embedding=230.58ms, semantic_lookup=0.00ms, dense=7.97ms, sparse=238.56ms, fusion=0.00ms, rerank=888.60ms, parent_lookup=0.00ms, top1_dense_dist=0.3074）
+2026-09-18 22:59:01 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:01 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:02 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:09 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:09 - __main__ - INFO - 进度 [39/55] 完成: 布洛芬和阿司匹林能一起吃吗？...
+2026-09-18 22:59:09 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:09 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4136
+2026-09-18 22:59:09 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:12 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.6317）
+2026-09-18 22:59:12 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:59:12 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:59:12 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 20 个（+15 个兄弟章节），总字符数=2230
+2026-09-18 22:59:12 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 20 个完整父文档
+2026-09-18 22:59:12 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2139.52ms（query_embedding=238.63ms, semantic_lookup=0.00ms, dense=7.17ms, sparse=245.80ms, fusion=0.00ms, rerank=2131.35ms, parent_lookup=0.00ms, top1_dense_dist=0.4136）
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 外用药  
+### 红霉素软膏
+- 适应症：脓疱疮等化脓性皮肤病、小面积烧伤、溃疡面感染
+- ...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 缬沙坦
+- 适应症：高血压
+- 用法用量：80mg每日1次
+- 禁忌：妊娠、双侧肾动脉狭窄
+...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 温水洗澡（32-37℃），时间<10分钟
+2. 使用温和无香精沐浴露
+3. ...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 带状疱疹  
+### 概述
+带状疱疹由水痘-带状疱疹病毒再激活引起，表现为沿神经分布的带状群集...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 西替利嗪
+- 适应症：过敏性鼻炎、荨麻疹、过敏性结膜炎
+- 用法用量：成人每次10mg，每日...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 依巴斯汀
+- 适应症：荨麻疹、过敏性鼻炎
+- 用法用量：成人每次10mg，每日1次
+- 优势...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 03 皮肤常见疾病...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 荨麻疹  
+荨⿇疹是⼀种常⻅的过敏性⽪肤病，主要表现为⽪肤上出现⼤⼩不等、形状不规则的⻛团，伴...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 04 其他常见疾病...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 高血压  
+⾼⾎压是⼀种常⻅的慢性病，早期可能没有明显症状，随着病情进展，可出现头痛、头晕、头...
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 避免搔抓，以免加重皮损
+2. 穿宽松棉质衣物
+3. 避免热水烫洗
+4. 饮食...
+2026-09-18 22:59:12 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:12 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:13 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:16 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：508字符，耗时：21863.88ms
+2026-09-18 22:59:16 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：21871.97ms
+2026-09-18 22:59:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:23 - __main__ - INFO - 进度 [40/55] 完成: 发烧伴皮疹可能是什么病？...
+2026-09-18 22:59:24 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:24 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4094
+2026-09-18 22:59:24 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:26 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.7045）
+2026-09-18 22:59:26 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:59:26 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:59:26 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 17 个（+13 个兄弟章节），总字符数=2318
+2026-09-18 22:59:26 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 17 个完整父文档
+2026-09-18 22:59:26 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2125.03ms（query_embedding=239.51ms, semantic_lookup=0.00ms, dense=8.70ms, sparse=248.21ms, fusion=0.00ms, rerank=2115.34ms, parent_lookup=0.00ms, top1_dense_dist=0.4094）
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 饮食调整：
+- 低FODMAP饮食（减少可发酵碳水化合物）
+- 避免产气食物：豆...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 抗病毒治疗（72小时内开始效果最佳）：
+- 阿昔洛韦800mg每日5次，连服7天...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 规律饮食，少食多餐
+2. 避免辛辣、过酸、过烫食物
+3. 戒烟限酒
+4. 避...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急诊指征
+1. 呕血或黑便（消化道出血）
+2. 突发剧烈腹痛（胃穿孔）
+3. 持续呕吐无法进...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 典型症状：烧心（胸骨后烧灼感）、反酸
+2. 非典型症状：慢性咳嗽、咽部异物感...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 生活方式调整：
+- 避免过饱，少食多餐
+- 餐后2-3小时内避免平卧
+- 抬高床...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 肠易激综合征  
+### 概述
+肠易激综合征是一种功能性肠病，表现为腹痛、腹胀伴排便习惯改变，...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 腹痛：排便后缓解
+2. 排便习惯改变：腹泻型、便秘型、混合型
+3. 腹胀、排...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 消化系统疾病就医指征  
+1. 吞咽困难
+2. 持续性呕吐
+3. 呕血或黑便
+4. 不明原因体...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 02 呼吸困难  
+**急性呼吸困难常见原因：**
+- 支气管哮喘：呼气性呼吸困难，伴哮鸣音...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 急性腹痛  
+**需立即就医的腹痛：**
+- 突发剧烈腹痛
+- 腹痛伴发热
+- 腹痛伴...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 带状疱疹  
+### 概述
+带状疱疹由水痘-带状疱疹病毒再激活引起，表现为沿神经分布的带状群集...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 前驱期：出疹前1-5天，局部疼痛、灼热感
+2. 出疹期：沿神经走行出现红斑→...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 后遗神经痛
+- 定义：皮疹愈合后疼痛持续超过3个月
+- 发生率：50岁以上约20-30%
+-...
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 痤疮  
+### 概述
+痤疮是毛囊皮脂腺的慢性炎症性疾病，好发于面部、胸背部，表现为粉刺、丘疹...
+2026-09-18 22:59:26 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:26 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:26 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:28 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：640字符，耗时：26960.36ms
+2026-09-18 22:59:28 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：26968.38ms
+2026-09-18 22:59:29 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：350字符，耗时：17355.37ms
+2026-09-18 22:59:29 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：17362.36ms
+2026-09-18 22:59:32 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：131字符，耗时：6309.29ms
+2026-09-18 22:59:32 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：6316.00ms
+2026-09-18 22:59:38 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:38 - __main__ - INFO - 进度 [41/55] 完成: 面部湿疹能用什么药膏？...
+2026-09-18 22:59:39 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:39 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4385
+2026-09-18 22:59:39 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 22:59:39 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:39 - __main__ - INFO - 进度 [42/55] 完成: 对乙酰氨基酚和布洛芬哪个好？...
+2026-09-18 22:59:39 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:39 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3397
+2026-09-18 22:59:39 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:40 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:40 - __main__ - INFO - 进度 [43/55] 完成: 胃食管反流病怎么治疗？...
+2026-09-18 22:59:40 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:40 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.2947
+2026-09-18 22:59:40 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:42 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.8541）
+2026-09-18 22:59:42 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:59:42 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 22:59:42 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 8 个兄弟章节）
+2026-09-18 22:59:42 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 12 个完整父文档
+2026-09-18 22:59:42 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3549.95ms（query_embedding=268.19ms, semantic_lookup=0.00ms, dense=8.83ms, sparse=277.02ms, fusion=0.00ms, rerank=3540.12ms, parent_lookup=0.00ms, top1_dense_dist=0.4385）
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 肩周炎（冻结肩）  
+肩周炎是肩关节囊及周围软组织的慢性炎症，导致肩关节疼痛和活动受限...
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 痛风性关节炎  
+痛风是由于血尿酸过高导致尿酸盐结晶沉积在关节引起的急性炎症。  
+*...
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 运动损伤  
+**跑步膝（髌股关节疼痛综合征）：**
+- 表现：膝前疼痛，上下楼梯和久...
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 08 就医指引  
+**骨科急诊（需立即就医）：**
+- 开放性骨折
+- 关节脱位
+- 脊柱...
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：# 糖尿病日常管理与用药指南  
+## 文档说明
+- 版本：v1
+- 更新日期：2026-08-26...
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 糖尿病概述  
+### 什么是糖尿病
+糖尿病是以血糖升高为特征的代谢性疾病，由于胰岛素分泌不足...
+2026-09-18 22:59:42 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:42 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:43 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:43 - app.rag.reranker - INFO - 重排序完成：10 -> 4 （最高分：0.3234）
+2026-09-18 22:59:43 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 4
+2026-09-18 22:59:43 - app.rag.parent_child_store - INFO - 父子映射：4 个 child → 4 个 parent（去重 0 个）
+2026-09-18 22:59:43 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 18 个（+14 个兄弟章节），总字符数=2012
+2026-09-18 22:59:43 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 22:59:43 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：4199.71ms（query_embedding=203.39ms, semantic_lookup=0.00ms, dense=13.67ms, sparse=217.06ms, fusion=0.00ms, rerank=4184.02ms, parent_lookup=0.00ms, top1_dense_dist=0.3397）
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性胃肠炎  
+急性胃肠炎多由饮⻝不当、暴饮暴⻝或⻝⽤不洁⻝物引起，主要症状为恶⼼、呕吐、腹痛...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 何时需就医
+1. 血便
+2. 持续呕吐无法进食
+3. 中重度脱水
+4. 腹泻超过7天
+5. ...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 抑酸治疗：
+- 质子泵抑制剂（首选）：奥美拉唑20mg每日1-2次
+- H2受体...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常护理
+1. 规律饮食，少食多餐
+2. 避免辛辣、过酸、过烫食物
+3. 戒烟限酒
+4. 避...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 胃食管反流病  
+### 概述
+胃食管反流病是胃内容物反流入食管引起的不适症状和/或食管黏膜损...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 典型症状：烧心（胸骨后烧灼感）、反酸
+2. 非典型症状：慢性咳嗽、咽部异物感...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 腹痛：排便后缓解
+2. 排便习惯改变：腹泻型、便秘型、混合型
+3. 腹胀、排...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 饮食调整：
+- 低FODMAP饮食（减少可发酵碳水化合物）
+- 避免产气食物：豆...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性支气管炎  
+急性⽀⽓管炎是⽀⽓管黏膜的急性炎症，常由病毒或细菌感染引起。主要症状为咳嗽，...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 02 消化系统常见疾病...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 便秘  
+便秘是指排便次数减少（每周少于3次）、粪便⼲硬、排便困难。⻓期便秘可能会引起腹胀、腹...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 03 皮肤常见疾病...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 脱水评估
+1. 无脱水：精神好、口唇湿润、尿量正常
+2. 轻度脱水：口渴、口唇稍干、尿量略少...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 补液（最重要）：
+- 口服补液盐III（ORS）：少量多次
+- 每次腹泻后补充5...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童湿疹  
+### 概述
+儿童湿疹（特应性皮炎）很常见，约20%儿童受影响。多始于婴儿期，表...
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 好发部位
+1. 婴儿：面部（两颊）、头皮、四肢伸侧
+2. 儿童：肘窝、膝窝、颈部...
+2026-09-18 22:59:43 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:43 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:44 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.7923）
+2026-09-18 22:59:44 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:59:44 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 22:59:44 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 16 个（+11 个兄弟章节），总字符数=2396
+2026-09-18 22:59:44 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 22:59:44 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3750.20ms（query_embedding=208.09ms, semantic_lookup=0.00ms, dense=15.14ms, sparse=223.23ms, fusion=0.00ms, rerank=3733.85ms, parent_lookup=1.47ms, top1_dense_dist=0.2947）
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性发作处理
+1. 轻度发作：
+- 吸入短效β2受体激动剂（沙丁胺醇气雾剂）1-2喷
+- 2...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 意识障碍  
+**常见原因：**
+- 低血糖：出冷汗、心悸、意识模糊，糖尿病患者最常见...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 中毒  
+**一氧化碳中毒：**
+- 表现：头痛、头晕、恶心、呕吐、意识障碍
+- 处理...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 烧伤与电击伤  
+**烧伤面积评估（九分法）：**
+- 头颈部：9%
+- 双上肢：9%...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 常见诱因
+1. 药物：青霉素等抗生素、造影剂、阿司匹林/NSAID
+2. 食物：花生、坚果、...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 哮喘  
+### 概述
+哮喘是一种慢性气道炎症性疾病，表现为反复发作的喘息、呼吸困难、胸闷、咳...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 诱发因素
+1. 过敏原：尘螨、花粉、动物皮屑
+2. 感染：上呼吸道感染
+3. 运动：运动性哮...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 长期管理
+1. 规律使用控制药物：吸入糖皮质激素+长效β2受体激动剂
+2. 随身携带急救药物...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 呼吸系统疾病就医指征  
+1. 高热（>39℃）持续3天以上
+2. 呼吸困难、气促
+3. 胸痛...
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 表现清单
+1. **皮肤**：全身荨麻疹、瘙痒、面部唇舌肿胀
+2. **呼吸道**：喉头水肿...
+2026-09-18 22:59:44 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:44 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:44 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:45 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:46 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：94字符，耗时：4127.75ms
+2026-09-18 22:59:46 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：4136.54ms
+2026-09-18 22:59:53 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：245字符，耗时：10010.59ms
+2026-09-18 22:59:53 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：10017.45ms
+2026-09-18 22:59:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 22:59:54 - __main__ - INFO - 进度 [44/55] 完成: 骨质疏松怎么诊断？...
+2026-09-18 22:59:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 22:59:55 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4061
+2026-09-18 22:59:55 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 22:59:55 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：233字符，耗时：11176.19ms
+2026-09-18 22:59:55 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：11189.03ms
+2026-09-18 22:59:57 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9538）
+2026-09-18 22:59:57 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 22:59:57 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：5 -> 3（max_per_source=3）
+2026-09-18 22:59:57 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 1 个 parent（去重 2 个）
+2026-09-18 22:59:57 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 5 个（+4 个兄弟章节），总字符数=1575
+2026-09-18 22:59:57 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 5 个完整父文档
+2026-09-18 22:59:57 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2174.94ms（query_embedding=253.68ms, semantic_lookup=0.00ms, dense=7.71ms, sparse=261.39ms, fusion=0.00ms, rerank=2167.23ms, parent_lookup=0.00ms, top1_dense_dist=0.4061）
+2026-09-18 22:59:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：**注意事项：**
+- 脊髓型颈椎病禁止颈椎牵引和手法按摩
+- 避免长时间低头，每40分钟活动颈部
+...
+2026-09-18 22:59:57 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 03 骨关节炎  
+骨关节炎是最常见的关节疾病，以关节软骨退变和骨质增生为特征。  
+**好...
+2026-09-18 22:59:57 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 22:59:57 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 22:59:58 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:05 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:05 - __main__ - INFO - 进度 [45/55] 完成: 呕血或黑便应该怎么办？...
+2026-09-18 23:00:05 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:05 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3209
+2026-09-18 23:00:05 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 23:00:07 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9987）
+2026-09-18 23:00:07 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 23:00:07 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 4 个 parent（去重 1 个）
+2026-09-18 23:00:07 - app.rag.parent_child_store - INFO - 邻域扩展：4 个原始 Parent → 17 个（+13 个兄弟章节），总字符数=1893
+2026-09-18 23:00:07 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 17 个完整父文档
+2026-09-18 23:00:07 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1481.99ms（query_embedding=408.55ms, semantic_lookup=0.00ms, dense=7.37ms, sparse=415.92ms, fusion=0.00ms, rerank=1473.35ms, parent_lookup=0.00ms, top1_dense_dist=0.3209）
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 糖尿病随访
+- 每3个月：糖化血红蛋白
+- 每6个月：血脂、肝肾功能
+- 每年：眼底检查、尿...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 药物治疗
+1. 2型糖尿病一线用药：二甲双胍
+2. 二线用药选择：
+- SGLT2抑制剂（达...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 低血糖处理
+- 识别症状：心慌、手抖、出冷汗、饥饿感、头晕
+- 紧急处理：立即进食15-20...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 冠心病  
+### 概述
+冠心病是冠状动脉粥样硬化导致管腔狭窄或闭塞，引起心肌缺血缺氧的心脏病...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 心绞痛识别
+- 典型表现：胸骨后压榨性疼痛，持续3-5分钟
+- 诱因：体力活动、情绪激动、饱...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 04 其他常见疾病...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 细菌性肺炎：
+- 急起高热（39-40℃）、寒战
+- 咳嗽、咳铁锈色痰（肺炎...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 需立即就医
+1. 高热不退（>39℃持续3天以上）
+2. 呼吸困难、气促
+3. 胸痛明显
+4...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 过敏性鼻炎  
+### 概述
+过敏性鼻炎是鼻黏膜的变态反应性疾病，主要表现为阵发性喷嚏、清水样...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 常见过敏原
+1. 吸入性：尘螨、花粉、动物皮屑、霉菌
+2. 食物性：较少引起单纯鼻炎...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 康复管理
+1. 早期康复：病情稳定后48小时内即可开始
+2. 肢体功能训练：被动运动→主动运...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 慢性病随访管理  
+### 高血压随访
+- 1级高血压：每3个月随访1次
+- 2级高血压：每2...
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药依从性管理
+1. 使用药盒分装，避免漏服
+2. 设置服药提醒
+3. 不可自行停药或减量
+...
+2026-09-18 23:00:07 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:07 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:07 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:07 - __main__ - INFO - 进度 [46/55] 完成: 过敏性休克怎么处理？...
+2026-09-18 23:00:07 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:07 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:07 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3749
+2026-09-18 23:00:07 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 23:00:09 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.8273）
+2026-09-18 23:00:09 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 23:00:09 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 23:00:09 - app.rag.parent_child_store - INFO - 邻域扩展：5 个原始 Parent → 18 个（+13 个兄弟章节），总字符数=1894
+2026-09-18 23:00:09 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 18 个完整父文档
+2026-09-18 23:00:09 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1891.89ms（query_embedding=283.31ms, semantic_lookup=0.00ms, dense=6.56ms, sparse=289.87ms, fusion=0.00ms, rerank=1884.19ms, parent_lookup=0.00ms, top1_dense_dist=0.3749）
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童发热
+1. 精神状态比体温数值更重要
+2. 活泼好动、饮食正常：不必急于退热
+3. 精神...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 退热药物选择
+1. 2-6月龄：对乙酰氨基酚（每次10-15mg/kg），4-6小时一次，2...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 热性惊厥
+1. 表现：发热时突然全身抽搐，双眼上翻，口唇发青
+2. 多见于6月-5岁儿童
+3...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 需立即就医
+1. 3月龄以下婴儿任何发热
+2. 发热伴精神萎靡、拒食
+3. 发热伴皮疹
+4....
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 常见疾病症状与家庭护理指南...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 01 呼吸系统常见疾病...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 急性支气管炎  
+急性⽀⽓管炎是⽀⽓管黏膜的急性炎症，常由病毒或细菌感染引起。主要症状为咳嗽，...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 02 消化系统常见疾病...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 孕妇发热
+1. 首选对乙酰氨基酚
+2. 禁用布洛芬（妊娠晚期）
+3. 持续高热需就医...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 退热药使用原则
+1. 体温≥38.5℃或明显不适时可使用退热药
+2. 优先选择单一成分退热药...
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 儿童退热用药
+1. 2-6月龄：仅用对乙酰氨基酚（每次10-15mg/kg）
+2. 6月龄以...
+2026-09-18 23:00:09 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:09 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:10 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:14 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：125字符，耗时：6967.33ms
+2026-09-18 23:00:14 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：6972.88ms
+2026-09-18 23:00:16 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：110字符，耗时：6382.33ms
+2026-09-18 23:00:16 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：6389.64ms
+2026-09-18 23:00:16 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：289字符，耗时：19007.67ms
+2026-09-18 23:00:16 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：19013.68ms
+2026-09-18 23:00:22 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:22 - __main__ - INFO - 进度 [47/55] 完成: 糖尿病足怎么护理？...
+2026-09-18 23:00:23 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:23 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3872
+2026-09-18 23:00:23 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 23:00:25 - app.rag.reranker - INFO - 重排序完成：10 -> 3 （最高分：0.9818）
+2026-09-18 23:00:25 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 3
+2026-09-18 23:00:25 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 1 个 parent（去重 2 个）
+2026-09-18 23:00:25 - app.rag.parent_child_store - INFO - 邻域扩展：1 个原始 Parent → 5 个（+4 个兄弟章节），总字符数=1727
+2026-09-18 23:00:25 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 5 个完整父文档
+2026-09-18 23:00:25 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1948.68ms（query_embedding=278.52ms, semantic_lookup=0.00ms, dense=8.39ms, sparse=286.91ms, fusion=0.00ms, rerank=1940.29ms, parent_lookup=1.00ms, top1_dense_dist=0.3872）
+2026-09-18 23:00:25 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 烧烫伤  
+**分级：**
+- I度烧伤：仅伤及表皮，皮肤发红、疼痛，无水疱，3-5天...
+2026-09-18 23:00:25 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 头部外伤  
+头部外伤是常见的外伤类型，需特别注意颅内损伤的可能。  
+**轻度头部外...
+2026-09-18 23:00:25 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 常见外伤用药  
+**外用消毒：**
+- 碘伏：适用于皮肤和黏膜消毒，刺激性小，为首选...
+2026-09-18 23:00:25 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 08 何时需要就医  
+以下情况应立即就医：
+1. 开放性骨折或关节脱位
+2. 伤口深且出血...
+2026-09-18 23:00:25 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:25 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:25 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:28 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:28 - __main__ - INFO - 进度 [48/55] 完成: 腰椎间盘突出怎么保守治疗？...
+2026-09-18 23:00:29 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:29 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.4314
+2026-09-18 23:00:29 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 23:00:29 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:29 - __main__ - INFO - 进度 [49/55] 完成: 物理降温有哪些错误做法？...
+2026-09-18 23:00:29 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:29 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：16 篇, top1_distance=0.3491
+2026-09-18 23:00:29 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=8, max_doc_chars=200
+2026-09-18 23:00:30 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：103字符，耗时：5392.81ms
+2026-09-18 23:00:30 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5403.72ms
+2026-09-18 23:00:32 - app.rag.reranker - INFO - 重排序完成：10 -> 6 （最高分：0.5292）
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 6
+2026-09-18 23:00:32 - app.rag.parent_child_store - INFO - 父子映射：6 个 child → 6 个 parent（去重 0 个）
+2026-09-18 23:00:32 - app.rag.parent_child_store - INFO - 邻域扩展：6 个原始 Parent → 17 个（+11 个兄弟章节），总字符数=1622
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 17 个完整父文档
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2986.79ms（query_embedding=267.62ms, semantic_lookup=0.00ms, dense=7.03ms, sparse=274.66ms, fusion=0.00ms, rerank=2979.76ms, parent_lookup=0.00ms, top1_dense_dist=0.4314）
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药安全
+1. 6岁以下儿童不建议使用复方感冒药
+2. 不建议使用含伪麻黄碱的药物
+3. 不...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 鼻塞处理：
+- 生理盐水滴鼻/喷鼻
+- 吸鼻器清理鼻腔（婴儿）
+- 房间使用加湿...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 饮食调整（首选）：
+- 增加膳食纤维摄入：燕麦、糙米、芹菜、苹果、香蕉、火龙果
+...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 注意事项
+1. 避免长期依赖刺激性泻药
+2. 便秘伴便血、体重下降需就医排除器质性疾病
+3....
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童湿疹  
+### 概述
+儿童湿疹（特应性皮炎）很常见，约20%儿童受影响。多始于婴儿期，表...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 好发部位
+1. 婴儿：面部（两颊）、头皮、四肢伸侧
+2. 儿童：肘窝、膝窝、颈部...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 胃炎与消化性溃疡  
+### 概述
+胃炎是胃黏膜的炎症，消化性溃疡是胃或十二指肠黏膜被胃酸侵蚀...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 胃炎：上腹不适、饱胀、恶心、食欲不振
+2. 胃溃疡：餐后痛（进食后0.5-1...
+2026-09-18 23:00:32 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:32 - app.rag.reranker - INFO - 重排序完成：10 -> 8 （最高分：0.9931）
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 8
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 来源多样性过滤：8 -> 7（max_per_source=3）
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 表格整表补齐：7 -> 18（补 11 行）
+2026-09-18 23:00:32 - app.rag.parent_child_store - INFO - 父子映射：18 个 child → 16 个 parent（去重 2 个）
+2026-09-18 23:00:32 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 0 个兄弟章节）
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 16 个完整父文档
+2026-09-18 23:00:32 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：3017.64ms（query_embedding=227.96ms, semantic_lookup=0.00ms, dense=16.14ms, sparse=244.10ms, fusion=0.00ms, rerank=2999.00ms, parent_lookup=1.00ms, top1_dense_dist=0.3491）
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 氨溴索
+- 适应症：急慢性支气管炎、支气管哮喘等伴有痰液粘稠的呼吸道疾病
+- 用法用量：成人...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 对乙酰氨基酚（扑热息痛）
+- 适应症：发热、轻中度疼痛（头痛、肌肉痛、关节痛）
+- 用法用量...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格概览】
+文档：常见药物表.xlsx
+字段：药品通用名, 药物分类, 主要适应症, 成人常规用法...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：冠心病防治与家庭管理指南_20260826.md
+表格：常用冠心病药物分类
+字...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：冠心病防治与家庭管理指南_20260826.md
+表格：常用冠心病药物分类
+字...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：冠心病防治与家庭管理指南_20260826.md
+表格：常用冠心病药物分类
+字...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：冠心病防治与家庭管理指南_20260826.md
+表格：常用冠心病药物分类
+字...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：冠心病防治与家庭管理指南_20260826.md
+表格：常用冠心病药物分类
+字...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：高血压管理与用药指南_20260826.md
+表格：常用降压药分类
+字段：药物...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：高血压管理与用药指南_20260826.md
+表格：常用降压药分类
+字段：药物...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：高血压管理与用药指南_20260826.md
+表格：常用降压药分类
+字段：药物...
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：高血压管理与用药指南_20260826.md
+表格：常用降压药分类
+字段：药物...
+2026-09-18 23:00:32 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:32 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:33 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:34 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:36 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：36字符，耗时：3581.31ms
+2026-09-18 23:00:36 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：3587.35ms
+2026-09-18 23:00:36 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：111字符，耗时：4692.45ms
+2026-09-18 23:00:36 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：4698.45ms
+2026-09-18 23:00:42 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:42 - __main__ - INFO - 进度 [50/55] 完成: 鼻出血正确的止血方法是什么？...
+2026-09-18 23:00:42 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:42 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4049
+2026-09-18 23:00:42 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 23:00:44 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9902）
+2026-09-18 23:00:44 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 23:00:44 - app.rag.hybrid_retriever - INFO - 表格整表补齐：5 -> 10（补 5 行）
+2026-09-18 23:00:44 - app.rag.parent_child_store - INFO - 父子映射：10 个 child → 8 个 parent（去重 2 个）
+2026-09-18 23:00:44 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 11 个兄弟章节）
+2026-09-18 23:00:44 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 19 个完整父文档
+2026-09-18 23:00:44 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1941.54ms（query_embedding=263.06ms, semantic_lookup=0.00ms, dense=6.36ms, sparse=269.43ms, fusion=0.00ms, rerank=1933.17ms, parent_lookup=0.00ms, top1_dense_dist=0.4049）
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：急性脑卒中识别与急救指南_FAST_20260826.md
+表格：FAST 快...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：急性脑卒中识别与急救指南_FAST_20260826.md
+表格：FAST 快...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：【表格上下文】
+文档：急性脑卒中识别与急救指南_FAST_20260826.md
+表格：FAST 快...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 冠心病  
+### 概述
+冠心病是冠状动脉粥样硬化导致管腔狭窄或闭塞，引起心肌缺血缺氧的心脏病...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 心绞痛识别
+- 典型表现：胸骨后压榨性疼痛，持续3-5分钟
+- 诱因：体力活动、情绪激动、饱...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 日常管理
+1. 规律服药：抗血小板药（阿司匹林）、他汀类、β受体阻滞剂、ACEI/ARB
+2...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 慢性阻塞性肺疾病  
+### 概述
+慢性阻塞性肺疾病（COPD）是一种以持续气流受限为特征的慢...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：神经系统症状鉴别指南...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 头痛  
+### 概述
+头痛是最常见的神经系统症状之一，病因多样，绝大多数为良性，但部分需警惕...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 头痛的药物选择
+1. 紧张型头痛：
+- 对乙酰氨基酚500-1000mg
+- 布洛芬200-...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 预防要点（尤其儿童）
+1. 3岁以下避免花生、坚果、果冻、硬糖、整粒葡萄
+2. 进餐时集中注意...
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 哮喘  
+### 概述
+哮喘是一种慢性气道炎症性疾病，表现为反复发作的喘息、呼吸困难、胸闷、咳...
+2026-09-18 23:00:44 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:44 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:45 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:45 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:45 - __main__ - INFO - 进度 [51/55] 完成: 氨氯地平的用法用量是什么？...
+2026-09-18 23:00:45 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:45 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.3776
+2026-09-18 23:00:45 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 23:00:47 - app.rag.reranker - INFO - 重排序完成：10 -> 5 （最高分：0.9210）
+2026-09-18 23:00:47 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 5
+2026-09-18 23:00:47 - app.rag.parent_child_store - INFO - 父子映射：5 个 child → 5 个 parent（去重 0 个）
+2026-09-18 23:00:47 - app.rag.parent_child_store - INFO - 邻域扩展：达到字符上限 2800，跳过后续扩展（已扩展 8 个兄弟章节）
+2026-09-18 23:00:47 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 13 个完整父文档
+2026-09-18 23:00:47 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：1787.37ms（query_embedding=206.81ms, semantic_lookup=0.00ms, dense=6.53ms, sparse=213.34ms, fusion=0.00ms, rerank=1779.84ms, parent_lookup=0.00ms, top1_dense_dist=0.3776）
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 治疗
+1. 鼻塞处理：
+- 生理盐水滴鼻/喷鼻
+- 吸鼻器清理鼻腔（婴儿）
+- 房间使用加湿...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 家庭急救正确做法  
+### 正确步骤
+1. **立即呼救拨打120/急救电话**
+2. **...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 06 中毒  
+**一氧化碳中毒：**
+- 表现：头痛、头晕、恶心、呕吐、意识障碍
+- 处理...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 急性发作处理
+1. 轻度发作：
+- 吸入短效β2受体激动剂（沙丁胺醇气雾剂）1-2喷
+- 2...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 04 烧烫伤  
+**分级：**
+- I度烧伤：仅伤及表皮，皮肤发红、疼痛，无水疱，3-5天...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 05 头部外伤  
+头部外伤是常见的外伤类型，需特别注意颅内损伤的可能。  
+**轻度头部外...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 07 常见外伤用药  
+**外用消毒：**
+- 碘伏：适用于皮肤和黏膜消毒，刺激性小，为首选...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 08 何时需要就医  
+以下情况应立即就医：
+1. 开放性骨折或关节脱位
+2. 伤口深且出血...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童感冒  
+### 概述
+儿童感冒比成人更频繁，学龄前儿童每年可感冒6-8次。多为病毒感染，...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 临床表现
+1. 鼻塞、流涕
+2. 咳嗽
+3. 可伴低热
+4. 食欲下降
+5. 睡眠不安...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 用药安全
+1. 6岁以下儿童不建议使用复方感冒药
+2. 不建议使用含伪麻黄碱的药物
+3. 不...
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 儿童腹泻  
+### 概述
+儿童腹泻常见，多由病毒感染引起（轮状病毒、诺如病毒）。主要风险是脱...
+2026-09-18 23:00:47 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:47 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:48 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:50 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:00:50 - __main__ - INFO - 进度 [52/55] 完成: 孩子腹泻脱水怎么判断？...
+2026-09-18 23:00:50 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/embeddings "HTTP/1.1 200 OK"
+2026-09-18 23:00:50 - app.rag.hybrid_retriever - INFO - Dense 检索（底层 collection）：10 篇, top1_distance=0.4065
+2026-09-18 23:00:50 - app.rag.reranker - INFO - Reranker 输入：docs=10, valid_docs=10, top_k=5, max_doc_chars=200
+2026-09-18 23:00:52 - app.rag.reranker - INFO - 重排序完成：10 -> 3 （最高分：0.1605）
+2026-09-18 23:00:52 - app.rag.hybrid_retriever - INFO - Reranker 重排序：10 -> 3
+2026-09-18 23:00:52 - app.rag.parent_child_store - INFO - 父子映射：3 个 child → 3 个 parent（去重 0 个）
+2026-09-18 23:00:52 - app.rag.parent_child_store - INFO - 邻域扩展：3 个原始 Parent → 14 个（+11 个兄弟章节），总字符数=1703
+2026-09-18 23:00:52 - app.rag.hybrid_retriever - INFO - 父子索引生效：返回 14 个完整父文档
+2026-09-18 23:00:52 - app.rag.hybrid_retriever - INFO - 检索完成，耗时：2381.05ms（query_embedding=217.12ms, semantic_lookup=0.00ms, dense=7.63ms, sparse=224.75ms, fusion=0.00ms, rerank=2373.42ms, parent_lookup=0.00ms, top1_dense_dist=0.4065）
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 常见疾病症状与家庭护理指南...
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 01 呼吸系统常见疾病...
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：## 02 消化系统常见疾病...
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 病因
+- 鼻病毒（最常见，占30-50%）
+- 冠状病毒、呼吸道合胞病毒、腺病毒等
+- 传播...
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：### 与流感鉴别...
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 文档启发式过滤（Reranker排序+无查询实体重叠）：神经系统症状鉴别指南...
+2026-09-18 23:00:52 - app.graph.nodes.helpers - INFO - [答案生成] 开始执行
+2026-09-18 23:00:52 - app.graph.nodes.nodes - INFO - 答案生成节点开始执行
+2026-09-18 23:00:53 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：103字符，耗时：5703.66ms
+2026-09-18 23:00:53 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：5709.21ms
+2026-09-18 23:00:54 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:01:00 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：342字符，耗时：16408.02ms
+2026-09-18 23:01:00 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：16415.54ms
+2026-09-18 23:01:01 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:01:01 - __main__ - INFO - 进度 [53/55] 完成: 流鼻血怎么处理？...
+2026-09-18 23:01:03 - app.graph.nodes.nodes - INFO - 生成答案完成，长度：163字符，耗时：10969.06ms
+2026-09-18 23:01:03 - app.graph.nodes.helpers - INFO - [答案生成] 执行完成，耗时：10975.71ms
+2026-09-18 23:01:03 - __main__ - INFO - 进度 [54/55] 完成: 我现在体温37.8度，伴有头痛。...
+2026-09-18 23:01:14 - httpx - INFO - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-09-18 23:01:14 - __main__ - INFO - 进度 [55/55] 完成: 什么情况需要立即拨打120？...
+
+============================================================
+黄金测试集匹配判定报告
+============================================================
+  总样本:      54（另有 1 条因缺 key_facts 跳过统计）
+  通过:        26   ❌未通过: 28
+  通过率:      48.1%
+  平均要点命中率: 67.8%
+  阈值:        70%
+  语义复审:    189 条字面未中要点交 LLM 判定，其中 98 条确认语义命中（被挽回的假阴性）
+  耗时:        455.6s
+============================================================
+
+[✅] #1 [medium] [用药安全] 要点命中 5/5 (100%)
+    问 : 布洛芬的禁忌症有哪些？
+    LLM语义命中: 不可与阿司匹林同服
+    答 : - 布洛芬的禁忌症包括：
+  - 消化性溃疡活动期
+  - 严重肝肾功能不全
+  - 妊娠晚期
+  - 阿司匹林哮喘
+  - 对非甾体抗炎药过敏者
+  - 饭后服用可减少胃肠道刺激
+  - 不宜与阿司匹林同服
+  - 连续使用不超过5天（止痛）或3天（退热）
+  - 布洛芬无效时，可考虑换用对乙酰氨基酚，两者机制不同
+  - 老年人应减量使用⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 布洛芬禁忌症包括：消化性溃疡活动期、严重肝肾功能不全、妊娠晚期禁用、阿司匹林哮喘患者禁用。不宜空腹服用，有胃溃疡病史者慎用，孕妇及哺乳期妇女禁用，不可与阿司匹林同服，服药期间避免饮酒。
+
+[❌] #2 [hard] [用药安全] 要点命中 2/3 (67%)
+    问 : 孕妇感冒了能吃布洛芬吗？
+    LLM语义命中: 孕妇禁用布洛芬
+    未命中要点: 妊娠晚期〔系统回答未提及妊娠晚期的用药建议。〕
+    答 : - 孕妇感冒时，应避免使用布洛芬，尤其是在孕早期。可以选择对乙酰氨基酚，但需在医生指导下使用。- 如有持续高热，应及时就医。
+- 遵循“能口服不肌注、能肌注不输液”的用药原则，并在用药过程中注意观察是否有皮疹、过敏、严重腹泻等不良反应，如有出现，应及时就医。
+- 肾功能不全者应慎用布洛芬。
+- 哮喘患者中部分人可能对阿司匹林/NSAID过敏，布洛芬应慎用。
+- 成人发热处理：体温<38.5℃时，可
+    标 : 孕妇禁用布洛芬，尤其是妊娠晚期。布洛芬可能影响胎儿动脉导管过早关闭，增加胎儿肺动脉高压风险。孕妇感冒可考虑对乙酰氨基酚退热，但需在医生指导下使用。
+
+[✅] #3 [hard] [用药安全] 要点命中 4/5 (80%)
+    问 : 儿童发烧能用阿司匹林退烧吗？
+    LLM语义命中: 儿童禁用阿司匹林
+    未命中要点: 12岁以下〔系统回答未提及12岁以下这一具体年龄限制。〕
+    答 : - 儿童发烧时禁用阿司匹林退烧，因为儿童在发热或病毒感染时使用阿司匹林可能诱发瑞氏综合征。- 儿童发烧可使用对乙酰氨基酚或布洛芬退烧，剂量需按体重计算，每次5-10mg/kg。
+- 退热药使用原则包括：体温≥38.5℃或明显不适时可使用退热药，优先选择单一成分退热药，不建议交替使用对乙酰氨基酚和布洛芬，两次用药间隔不少于4小时，连续使用不超过3天。
+- 物理降温方法包括温水擦浴、减少衣物、多饮温水
+    标 : 儿童禁用阿司匹林退热。12岁以下儿童发热禁用阿司匹林，因可能引发瑞氏综合征（Reye综合征），表现为急性脑病和肝脂肪浸润，病死率高。儿童退热应选择对乙酰氨基酚（2月龄以上）或布洛芬（6月龄以上）。
+
+[❌] #4 [medium] [用药安全] 要点命中 1/4 (25%)
+    问 : 布洛芬和对乙酰氨基酚可以一起吃吗？
+    LLM语义命中: 不建议联合使用
+    未命中要点: 对乙酰氨基酚经肝脏代谢〔系统回答未提及对乙酰氨基酚的代谢途径。〕 / 布洛芬经肾脏排泄〔系统回答未提及布洛芬的排泄途径。〕 / 避免超量〔系统回答未直接提及避免超量的建议。〕
+    答 : - 布洛芬和对乙酰氨基酚不建议一起使用。根据文档，不建议交替使用对乙酰氨基酚和布洛芬，因为它们的退热机制不同。- 退热药物使用原则：体温≥38.5℃或明显不适时可使用退热药，优先选择单一成分退热药，两次用药间隔不少于4小时，连续使用不超过3天。
+- 儿童退热用药：2-6月龄儿童仅用对乙酰氨基酚（每次10-15mg/kg），6月龄以上儿童可使用对乙酰氨基酚或布洛芬（每次5-10mg/kg），注意按体
+    标 : 不建议常规联合使用。对乙酰氨基酚主要经肝脏代谢，布洛芬主要经肾脏排泄，两者作用机制不同但不建议同时服用。如需交替使用，应在医生指导下进行，严格记录用药时间，避免超量。
+
+[✅] #5 [hard] [用药安全] 要点命中 4/4 (100%)
+    问 : 复方感冒药能同时吃两种吗？
+    LLM语义命中: 不能同时服用, 对乙酰氨基酚超量, 严重肝损伤
+    答 : - 复方感冒药不建议同时服用两种，因为可能存在成分重叠，增加药物副作用的风险。特别是对乙酰氨基酚，若同时服用多种含该成分的药物，可能导致剂量过量，对肝脏造成伤害。- 服用复方感冒药时，应仔细阅读说明书，了解药物成分和注意事项，避免与自身疾病（如高血压）或正在服用的药物（如降压药）发生相互作用。
+- 若必须交替使用不同复方感冒药，应严格遵医嘱或错开服用时间，并密切注意身体反应。
+- 儿童使用复方感冒
+    标 : 不能同时服用两种复方感冒药。多种复方感冒药同服可导致对乙酰氨基酚超量，引起严重肝损伤。复方感冒药成分多有重叠（如对乙酰氨基酚、伪麻黄碱、氯苯那敏），叠加使用极易超量。应选择一种对症的复方制剂即可。
+
+[❌] #6 [medium] [剂量查询] 要点命中 2/5 (40%)
+    问 : 对乙酰氨基酚成人每天最多吃多少？
+    LLM语义命中: 24小时不超过2000mg
+    未命中要点: 每4-6小时一次〔系统回答未提及每4-6小时一次的具体用药频率〕 / 饮酒期间禁用〔系统回答未提及饮酒期间禁用对乙酰氨基酚〕 / 严重肝功能不全禁用〔系统回答未提及严重肝功能不全禁用对乙酰氨基酚〕
+    答 : - 对乙酰氨基酚成人每天最多服用2000mg。**处理/缓解/用药建议：**- **用药：**
+  - 对乙酰氨基酚：成人每次300-600mg，每日不超过2000mg，用于轻中度疼痛和退热。
+  - 避免使用阿司匹林，以减少出血风险。
+- **物理/家庭护理措施：**
+  - 观察症状，如头痛、头晕、恶心等。
+  - 适当休息，避免剧烈活动。
+  - 保持充足水分。
+- **生活调整：**
+  
+    标 : 对乙酰氨基酚成人每次300-600mg，每4-6小时一次，24小时内不超过2000mg（2g）。服用期间禁止饮酒，因酒精可增加对乙酰氨基酚的肝毒性，严重时可致急性肝衰竭。严重肝功能不全者禁用。
+
+[❌] #7 [easy] [剂量查询] 要点命中 1/4 (25%)
+    问 : 布洛芬每天最大剂量是多少？
+    LLM语义命中: 24小时不超过1200mg
+    未命中要点: 每次200-400mg〔系统回答未提及每次剂量范围〕 / 每4-6小时一次〔系统回答未提及服用频率〕 / 饭后服用〔系统回答未提及服用时间或饮食关系〕
+    答 : - 布洛芬每天最大剂量为1.2g，分次服用。⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 布洛芬成人常用剂量为每次200-400mg，每4-6小时一次，24小时内不超过1200mg。饭后服用可减少胃肠刺激。
+
+[❌] #8 [hard] [剂量查询] 要点命中 2/5 (40%)
+    问 : 6个月宝宝发烧吃什么药？剂量怎么算？
+    LLM语义命中: 对乙酰氨基酚10-15mg/kg, 按体重计算
+    未命中要点: 6月龄以上可用布洛芬〔系统回答未提及布洛芬的使用〕 / 5-10mg/kg〔系统回答未提及具体剂量范围5-10mg/kg〕 / 专用儿童剂型〔系统回答未提及专用儿童剂型〕
+    答 : - **用药**：可以使用对乙酰氨基酚，适用于≥2个月的婴儿。剂量根据婴儿体重计算，每千克体重10-15毫克，每4-6小时一次，一天不超过4次。- **物理/家庭护理措施**：保持室内温度适宜，适当增减衣物，保持宝宝舒适。保持室内空气流通，避免宝宝受凉。
+- **生活调整**：保证宝宝充足的休息，多饮水，饮食以清淡易消化为主。⚠️ 以上建议仅供参考，如有疑问请及时就医。
+    标 : 6月龄以上婴儿可选用布洛芬混悬液退热，剂量为每次5-10mg/kg，6-8小时一次，24小时不超过4次。对乙酰氨基酚混悬液也可使用，剂量为每次10-15mg/kg，4-6小时一次，24小时不超过5次。需使用专用儿童剂型，配合体重精确量取，切勿使用成人剂量折算。
+
+[✅] #9 [hard] [用药安全] 要点命中 3/4 (75%)
+    问 : 3个月以下婴儿发烧怎么办？
+    LLM语义命中: 3月龄以下, 不可自行用药
+    未命中要点: 排除严重感染〔系统回答中没有直接提及排除严重感染，仅提到发热情况应立即就医，但未明确与严重感染相关联〕
+    答 : - **立即就医**：3个月以下婴儿任何发热情况都应立即就医，切勿自行喂药。- **物理/家庭护理**：保持室内空气流通，适当降低室温，避免过热。
+- **用药**：文档未提供3个月以下婴儿发烧的具体用药建议，建议咨询医生。
+- **生活调整**：保证充足休息，提供易消化、营养丰富的饮食。⚠️ 以上建议仅供参考，如有疑问请及时就医。
+    标 : 3月龄以下婴儿任何发热均需立即就医，不可自行使用退热药。此年龄段婴儿发热可能为严重感染的表现，需由医生评估排除败血症、脑膜炎等严重疾病。
+
+[❌] #10 [medium] [用药安全] 要点命中 3/6 (50%)
+    问 : 奥司他韦什么时候用效果最好？
+    LLM语义命中: 越早越好, 对普通感冒无效
+    未命中要点: 每次75mg〔系统回答未提及每次剂量‘75mg’。〕 / 每日2次〔系统回答未提及每日服用次数‘2次’。〕 / 连服5天〔系统回答未提及连续服用天数‘5天’。〕
+    答 : - 奥司他韦用于流感的早期治疗，48小时内使用效果最佳。
+    标 : 奥司他韦在流感症状出现后48小时内使用效果最佳，越早使用越好。成人剂量为每次75mg，每日2次，连服5天。奥司他韦是抗流感病毒药物，对普通感冒无效。
+
+[✅] #11 [hard] [症状分诊] 要点命中 5/6 (83%)
+    问 : 头痛什么情况下需要立即就医？
+    LLM语义命中: 雷击样剧烈头痛, 立即拨打120
+    未命中要点: 蛛网膜下腔出血〔系统回答中没有提到'蛛网膜下腔出血'，未覆盖要点2的语义。〕
+    答 : - **需立即就医**：
+  - 出现突发剧烈头痛（"雷击样"）。
+  - 头痛进行性加重。
+  - 伴发热、颈项强直。
+  - 伴意识障碍、抽搐。
+  - 伴局灶性神经功能缺损（偏瘫、言语不清）。
+  - 头痛性质改变。
+  - 50岁以上新发头痛。
+  - 头痛伴视乳头水肿。
+  - 免疫抑制患者新发头痛。
+  - 突发剧烈头痛。
+  - 突发偏瘫、偏身麻木。
+  - 言语不清或理解困难。
+ 
+    标 : 头痛需立即就医的危险信号（红旗征）包括：1.突发雷击样剧烈头痛（蛛网膜下腔出血）；2.50岁以上新发头痛；3.头痛伴发热和颈项强直（脑膜炎）；4.头痛伴意识障碍、癫痫发作；5.头痛急剧进行性加重；6.头痛伴视乳头水肿。出现以上任何一条，需立即拨打120或急诊就医。
+
+[❌] #12 [medium] [症状分诊] 要点命中 3/5 (60%)
+    问 : 偏头痛发作应该吃什么药？
+    LLM语义命中: 预防性用药
+    未命中要点: 对乙酰氨基酚500-1000mg〔系统回答中未提及对乙酰氨基酚500-1000mg的用量〕 / 布洛芬200-400mg〔系统回答中未提及布洛芬200-400mg的用量〕
+    答 : - 偏头痛发作期：
+  - 轻中度：服用布洛芬400-600mg或对乙酰氨基酚
+  - 中重度：服用曲普坦类药物（舒马曲坦50-100mg）
+  - 伴恶心：服用甲氧氯普胺（胃复安）+止痛药
+  - 布洛芬无效时可换用曲普坦类- 偏头痛预防（频繁发作时）：
+  - 在神经内科医生指导下使用普萘洛尔（心得安）、氟桂利嗪、丙戊酸钠⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 偏头痛急性发作可选择：轻中度发作用对乙酰氨基酚500-1000mg或布洛芬200-400mg；中重度发作可用曲坦类药物如舒马曲坦50-100mg。频繁发作者需预防性用药，如普萘洛尔、氟桂利嗪、丙戊酸钠等，需在神经内科医生指导下使用。
+
+[✅] #13 [hard] [症状分诊] 要点命中 6/6 (100%)
+    问 : 高血压急症怎么识别？
+    LLM语义命中: 收缩压>180mmHg, 舒张压>120mmHg
+    答 : - **高血压急症识别**：
+  - 当血压突然升高（>180/120mmHg）伴以下症状时需立即就医：
+    - 剧烈头痛、恶心呕吐
+    - 视力模糊
+    - 胸闷胸痛
+    - 意识障碍
+    - 呼吸困难
+  - 早期识别和及时治疗至关重要。- **脑卒中（中风）识别**：
+  - 使用FAST快速识别法：
+    - F（Face）：面部不对称，口角歪斜
+    - A（Ar
+    标 : 高血压急症表现为血压急剧升高，收缩压>180mmHg和/或舒张压>120mmHg，并伴有以下症状之一：剧烈头痛、视力模糊、胸闷气短、鼻出血、意识障碍、抽搐等。需立即就医，含服降压药并拨打120。
+
+[✅] #14 [hard] [症状分诊] 要点命中 4/5 (80%)
+    问 : 低血糖怎么紧急处理？
+    LLM语义命中: 15-20g碳水化合物, 意识障碍不可喂食
+    未命中要点: 胰高血糖素1mg〔系统回答中没有提到胰高血糖素1mg，未覆盖该要点。〕
+    答 : - **紧急处理低血糖**：
+  - 立即进食15-20g快速吸收糖类，如葡萄糖片、糖果、含糖饮料。
+  - 15分钟后复测血糖，若仍低于3.9mmol/L，则再次补糖。
+  - 若出现严重低血糖（意识障碍），立即拨打120，不可强行喂食。- **警惕低血糖表现**：
+  - 心慌、出汗、手抖、饥饿、头晕、意识模糊。- **低血糖处理**：
+  - 立即进食15g含糖食物，如2-3块方糖、半杯果汁
+    标 : 低血糖紧急处理：意识清醒者立即进食15-20g快速升糖的碳水化合物（如葡萄糖片、含糖饮料、糖果），15分钟后复测血糖，未恢复则重复。意识障碍者不可强行喂食（防误吸），应立即拨打120，可由旁人肌肉注射胰高血糖素1mg。
+
+[✅] #15 [hard] [症状分诊] 要点命中 6/6 (100%)
+    问 : 脑卒中怎么快速识别？
+    LLM语义命中: FAST原则, 面部下垂, 手臂无力, 言语不清, 立即拨打120
+    答 : - **脑卒中快速识别与处理**：
+  - **识别**：使用FAST快速识别法，检查面部是否对称，手臂是否一侧无力，言语是否含糊不清，并立即记录发病时间。
+  - **紧急处理**：出现上述任一异常，立即记录发病时间并拨打120。
+  - **就医**：脑卒中是急性疾病，需尽快就医，黄金救治时间窗为发病后4.5小时内（部分可延至6小时）。- **需立即就医**：
+  - 出现脑卒中症状时，应立即
+    标 : 脑卒中快速识别使用FAST原则：F-Face（面部下垂，让患者微笑，一侧面部不对称）；A-Arm（手臂无力，让患者平举双臂，一侧下垂）；S-Speech（言语不清，让患者说一句话，含糊或不能说话）；T-Time（发现以上任何一项，立即拨打120，记录发病时间）。
+
+[❌] #16 [medium] [症状分诊] 要点命中 2/6 (33%)
+    问 : 感冒和流感怎么区分？
+    LLM语义命中: 感冒症状轻, 鼻塞流涕
+    未命中要点: 流感起病急〔系统回答未提及流感起病急的相关信息。〕 / 高热39-40℃〔系统回答未提及高热39-40℃的相关信息。〕 / 全身症状明显〔系统回答未提及全身症状明显的相关信息。〕 / 传染性〔系统回答未提及传染性的相关信息。〕
+    答 : - **对症治疗**：以缓解症状为主，无特效抗病毒药。- **退热止痛**：使用对乙酰氨基酚或布洛芬。
+- **鼻塞**：使用生理盐水鼻喷或含伪麻黄碱药物。
+- **流涕打喷嚏**：使用含氯苯那敏的复方感冒药。
+- **咳嗽**：干咳时使用右美沙芬，有痰时使用氨溴索。
+- **咽痛**：使用含片（如西瓜霜、金嗓子）或温盐水漱口。**需立即就医**：- 若症状持续加重或出现呼吸困难、持续高热、精神状
+    标 : 感冒和流感的区别：普通感冒症状轻，以鼻塞、流涕、咽痛为主，发热少见或低热，起病缓慢；流感起病急骤，高热（39-40℃）伴全身症状明显（头痛、肌肉酸痛、极度乏力），呼吸道症状相对较轻。流感有明显的季节性和传染性。
+
+[✅] #17 [easy] [症状分诊] 要点命中 4/5 (80%)
+    问 : 发烧多少度需要吃退烧药？
+    LLM语义命中: 缓解症状不替代病因治疗
+    未命中要点: 热性惊厥38℃〔系统回答未提及热性惊厥38℃的相关处理〕
+    答 : - 发烧处理：
+  - 体温<38.5℃：物理降温，如用温水擦拭额头、腋窝、腹股沟等部位；多饮水，注意休息。
+  - 体温≥38.5℃：物理降温+口服退热药，如对乙酰氨基酚或布洛芬。
+  - 伴头痛、肌肉酸痛：可考虑使用布洛芬。
+  - 伴胃肠道不适：优先选择对乙酰氨基酚。- 注意事项：
+  - 孕妇发热首选对乙酰氨基酚，禁用布洛芬（妊娠晚期）。
+  - 持续高热需就医。
+  - 3月龄以下婴儿发
+    标 : 成人腋温超过38.5℃或出现明显不适时可考虑使用退热药。儿童腋温超过38.5℃使用退热药，但有热性惊厥史的儿童38℃即可用药。退热药选择：对乙酰氨基酚或布洛芬。注意退热药是缓解症状，不能替代病因治疗。
+
+[✅] #18 [hard] [症状分诊] 要点命中 4/5 (80%)
+    问 : 胸痛可能是什么严重疾病？
+    未命中要点: 立即拨打120〔系统回答未提及拨打120的具体建议。〕
+    答 : - **胸痛处理建议**：
+  - **危重胸痛**：立即就医，如急性心肌梗死、主动脉夹层、肺栓塞、张力性气胸。
+  - **非危重胸痛**：休息观察，如肋软骨炎、胃食管反流、带状疱疹、焦虑症。若持续超过30分钟或加重，需就医。
+  - **疑似心梗**：立即停止活动，含服硝酸甘油（1片舌下含服，5分钟可重复1次，最多3次）。
+  - **疑似主动脉夹层**：立即就医，不要自行用药。
+  - **
+    标 : 危重胸痛需警惕：1.急性心肌梗死（胸骨后压榨性疼痛，向左臂/下颌放射，持续>30分钟）；2.主动脉夹层（突发撕裂样剧痛，向背部放射）；3.肺栓塞（胸痛伴呼吸困难、咯血）；4.张力性气胸（突发胸痛伴严重呼吸困难）。以上均为危及生命的急症，需立即拨打120。
+
+[✅] #19 [hard] [用药安全] 要点命中 4/4 (100%)
+    问 : 急性腹痛能吃止痛药吗？
+    LLM语义命中: 延误诊断, 先就医明确病因
+    答 : - **禁用止痛药**：急性腹痛时，禁用止痛药，因为止痛药可能会掩盖病情，影响诊断。- **禁食禁水**：可能需要急诊手术，因此应禁食禁水。
+- **半卧位休息**：采取半卧位休息，有助于缓解症状。
+- **测量体温和血压**：定期测量体温和血压，以便监测病情变化。
+- **尽快就医**：急性腹痛可能是多种疾病的症状，应尽快就医以获得正确的诊断和治疗。
+    标 : 急性腹痛未明确诊断前禁用止痛药。止痛药会掩盖病情，影响医生判断，延误诊断可能导致严重后果（如阑尾穿孔、宫外孕破裂等）。应先就医明确病因，在医生指导下用药。
+
+[❌] #20 [hard] [症状分诊] 要点命中 4/6 (67%)
+    问 : 荨麻疹什么情况下需要急诊？
+    未命中要点: 肾上腺素〔系统回答中没有提及肾上腺素的使用。〕 / 拨打120〔系统回答中没有提及拨打120的建议。〕
+    答 : - **治疗荨麻疹**：
+  - 去除病因：避免已知过敏原
+  - 抗组胺药（首选）：
+    - 第二代抗组胺药：氯雷他定10mg/日、西替利嗪10mg/日、依巴斯汀10mg/日
+    - 如一种无效可换用另一种或联合使用
+    - 慢性荨麻疹需规律服药，不可风团消退即停药
+  - 严重急性荨麻疹：
+    - 抗组胺药+短期口服激素（泼尼松30mg/日，3-5天）
+  - 外用止痒：炉甘石
+    标 : 荨麻疹出现以下情况需立即急诊：1.喉头水肿（呼吸困难、声音嘶哑、喉部异物感）；2.过敏性休克（血压下降、意识模糊、脉搏细速）；3.血管性水肿累及面部和喉部。以上为危及生命的急症，需立即注射肾上腺素并拨打120。
+
+[✅] #21 [medium] [急救处理] 要点命中 5/5 (100%)
+    问 : 扭伤后应该冷敷还是热敷？
+    LLM语义命中: 48小时内冷敷, 48小时后热敷, 禁止热敷, 禁止红花油揉搓
+    答 : - **扭伤处理**：
+  - 立即停止行走，避免负重
+  - 冰敷15-20分钟，每2小时一次
+  - 使用弹性绷带从足趾向小腿方向缠绕固定
+  - 抬高患肢，高于心脏水平
+  - 48小时后可开始温水浸泡和轻度活动
+  - 严重扭伤需X光检查排除骨折
+  - 避免热敷和活血药物揉搓
+  - 如出现明显畸形、骨擦音、异常活动，可能合并骨折，应立即就医
+  - 文档未提供扭伤后热敷的具体时间，但建
+    标 : 扭伤后48小时内应冷敷（冰敷），每次15-20分钟，间隔1-2小时，可减少出血和肿胀。48小时后才可改为热敷促进血液循环。伤后48小时内禁止热敷，禁止涂抹红花油等活血药物揉搓，否则会加重出血肿胀。
+
+[✅] #22 [medium] [急救处理] 要点命中 5/5 (100%)
+    问 : 烧烫伤怎么急救处理？
+    LLM语义命中: 冲脱泡盖送, 冷水冲洗20分钟, 不要涂牙膏酱油, 干净纱布覆盖
+    答 : - **急救处理**：
+  - 冲：立即用流动冷水冲洗伤处15-20分钟，降低皮肤温度
+  - 脱：在冷水中小心脱去伤处衣物，避免强行撕扯
+  - 泡：将伤处浸泡在冷水中10-30分钟
+  - 盖：用清洁的纱布或毛巾覆盖伤口
+  - 送：严重烧烫伤立即送医- **注意事项**：
+  - 不要在伤口上涂抹牙膏、酱油、香油等
+  - 不要挑破水疱
+  - 不要用冰块直接接触伤口
+  - 化学烧伤需大量
+    标 : 烧烫伤急救遵循冲脱泡盖送五步法：1.冲：流动冷水冲洗伤处至少20分钟；2.脱：在冷水中小心脱去衣物；3.泡：疼痛明显可继续冷水浸泡；4.盖：用干净纱布或毛巾覆盖伤口；5.送：送医治疗。不要在伤口涂抹牙膏、酱油、香油，不要挑破水疱。
+
+[✅] #23 [hard] [急救处理] 要点命中 4/5 (80%)
+    问 : 热性惊厥怎么处理？
+    LLM语义命中: 侧卧位, 不要往嘴里塞东西, 不要按压肢体
+    未命中要点: 超过5分钟拨打120〔系统回答中提到抽搐超过5分钟或首次发作需就医，但没有明确提到超过5分钟拨打120。〕
+    答 : - **处理热性惊厥**：
+  - 保持冷静，不要惊慌
+  - 让孩子侧卧，防止误吸
+  - 不要往嘴里塞任何东西
+  - 不要强行按压肢体
+  - 记录抽搐时间
+  - 抽搐超过5分钟或首次发作需就医⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 热性惊厥处理：1.保持侧卧位防止误吸；2.解开衣物散热；3.不要往嘴里塞任何东西；4.不要强行按压肢体；5.记录抽搐持续时间；6.抽搐超过5分钟或反复发作，立即拨打120急救。抽搐停止后可用退热药，但需在抽搐停止后使用。
+
+[✅] #24 [medium] [急救处理] 要点命中 6/6 (100%)
+    问 : 被狗咬伤了怎么处理？
+    LLM语义命中: 肥皂水冲洗15分钟, 狂犬病疫苗
+    答 : - **处理方法**：
+  - 立即用肥皂水和流动清水交替冲洗伤口15分钟。
+  - 碘伏消毒伤口。
+  - 一般不缝合伤口。
+  - 必须注射狂犬疫苗（暴露后免疫程序：0、3、7、14、28天各1针）。
+  - 严重咬伤需注射狂犬病免疫球蛋白。
+  - 根据情况注射破伤风抗毒素。⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 犬咬伤处理：1.立即用肥皂水和流动清水交替冲洗伤口至少15分钟；2.用碘伏消毒伤口；3.一般不缝合伤口（利于引流）；4.尽快到犬伤门诊注射狂犬病疫苗；5.根据伤口暴露等级决定是否注射狂犬病免疫球蛋白；6.注意破伤风预防。
+
+[❌] #25 [hard] [急救处理] 要点命中 2/6 (33%)
+    问 : 一氧化碳中毒怎么急救？
+    未命中要点: 心肺复苏〔系统回答未提及心肺复苏措施〕 / 拨打120〔系统回答未提及拨打120电话〕 / 高压氧舱〔系统回答未提及高压氧舱治疗〕 / 迟发脑病〔系统回答未提及迟发脑病的预防或处理〕
+    答 : - **急救措施**：
+  - 立即开窗通风
+  - 将患者移至空气新鲜处
+  - 立即就医- **预防措施**：
+  - 冬季取暖注意通风
+  - 不要在密闭空间使用燃气⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 一氧化碳中毒急救：1.立即开窗通风，将患者移至空气新鲜处；2.解松衣领保持呼吸通畅；3.如呼吸心跳停止，立即心肺复苏；4.立即拨打120，尽快送至有高压氧舱的医院；5.不要使用明火或电器开关（防止爆炸）；6.即使症状较轻也应就医，因可能迟发脑病。
+
+[❌] #26 [easy] [慢性病管理] 要点命中 4/6 (67%)
+    问 : 高血压患者日常应该注意什么？
+    LLM语义命中: 低盐低脂, 按时服药
+    未命中要点: 每日盐<6g〔系统回答中未提及每日盐的具体摄入量〕 / 不可自行停药〔系统回答中未提及不可自行停药〕
+    答 : - **用药**：高血压患者应遵医嘱使用降压药物，如氨氯地平（起始5mg每日1次，最大10mg）或硝苯地平控释片（30mg每日1次）。注意肝功能不全者需减量。- **生活调整**：保持健康的生活方式，包括低盐饮食、适量运动、控制体重、戒烟限酒、保持良好的心态。
+- **监测血压**：定期监测血压，了解血压控制情况。
+- **避免危险信号**：警惕高血压危象的危险信号，如剧烈头痛、胸痛、胸闷、意识模
+    标 : 高血压患者日常管理：1.低盐低脂饮食（每日盐<6g）；2.定期监测血压；3.适量有氧运动（散步、太极等）；4.按时服药，不可自行停药或减量；5.避免情绪激动；6.戒烟限酒；7.保证充足睡眠；8.定期复诊，根据医生建议调整用药方案。
+
+[❌] #27 [medium] [慢性病管理] 要点命中 2/5 (40%)
+    问 : 2型糖尿病一线用药是什么？
+    未命中要点: 500mg每日2次〔系统回答未提及剂量和频率〕 / 最大2000mg/日〔系统回答未提及最大剂量〕 / eGFR<30禁用〔系统回答未提及eGFR值禁用情况〕
+    答 : - 2型糖尿病一线用药是二甲双胍。
+    标 : 2型糖尿病一线用药是二甲双胍。起始剂量500mg每日2次，可逐渐加量至最大2000mg/日。禁忌症：肾功能不全（eGFR<30）禁用。如二甲双胍禁忌或单药控制不佳，可联合其他降糖药如达格列净、西格列汀等。
+
+[❌] #28 [medium] [慢性病管理] 要点命中 3/5 (60%)
+    问 : 冠心病患者日常怎么管理？
+    未命中要点: 低盐低脂〔系统回答未提及低盐低脂饮食〕 / 胸痛30分钟不缓解拨打120〔系统回答未提及胸痛30分钟不缓解拨打120〕
+    答 : - **药物治疗**：
+  - 抗血小板药：阿司匹林、氯吡格雷（防血栓，需长期服用，注意出血风险）
+  - 降脂药（他汀类）：阿托伐他汀、瑞舒伐他汀（稳斑块、降胆固醇，注意肝功能/肌痛）
+  - β受体阻滞剂：美托洛尔、比索洛尔（减慢心率、减少心肌耗氧）
+  - 硝酸酯类：硝酸甘油（急救含服）（扩张冠状动脉，缓解心绞痛）
+  - ACEI/ARB：依那普利、缬沙坦（保护心脏，降压）- **日常管理
+    标 : 冠心病日常管理：1.规律服药（阿司匹林、他汀类、硝酸甘油备用）；2.低盐低脂饮食；3.适度运动（避免剧烈运动）；4.控制血压、血糖、血脂；5.戒烟限酒；6.随身携带硝酸甘油，胸痛时舌下含服；7.胸痛超过30分钟含服硝酸甘油不缓解，立即拨打120。
+
+[✅] #29 [hard] [慢性病管理] 要点命中 4/5 (80%)
+    问 : 痛风急性发作怎么治疗？
+    LLM语义命中: 秋水仙碱首次1mg, 24小时内越早越好, 急性期禁用降尿酸药
+    未命中要点: 间歇期降尿酸〔系统回答中未提到间歇期降尿酸的内容〕
+    答 : - **痛风急性发作治疗**：
+  - **用药**：
+    - 秋水仙碱：发作24小时内使用效果最佳，首次1mg，1小时后0.5mg。
+    - 非甾体抗炎药：依托考昔120mg/次，每日1次。
+    - 糖皮质激素：上述药物无效或禁忌时使用。
+  - **物理/家庭护理措施**：
+    - 保持关节休息，避免受凉。
+    - 使用冰袋或冷敷减轻关节疼痛。
+  - **生活调整**：
+
+    标 : 痛风急性发作治疗：1.秋水仙碱：首次1mg，1小时后0.5mg，24小时内发作越早用效果越好；2.非甾体抗炎药：依托考昔120mg/次每日1次，或布洛芬；3.糖皮质激素：上述药物禁忌时使用。急性期禁用降尿酸药物（别嘌醇等），降尿酸应在间歇期开始。
+
+[✅] #30 [medium] [慢性病管理] 要点命中 4/5 (80%)
+    问 : 痛风患者饮食要注意什么？
+    LLM语义命中: 多饮水2000ml
+    未命中要点: 血尿酸<360μmol/L〔系统回答中没有提及血尿酸水平的具体数值〕
+    答 : - **痛风患者饮食注意事项**：
+  - 避免高嘌呤食物：动物内脏、海鲜、浓肉汤
+  - 限制中嘌呤食物：红肉、豆制品
+  - 多饮水：每日2000ml以上
+  - 禁酒：尤其是啤酒和白酒
+  - 可食用低嘌呤食物：蔬菜、水果、牛奶、鸡蛋
+    标 : 痛风饮食管理：1.避免高嘌呤食物（动物内脏、海鲜、浓肉汤）；2.限制红肉摄入；3.禁酒尤其啤酒和白酒；4.多饮水（每日2000ml以上）促进尿酸排泄；5.可适量进食低脂乳制品、新鲜蔬菜水果；6.避免含果糖饮料。降尿酸目标：血尿酸<360μmol/L。
+
+[❌] #31 [medium] [用药安全] 要点命中 3/5 (60%)
+    问 : 感冒需要吃抗生素吗？
+    LLM语义命中: 无需抗生素
+    未命中要点: 合并细菌感染时才用〔未提及合并细菌感染时使用抗生素的情况〕 / 滥用导致耐药〔未提及滥用抗生素导致耐药的问题〕
+    答 : - 感冒通常不需要使用抗生素，因为感冒是由病毒引起的，抗生素对病毒无效。- 如果症状轻微，可以采取对症治疗，如使用复方感冒药缓解症状。
+- 复方感冒药常见成分包括对乙酰氨基酚（退热止痛）、伪麻黄碱（缓解鼻塞）、右美沙芬（镇咳）、氯苯那敏（抗过敏、减轻流涕）。
+- 注意事项：避免同时服用多种复方感冒药，服用含氯苯那敏的感冒药后避免驾驶，高血压患者慎用含伪麻黄碱的感冒药，服药期间禁止饮酒。
+- 如果症
+    标 : 普通感冒无需使用抗生素。感冒绝大多数由病毒引起，抗生素对病毒无效。只有在明确合并细菌感染时（如出现黄脓痰、血白细胞升高等）才需在医生指导下使用抗生素。滥用抗生素可导致耐药性和不良反应。
+
+[✅] #32 [hard] [用药安全] 要点命中 5/6 (83%)
+    问 : 6岁以下儿童能用复方感冒药吗？
+    LLM语义命中: 6岁以下不建议, 成分复杂, 不良反应风险
+    未命中要点: 单一成分用药〔系统回答未提及单一成分用药的建议〕
+    答 : - 6岁以下儿童不建议使用复方感冒药，因为它们可能含有不适合儿童使用的成分，如伪麻黄碱和右美沙芬。- 对于鼻塞，可以使用生理盐水滴鼻或喷鼻，或者使用吸鼻器清理鼻腔（适用于婴儿），同时保持房间使用加湿器。
+- 咳嗽方面，1岁以上的儿童可以尝试吃蜂蜜止咳，每次半勺到1勺，同时多饮温水。不建议6岁以下儿童使用止咳药。
+- 发热处理应按照上述退热原则进行。
+- 如果需要退热止痛，可以使用对乙酰氨基酚或布洛
+    标 : 6岁以下儿童不建议使用复方感冒药。复方感冒药成分复杂，可能含伪麻黄碱、右美沙芬、氯苯那敏等，对儿童不良反应风险大。6岁以下也不建议使用止咳药。儿童感冒应以对症护理为主，必要时单一成分用药。
+
+[❌] #33 [medium] [知识问答] 要点命中 3/5 (60%)
+    问 : 便秘怎么治疗？
+    LLM语义命中: 乳果糖15-30ml, 避免长期刺激性泻药
+    未命中要点: 结肠黑变病〔系统回答中没有提及结肠黑变病。〕 / 排除肠道肿瘤〔系统回答中没有提及排除肠道肿瘤。〕
+    答 : - **饮食调整**：增加膳食纤维摄入，多吃粗粮、蔬菜、水果，如燕麦、芹菜、苹果、香蕉等。根据症状调整纤维摄入，腹泻型避免高纤维，便秘型增加纤维。- **饮水**：每天保证足够的饮水量，约1500-2000毫升。
+- **排便习惯**：养成规律的排便习惯，每天固定时间排便，即使没有便意也可尝试蹲厕。
+- **运动**：适当增加运动量，如散步、慢跑、瑜伽等，有助于促进肠道蠕动。
+- **药物治疗**
+    标 : 便秘治疗遵循阶梯方案：1.生活调整：增加膳食纤维、多饮水、规律运动；2.如无效，使用容积性泻药（欧车前亲水胶）或渗透性泻药（乳果糖每次15-30ml、聚乙二醇）；3.短期使用开塞露通便；4.避免长期依赖刺激性泻药（番泻叶、比沙可啶），可致结肠黑变病和依赖。老年人新发便秘需排除肠道肿瘤。
+
+[✅] #34 [medium] [知识问答] 要点命中 4/5 (80%)
+    问 : 腹泻最重要的是什么？
+    LLM语义命中: 预防和纠正脱水
+    未命中要点: 感染性腹泻慎用洛哌丁胺〔系统回答未提及洛哌丁胺的使用建议〕
+    答 : - **治疗腹泻**：
+  - 补液：口服补液盐III（ORS），少量多次，每次腹泻后补充50-100ml。
+  - 饮食：不需要禁食，继续母乳喂养，已添加辅食的婴儿可进食粥、面条、香蕉，避免高糖饮料和果汁。
+  - 益生菌：布拉氏酵母菌、枯草杆菌。
+  - 蒙脱石散：物理止泻。
+  - 锌补充：6月龄以上每次20mg/日，连用10-14天。⚠️ 以上建议仅供参考，如有疑问请及时就医。
+    标 : 腹泻最重要的处理是预防和纠正脱水。轻中度脱水使用口服补液盐III（ORS）补充水分和电解质。蒙脱石散可保护肠黏膜，益生菌（双歧杆菌、枯草杆菌）可调节肠道菌群。感染性腹泻慎用洛哌丁胺（止泻药），因其可能延缓病原体排出。
+
+[✅] #35 [hard] [症状分诊] 要点命中 6/6 (100%)
+    问 : 呕吐伴剧烈头痛可能是什么病？
+    LLM语义命中: 危险信号, 尽快就医
+    答 : - **呕吐伴剧烈头痛的处理建议**：
+  - **用药**：甲氧氯普胺（胃复安）每次10mg，多潘立酮（吗丁啉）每次10mg，昂丹司琼用于化疗/术后呕吐。
+  - **病因治疗**：针对原发病进行治疗。
+  - **补液**：口服补液盐或静脉补液。
+  - **生活调整**：保持充足休息，避免紧张和压力。- **需立即就医的情况**：
+  - 颅内压增高：喷射性呕吐+头痛。
+  - 前庭疾病：呕
+    标 : 呕吐伴剧烈头痛需警惕：1.颅内压增高（脑肿瘤、脑出血、脑膜炎等），喷射性呕吐伴进行性头痛是特征；2.蛛网膜下腔出血：突发雷击样头痛伴呕吐；3.偏头痛：头痛伴恶心呕吐。如伴发热、颈项强直，需排除脑膜炎。此组合属危险信号，需尽快就医。
+
+[✅] #36 [medium] [知识问答] 要点命中 6/6 (100%)
+    问 : 颈椎病有哪些分型？
+    LLM语义命中: 脊髓型禁止牵引按摩
+    答 : - **颈椎病分型**：
+  - 颈型：颈部僵硬、疼痛，活动受限
+  - 神经根型：颈肩痛向上肢放射，手指麻木，握力减退
+  - 椎动脉型：头晕、恶心、耳鸣，转颈时症状加重
+  - 交感神经型：头痛、心悸、出汗异常、视力模糊
+  - 脊髓型：四肢无力、行走不稳、手部精细动作困难**颈椎病处理方法**：- **用药**：
+  - 非甾体抗炎药：布洛芬200-400mg/次，每日2-3次
+  - 肌肉
+    标 : 颈椎病分五型：1.颈型：颈部酸痛僵硬；2.神经根型：上肢放射痛、麻木；3.椎动脉型：头晕、猝倒；4.交感神经型：心悸、出汗异常；5.脊髓型：四肢无力、行走不稳、踩棉花感。其中脊髓型最严重，禁止颈椎牵引和手法按摩。
+
+[✅] #37 [medium] [用药安全] 要点命中 5/5 (100%)
+    问 : 带状疱疹什么时候开始抗病毒治疗最好？
+    LLM语义命中: 降低后遗神经痛
+    答 : - **抗病毒治疗**：带状疱疹的早期抗病毒治疗至关重要，建议在症状出现后的72小时内开始，以阿昔洛韦800mg每日5次，连服7天或伐昔洛韦1000mg每日3次，连服7天为首选。- **镇痛治疗**：根据疼痛程度，轻中度疼痛可使用布洛芬或对乙酰氨基酚，中重度疼痛则可加用加巴喷丁或普瑞巴林。
+- **外用治疗**：若水疱未破，可使用炉甘石洗剂；若水疱破溃，则需用3%硼酸溶液湿敷，并涂抹莫匹罗星软膏。
+    标 : 带状疱疹在皮疹出现72小时内开始抗病毒治疗效果最佳。常用药物：阿昔洛韦800mg每日5次连服7天，或伐昔洛韦1000mg每日3次连服7天。超过72小时如有新发水疱仍可使用。早期抗病毒可缩短病程、减轻疼痛、降低后遗神经痛发生率。
+
+[❌] #38 [hard] [急救处理] 要点命中 3/5 (60%)
+    问 : 哮喘急性发作怎么处理？
+    LLM语义命中: 沙丁胺醇1-2喷, 1小时不超过6-8喷
+    未命中要点: 说话困难端坐呼吸口唇发紫拨打120〔未提及说话困难、端坐呼吸、口唇发紫的情况〕 / 泼尼松30mg〔未提及泼尼松30mg〕
+    答 : - **哮喘急性发作处理**：
+  - 使用沙丁胺醇气雾剂（1-2喷）吸入，20分钟可重复使用，1小时内不超过6-8喷。
+  - 保持坐位，解开衣领。
+  - 立即就医或拨打120。
+  - 使用急救药物。- **呼吸困难处理**：
+  - 哮喘发作：使用沙丁胺醇气雾剂（1-2喷），保持坐位。
+  - 心力衰竭：取坐位或半坐位，双下肢下垂。
+  - 过敏反应：立即脱离过敏原，使用肾上腺素自动注射器
+    标 : 哮喘急性发作处理：1.立即使用速效支气管扩张剂（沙丁胺醇气雾剂1-2喷），20分钟可重复，1小时内不超过6-8喷；2.坐位或半坐位，保持镇静；3.如发作严重（说话困难、端坐呼吸、口唇发紫），立即拨打120；4.如家中备有口服激素，可口服泼尼松30mg。
+
+[✅] #39 [hard] [用药安全] 要点命中 3/4 (75%)
+    问 : 布洛芬和阿司匹林能一起吃吗？
+    LLM语义命中: 不建议同服, 增加胃肠道出血风险, 减弱抗血小板作用
+    未命中要点: 加用胃黏膜保护剂〔系统回答中没有提到加用胃黏膜保护剂的建议，未覆盖要点4。〕
+    答 : - **布洛芬和阿司匹林不能一起吃**：
+  - 布洛芬与阿司匹林同时使用会增加胃肠出血的风险，并削弱阿司匹林的心脏保护作用。
+  - 应该避免同时使用这两种药物，如果需要，应咨询医生进行换药或错开用药时间。⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 布洛芬和阿司匹林不建议同服。两者同服增加胃肠道出血风险，且布洛芬可能减弱阿司匹林的抗血小板作用。如需抗炎镇痛又有心血管病需服阿司匹林，建议在医生指导下选择替代药物，必要时加用胃黏膜保护剂。
+
+[✅] #40 [medium] [症状分诊] 要点命中 5/6 (83%)
+    问 : 发烧伴皮疹可能是什么病？
+    LLM语义命中: 药疹
+    未命中要点: 脑膜炎〔系统回答中没有提及脑膜炎，因此没有覆盖该要点。〕
+    答 : - 发烧伴皮疹可能是由多种疾病引起的，包括幼儿急疹、风疹、水痘和手足口病等。- 如果皮疹迅速蔓延或加重，伴有发热、关节痛等全身症状，出现水疱、大疱、皮肤剥脱，疑似药物过敏，皮疹持续2周以上不消退，皮肤出现破溃、感染迹象，或面部或生殖器部位出现皮疹，应立即就医。
+- 对于3月龄以下婴儿的任何发热，发热伴精神萎靡、拒食，发热伴皮疹，发热伴持续呕吐，发热超过3天，退热后精神仍差，发热伴呼吸急促等情况，也
+    标 : 发热伴皮疹的常见疾病：1.幼儿急疹（热退疹出，3岁以下）；2.风疹（发热1-2天后出疹，耳后淋巴结肿大）；3.水痘（向心性分布，斑丘疹→疱疹→结痂）；4.手足口病（手、足、口疱疹，儿童多见）；5.药疹（用药后出现，需停药就医）；6.脑膜炎（皮疹伴发热、头痛、颈强直，紧急就医）。
+
+[❌] #41 [medium] [知识问答] 要点命中 4/6 (67%)
+    问 : 对乙酰氨基酚和布洛芬哪个好？
+    LLM语义命中: 对乙酰氨基酚胃肠刺激小, 无抗炎作用, 布洛芬有抗炎作用, 胃肠刺激大
+    未命中要点: 过量肝损伤〔未提及过量肝损伤〕 / 妊娠晚期禁用〔未提及妊娠晚期禁用〕
+    答 : - **退热药物选择**：
+  - 对乙酰氨基酚和布洛芬均具有良好的退热效果，适用于不同年龄段的儿童和成人。
+  - 对乙酰氨基酚适用于≥2个月大的儿童和成人，每日最大量为2000mg，用药间隔为4-6小时。
+  - 布洛芬适用于≥6个月大的儿童和成人，每日最大量为1200mg，用药间隔为6-8小时。
+  - 对乙酰氨基酚的止痛效果为轻中度，而布洛芬的止痛效果为中重度。
+  - 布洛芬具有抗炎作用
+    标 : 对乙酰氨基酚和布洛芬各有优劣：对乙酰氨基酚对胃肠刺激小，适合胃肠敏感者和孕妇（医生指导下），但无抗炎作用，过量可致肝损伤；布洛芬有抗炎镇痛作用，适合炎症性疼痛，但对胃肠刺激较大，肾功能不全者慎用，妊娠晚期禁用。选择取决于具体症状和个体情况。
+
+[❌] #42 [hard] [用药安全] 要点命中 3/6 (50%)
+    问 : 面部湿疹能用什么药膏？
+    LLM语义命中: 强效激素不宜用于面部
+    未命中要点: 弱效或中效激素〔系统回答未提及弱效或中效激素〕 / 氢化可的松〔系统回答未提及氢化可的松〕 / 他克莫司软膏替代〔系统回答未提及他克莫司软膏替代〕
+    答 : - **面部湿疹用药**：
+  - 使用糠酸莫米松乳膏，薄涂患处，每日1次。
+  - 面部、褶皱处慎用，不超过2周。
+  - 可配合使用保湿霜（如凡士林、尿素霜）进行保湿。
+  - 如有瘙痒，可使用口服抗组胺药（如氯雷他定、西替利嗪）止痒。- **物理/家庭护理措施**：
+  - 保持皮肤清洁干燥，避免过度清洗和热水烫洗。
+  - 选择温和、无刺激性的护肤品和沐浴用品。
+  - 避免食用辛辣、刺激
+    标 : 面部湿疹应选择弱效或中效糖皮质激素，如氢化可的松乳膏或糠酸莫米松乳膏，且使用不超过2周。强效激素（卤米松、曲安奈德等）不宜用于面部，可致皮肤萎缩、毛细血管扩张、色素沉着。如需长期使用，可改用他克莫司软膏或吡美莫司乳膏（钙调磷酸酶抑制剂，无激素副作用）。
+
+[❌] #43 [medium] [知识问答] 要点命中 0/5 (0%)
+    问 : 胃食管反流病怎么治疗？
+    未命中要点: 抬高床头〔系统回答未提及抬高床头这一具体措施。〕 / 餐后3小时不平卧〔系统回答未提及餐后3小时不平卧这一具体措施。〕 / 奥美拉唑20mg〔系统回答未提及奥美拉唑20mg这一具体用药。〕 / 质子泵抑制剂首选〔系统回答未提及质子泵抑制剂首选这一具体用药原则。〕 / 多潘立酮〔系统回答未提及多潘立酮这一具体用药。〕
+    答 : - **治疗胃食管反流病**：
+  - **用药**：文档未提供具体用药信息。
+  - **物理/家庭护理措施**：休息观察，如症状持续超过30分钟或加重需就医。
+  - **生活调整**：文档未提供具体生活调整建议。⚠️ 以上建议仅供参考，如有疑问请及时就医。
+    标 : 胃食管反流病治疗：1.生活方式调整：抬高床头、餐后3小时内不平卧、避免饱餐、戒烟酒、减少高脂和辛辣食物；2.药物治疗：质子泵抑制剂（奥美拉唑20mg每日1-2次）为首选，或多潘立酮促胃动力；3.难治性反流可考虑手术。
+
+[❌] #44 [medium] [知识问答] 要点命中 3/6 (50%)
+    问 : 骨质疏松怎么诊断？
+    LLM语义命中: 骨密度检测DXA
+    未命中要点: T值<-1.0骨量减少〔系统回答中提到T值≤-2.5诊断为骨质疏松，未提及T值<-1.0骨量减少〕 / 绝经后女性〔系统回答中未提及绝经后女性〕 / 65岁以上男性〔系统回答中未提及65岁以上男性〕
+    答 : - **诊断方法**：
+  - 骨密度检查（DXA）：T值≤-2.5诊断为骨质疏松
+  - X线：可见骨小梁稀疏，但出现改变时骨量已丢失30%以上⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 骨质疏松诊断主要依靠骨密度检测（双能X线吸收法，DXA）。诊断标准：T值≤-2.5诊断为骨质疏松；-2.5<T值<-1.0为骨量减少；T值≥-1.0为正常。高危人群（绝经后女性、65岁以上男性、长期用糖皮质激素者）应定期检测骨密度。
+
+[❌] #45 [hard] [急救处理] 要点命中 3/5 (60%)
+    问 : 呕血或黑便应该怎么办？
+    LLM语义命中: 上消化道出血, 立即急诊, 禁食禁水
+    未命中要点: 卧床头偏一侧〔系统回答中没有提到卧床头偏一侧的建议。〕 / 不要自行服药〔系统回答中没有提到不要自行服药的建议。〕
+    答 : - **就医指征**：出现呕血或黑便时，应立即就医，因为这可能是消化道出血的迹象。- **就医措施**：在就医前，应避免进食和饮水，以防止呕吐物阻塞气道。
+- **症状监测**：在等待就医期间，应密切监测患者的生命体征，如心率、血压和呼吸频率。
+- **就医后处理**：医生可能会根据具体情况开具药物，如止血药物或抗生素，以控制出血和预防感染。
+- **生活调整**：在恢复期间，患者应遵循医生的建议
+    标 : 呕血或黑便提示上消化道出血，属急症，需立即急诊就医。就医前：1.卧床休息，头偏向一侧防误吸；2.禁食禁水；3.保留呕吐物或粪便供医生参考；4.不要自行服药。常见原因：消化性溃疡、胃黏膜病变、食管胃底静脉曲张破裂等。
+
+[❌] #46 [hard] [急救处理] 要点命中 2/6 (33%)
+    问 : 过敏性休克怎么处理？
+    LLM语义命中: 肾上腺素0.3-0.5mg肌注, 立即拨打120
+    未命中要点: 大腿外侧〔系统回答未提及注射部位〕 / 5-15分钟可重复〔系统回答未提及重复注射的时间间隔〕 / 平卧抬高下肢〔系统回答未提及平卧抬高下肢〕 / 肾上腺素首选〔系统回答未提及肾上腺素是否首选〕
+    答 : - **处理方法**：
+  - 轻度过敏：口服氯雷他定10mg或西替利嗪10mg。
+  - 重度过敏（过敏性休克）：立即肌注肾上腺素0.3-0.5mg，并拨打急救电话。- **注意事项**：
+  - 紧记过敏反应进展迅速，需及时识别和处理。
+  - 如出现呼吸困难、喉头肿胀感、喘鸣、头晕、眼前发黑、晕厥、声音嘶哑、吞咽困难、皮肤湿冷、脉搏细弱等危险信号，应立即采取紧急措施。
+  - 如症状严重或持
+    标 : 过敏性休克紧急处理：1.立即肌肉注射肾上腺素0.3-0.5mg（大腿外侧），必要时5-15分钟重复；2.平卧抬高下肢；3.保持气道通畅，如喉头水肿严重可行环甲膜穿刺；4.立即拨打120；5.建立静脉通路，补充血容量；6.备用抗组胺药和糖皮质激素。肾上腺素是首选用药，不可延误。
+
+[❌] #47 [medium] [知识问答] 要点命中 3/5 (60%)
+    问 : 腰椎间盘突出怎么保守治疗？
+    LLM语义命中: 卧床休息1-2周, 布洛芬或塞来昔布, 牵引治疗
+    未命中要点: 甲钴胺〔系统回答中没有提到甲钴胺，未覆盖要点语义。〕 / 马尾综合征需手术〔系统回答中没有提到马尾综合征需手术，未覆盖要点语义。〕
+    答 : - **卧床休息**：急性期严格卧床1-2周，使用硬板床加薄垫。- **药物治疗**：
+  - 非甾体抗炎药：塞来昔布200mg/次，每日1-2次。
+  - 肌肉松弛剂：盐酸乙哌立松50mg/次，每日3次。
+  - 脱水消肿：甘露醇静脉滴注（急性期）。
+- **物理治疗**：腰椎牵引、热敷、电疗。
+- **硬膜外封闭**：保守治疗无效时可考虑。
+- **日常预防**：
+  - 搬重物时屈膝下蹲，避
+    标 : 腰椎间盘突出保守治疗：1.急性期卧床休息1-2周；2.药物治疗：非甾体抗炎药（布洛芬或塞来昔布）+肌肉松弛剂（盐酸乙哌立松）+营养神经（甲钴胺）；3.牵引治疗（非急性期）；4.物理治疗（热敷、电疗）；5.硬膜外封闭（疼痛剧烈时）。如出现马尾综合征（大小便障碍），需急诊手术。
+
+[✅] #48 [medium] [慢性病管理] 要点命中 4/5 (80%)
+    问 : 糖尿病足怎么护理？
+    LLM语义命中: 肘试水温, 保持干燥
+    未命中要点: 破溃红肿立即就医〔系统回答中提到发现足部溃疡及时就医，但未明确提到‘红肿’这一症状，因此未完全覆盖该要点。〕
+    答 : - **糖尿病足护理**：
+  - 每日检查足部有无破损、水疱。
+  - 温水洗脚（水温<37℃），擦干趾缝。
+  - 穿合适鞋袜，避免赤足行走。
+  - 修剪趾甲不宜过短。
+  - 发现足部溃疡及时就医。⚠️ 以上建议仅供参考，如有疑问请及时就医。
+    标 : 糖尿病足护理要点：1.每日检查足部（用镜子看足底）；2.温水洗脚（水温先用手肘试温，避免烫伤）；3.保持足部干燥，尤其趾间；4.穿合适鞋袜，避免赤足行走；5.修剪趾甲避免损伤皮肤；6.及时处理鸡眼、胼胝，勿自行用药；7.发现破溃、红肿、变色立即就医。
+
+[✅] #49 [medium] [用药安全] 要点命中 4/5 (80%)
+    问 : 物理降温有哪些错误做法？
+    LLM语义命中: 酒精擦浴禁用, 捂汗退热错误, 冰水降温错误
+    未命中要点: 温水擦浴32-34℃〔系统回答未提及温水擦浴32-34℃这一具体做法，未覆盖要点语义。〕
+    答 : - 物理降温错误做法：
+  - 酒精擦浴：可能导致酒精中毒，儿童禁用。
+  - 捂汗退热：阻碍散热，可能导致体温继续升高。
+  - 冰水降温：引起血管收缩，反而不利散热。
+  - 过度包裹：婴幼儿可能导致“捂热综合征”。
+    标 : 物理降温的常见错误做法：1.酒精擦浴：经皮肤吸收可致酒精中毒，尤其儿童禁用；2.捂汗退热：阻碍散热可致高热惊厥或中暑；3.冰水降温：可致寒战反而升温，且血管收缩不利于散热。正确方法：温水擦浴（32-34℃）、减少衣物、保持室内通风。
+
+[❌] #50 [medium] [急救处理] 要点命中 3/6 (50%)
+    问 : 鼻出血正确的止血方法是什么？
+    LLM语义命中: 头略前倾, 不要仰头, 捏住鼻翼两侧
+    未命中要点: 10-15分钟〔系统回答中提到保持5-10分钟，与10-15分钟不完全一致。〕 / 冷敷前额〔系统回答中没有提到冷敷前额。〕 / 15分钟不止血就医〔系统回答中提到如伤口内有异物应就医处理，但没有提到15分钟不止血就医。〕
+    答 : - 鼻出血时正确的止血方法是低头用手指捏住鼻翼压迫止血，保持5-10分钟。- 不要在伤口内填塞异物。
+- 如伤口内有异物（如玻璃碎片），不要自行拔出，应就医处理。
+- 大量出血或止血困难时立即拨打急救电话。
+    标 : 鼻出血正确止血方法：1.坐位或半坐位，头略前倾（不要仰头，仰头会使血液流入咽喉引起呛咳）；2.用手指捏住鼻翼两侧（鼻软骨部）压迫止血10-15分钟；3.同时可冷敷前额和鼻根部；4.如15分钟后仍出血不止，用凡士林纱条填塞后就医。
+
+[❌] #51 [medium] [症状分诊] 要点命中 3/5 (60%)
+    问 : 孩子腹泻脱水怎么判断？
+    LLM语义命中: 轻度口稍干尿略减, 中度眼窝凹陷皮肤弹性差, 中重度立即就医
+    未命中要点: 重度无尿嗜睡昏迷〔系统回答中没有提到‘无尿嗜睡昏迷’，未覆盖要点中的‘重度无尿嗜睡昏迷’〕 / 口服补液盐III〔系统回答中没有提到‘口服补液盐III’，未覆盖要点中的‘口服补液盐III’〕
+    答 : - **腹泻脱水判断**：
+  - 无脱水：精神好、口唇湿润、尿量正常
+  - 轻度脱水：口渴、口唇稍干、尿量略少
+  - 中重度脱水：精神萎靡、眼窝凹陷、皮肤弹性差、尿量明显减少⚠️ 以上建议仅供参考，如有疑问请及时就医
+    标 : 儿童脱水评估：轻度脱水：口稍干、尿量略减、皮肤弹性尚可；中度脱水：口干明显、尿量明显减少、皮肤弹性差、眼窝凹陷、烦躁；重度脱水：无尿、皮肤灰白弹性极差、眼窝明显凹陷、嗜睡或昏迷。轻度可家庭补液（口服补液盐III），中重度需立即就医静脉补液。
+
+[❌] #52 [easy] [剂量查询] 要点命中 2/4 (50%)
+    问 : 氨氯地平的用法用量是什么？
+    LLM语义命中: 起始5mg每日1次, 最大10mg每日1次
+    未命中要点: 钙通道阻滞剂〔系统回答未提及氨氯地平是钙通道阻滞剂。〕 / 踝部水肿〔系统回答未提及踝部水肿。〕
+    答 : - 氨氯地平的用法用量：起始剂量为5mg，每日1次，最大剂量为10mg。
+    标 : 氨氯地平起始剂量5mg每日1次，最大剂量10mg每日1次。氨氯地平是二氢吡啶类钙通道阻滞剂，用于高血压和心绞痛治疗。常见不良反应：踝部水肿、面部潮红、头痛、心悸。
+
+[❌] #53 [easy] [急救处理] 要点命中 2/7 (29%)
+    问 : 什么情况需要立即拨打120？
+    LLM语义命中: 心梗胸痛>30分钟, 严重呼吸困难
+    未命中要点: 脑卒中FAST〔系统回答中没有提到脑卒中FAST评估。〕 / 过敏性休克〔系统回答中没有提到过敏性休克。〕 / 大出血〔系统回答中没有提到大出血。〕 / 意识丧失〔系统回答中没有提到意识丧失。〕 / 高热惊厥>5分钟〔系统回答中没有提到高热惊厥超过5分钟。〕
+    答 : - **急性心肌梗死**：
+  - 胸痛持续超过30分钟，含服硝酸甘油不缓解
+  - 伴大汗、恶心呕吐、呼吸困难
+  - 部分患者（尤其是老年人和糖尿病患者）可表现为无痛性心梗- **蛛网膜下腔出血**：
+  - 突发"雷击样"剧烈头痛
+  - "一生中最痛的头痛"
+  - 伴呕吐、意识障碍
+- **颅内感染（脑膜炎/脑炎）**：
+  - 头痛剧烈，进行性加重
+  - 伴发热、颈项强直、呕吐
+- 
+    标 : 需立即拨打120的紧急情况：1.疑似心梗（胸痛>30分钟含硝酸甘油不缓解）；2.疑似脑卒中（FAST任一阳性）；3.严重呼吸困难或哮喘危重发作；4.过敏性休克；5.大出血无法止住；6.严重创伤/骨折；7.意识丧失；8.癫痫持续状态；9.一氧化碳中毒；10.高热惊厥>5分钟。
+
+[❌] #54 [medium] [急救处理] 要点命中 4/6 (67%)
+    问 : 流鼻血怎么处理？
+    LLM语义命中: 不要仰头
+    未命中要点: 冰袋敷鼻梁〔系统回答未提及使用冰袋敷鼻梁的方法。〕 / 10-15分钟〔系统回答未提及具体时间，只提到压迫止血。〕
+    答 : - **处理方法**：
+  - 低头用手指捏住鼻翼压迫止血。
+  - 不要在伤口内填塞异物。
+  - 如伤口内有异物（如玻璃碎片），不要自行拔出，应就医处理。
+  - 大量出血或止血困难时立即拨打急救电话。
+    标 : 鼻出血时不要仰头，应低头用手指捏住鼻翼压迫止血。可用冰袋或冷毛巾敷在鼻梁上帮助收缩血管。保持姿势约10-15分钟直到出血停止。如果出血持续不缓解或反复发作，应及时就医。
+
+报告已保存: data\golden_match_report_v969.json

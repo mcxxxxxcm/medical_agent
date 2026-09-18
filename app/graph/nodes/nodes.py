@@ -3148,8 +3148,10 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     for i, doc in enumerate(retrieved_docs, 1):
         source = doc.metadata.get("source", "未知来源")
         content = doc.page_content
-        if len(content) > 2000:
-            content = content[:2000] + "..."
+        # v9.69: 2000→3000，配合 MAX_SIBLING_CHARS 拉高（P0-2），避免多要点聚合查询的
+        # 父文档/兄弟章节被单文档截断而漏掉共用要点（拨打120/高血压注意/狗咬伤流程等）。
+        if len(content) > 3000:
+            content = content[:3000] + "..."
         doc_id = f"{uuid.uuid4().hex[:8]}"
         try:
             from app.cache.redis_cache import get_cache
