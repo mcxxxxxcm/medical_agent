@@ -1801,7 +1801,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             # v9.66: knowledge 内再分——细则索取型（剂量/禁忌/识别/急救/止血等）用更深 K，
             # 否则用默认 5。实测此类 query 细则/数值行排名常略靠后，5 会被 rerank top-k 截掉；
             # 而"分型/什么病/治疗"类不加深（实测加深易引入噪声、反而漏点）。
-            if _is_detail_soliciting_query(question_type, question):
+            if _is_detail_soliciting_query(question_type, original_query):
                 k = config.RETRIEVAL_K_KNOWLEDGE_DETAIL
             else:
                 k = config.RETRIEVAL_K_KNOWLEDGE

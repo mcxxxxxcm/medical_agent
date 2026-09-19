@@ -232,7 +232,15 @@
       "Bash(PYTHONIOENCODING=utf-8 cat data/kb_active.json)",
       "Bash(PYTHONIOENCODING=utf-8 grep -nE \"ENABLE_SEMANTIC_CACHE\" app/core/config.py .env)",
       "Bash(grep -c \"L2语义缓存\" data/diag_recall_after.log)",
-      "Bash(grep -c \"检索完成\" data/diag_recall_after.log)"
+      "Bash(grep -c \"检索完成\" data/diag_recall_after.log)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -n \"_DETAIL_SOLICIT_TERMS\" app/graph/nodes/nodes.py)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -rn \"_enrich_treatment_query\\\\|_enrich_disease_direction\\\\|_rewrite\\\\|search_query\\\\|query = \" app/graph/nodes/nodes.py)",
+      "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe /tmp/probe_enrich.py)",
+      "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe /tmp/test_kbase.py)",
+      "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe /tmp/test_aligned.py)",
+      "Bash(ENABLE_SEMANTIC_CACHE=false PYTHONIOENCODING=utf-8 PYTHONPATH=/d/Agent/medical_assistant_agent /d/Agent/software/envs/my_medical_env/python.exe *)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -cE \"问题类型|recall|key_fact|评估|sample|第.*条\" data/golden_eval_v970_aligned.log)",
+      "Bash(PYTHONIOENCODING=utf-8 grep -oE \"进度 \\\\[[0-9]+/55\\\\]\" data/golden_eval_v970_aligned.log)"
     ]
   },
   "enableAllProjectMcpServers": true,

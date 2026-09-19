@@ -246,29 +246,39 @@ class RAGEvaluator:
     def run_retrieval(self, question: str) -> Dict:
         """执行检索，返回 {contexts: [...], scores: [...], docs: [...]}
 
-        对齐生产 graph：检索后同样经过 filter_relevant_docs 实体重叠过滤，
-        否则评测走的检索路径与线上不一致，检索错位类 badcase 无法在评测里复现。
+        v9.70: 评测检索完整对齐生产知识检索节点（knowledge_retrieval_node）。
+        此前 run_retrieval 直接用原始问题检索——绕过了生产端对 symptom 类查询的
+        症状检索词增强（_enrich_treatment_query / _enrich_disease_direction），
+        导致评测一直在"半残系统"上打分：如"6个月宝宝发烧怎么办"的剂量要点
+        （按体重/5-10mg/10-15mg/6月龄）生产端经增强已召回4/5，评测却报 0/5。
+        现复用生产节点本身（含路由 question_type、预处理、剥过敏、K 选择、症状增强、
+        父子/兄弟扩展、来源去重、filter_relevant_docs），保证评测 = 生产。
         """
-        # v9.66: 评测检索深度与生产对齐（此前固定 k=3 比生产还浅，细则/数值 chunk 更召不回，
-        # 评测一直在用"半残系统"打分）。与生产 knowledge 分支一致：细则索取型用 8、其余 5。
-        from app.core.config import get_config
-        from app.graph.nodes.nodes import _is_detail_soliciting_query
-        _cfg = get_config()
-        _k = (_cfg.RETRIEVAL_K_KNOWLEDGE_DETAIL
-              if _is_detail_soliciting_query("knowledge", question)
-              else _cfg.RETRIEVAL_K_KNOWLEDGE)
-        retriever = get_hybrid_retriever(
-            k=_k, alpha=0.5, use_reranker=True, rerank_top_k=10
-        )
+        from app.graph.nodes import knowledge_retrieval_node
+
         try:
-            docs = retriever.invoke(question, original_query=question)
+            # 与生产 router 一致：规则路由优先，未命中才走主模型分类。
+            # 评测为单轮样本、无历史，故不套上下文感知层（生产该层依赖对话历史）。
+            from app.graph.nodes.nodes import detect_rule_based_route, _llm_route
+
+            _qtype = detect_rule_based_route(question) or _llm_route(question)
+            # knowledge_retrieval_node 内 K 选择与 symptom 增强均依赖 question_type，
+            # 仍以默认 "general" 兜底（与生产 state 约定一致）。
+            state = {
+                "question": question,
+                "question_type": _qtype,
+                "rewritten_query": None,  # 单轮无需改写，触发生产端预处理路径
+                "hyde_answer": None,
+                "retrieval_attempts": 0,
+                # 评测不跑 symptom_analysis，无症状解析结果；方向增强对空症状安全 no-op
+                "symptoms": {},
+            }
+            result = knowledge_retrieval_node(state)
+            docs = result.get("retrieved_docs") or []
         except Exception as e:
             logger.error(f"检索失败: {e}")
-            return {"contexts": [], "scores": [], "docs": []}
+            docs = []
 
-        from app.graph.nodes import filter_relevant_docs
-
-        docs = filter_relevant_docs(question, docs)
         contexts = [doc.page_content for doc in docs]
         scores = [doc.metadata.get("rerank_score", 0.0) for doc in docs]
         return {"contexts": contexts, "scores": scores, "docs": docs}
