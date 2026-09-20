@@ -89,6 +89,12 @@ class MedicalAssistantState(TypedDict):
 
     # ===== 用户上下文（长期记忆）=====
     user_profile: Optional[Dict[str, Any]]
+    # L1 用药史：用户在服/曾服的药物名列表（由 memory_load_node 从长期记忆读出，
+    # 供 prompt 注入 & 用药安全核对。为空 None 表示未启用/无记录。）
+    current_medications: Optional[List[str]]
+    # 症状趋势：{症状名: {count, first_ts, last_ts, first_iso, last_iso}}，
+    # 仅记录在保留期内重复出现的症状（供"反复/复发"信号注入）。
+    symptom_trends: Optional[Dict[str, Any]]
 
     # ===== 查询重写 =====
     rewritten_query: Optional[str]  # 检索用子查询（关键词优化，用于 BM25 稀疏检索）

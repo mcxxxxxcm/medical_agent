@@ -240,7 +240,13 @@
       "Bash(PYTHONPATH=/d/Agent/medical_assistant_agent PYTHONIOENCODING=utf-8 /d/Agent/software/envs/my_medical_env/python.exe /tmp/test_aligned.py)",
       "Bash(ENABLE_SEMANTIC_CACHE=false PYTHONIOENCODING=utf-8 PYTHONPATH=/d/Agent/medical_assistant_agent /d/Agent/software/envs/my_medical_env/python.exe *)",
       "Bash(PYTHONIOENCODING=utf-8 grep -cE \"问题类型|recall|key_fact|评估|sample|第.*条\" data/golden_eval_v970_aligned.log)",
-      "Bash(PYTHONIOENCODING=utf-8 grep -oE \"进度 \\\\[[0-9]+/55\\\\]\" data/golden_eval_v970_aligned.log)"
+      "Bash(PYTHONIOENCODING=utf-8 grep -oE \"进度 \\\\[[0-9]+/55\\\\]\" data/golden_eval_v970_aligned.log)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m py_compile app/graph/nodes/nodes.py app/skills/medication_guide_engine.py app/memory/long_term_memory.py app/graph/state.py)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_medication_guide_engine.py -q)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_memory_reuse.py -q)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py tests/test_intent_clarify.py tests/test_self_containment.py -q)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m pytest \"tests/test_nodes.py\" -q -k \"test_knowledge_prevention or test_oral_symptom_expression or test_none_handling or test_empty_whitelist_untouched\")",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -c \"import app.graph.nodes.nodes as n; print\\('has _build_memory_context_section:', hasattr\\(n,'_build_memory_context_section'\\)\\); import app.skills.medication_guide_engine as m; print\\('has history check:', hasattr\\(m,'check_medication_history_interactions'\\)\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1,5 +1,21 @@
 # 系统优化更新日志
 
+## v9.71 - 长期记忆「重写轻读」修正：用药史/症状趋势/跨会话澄清接入读回（app/memory/long_term_memory.py、app/skills/medication_guide_engine.py、app/graph/nodes/nodes.py、app/graph/state.py）
+
+背景：代码审计发现长期记忆存在**写入富、读取窄**的不对称——多会话数据（用药、症状、查询历史、bad case）都落进了 L1 长期记忆，但真正读回并注入 prompt 的只有很小一部分。最典型的死数据是**用药史**：`append_medication_event` 负责写、`get_medication_events` 却在整个 `app/` 里**零调用点**；症状事件流只被 `get_all_symptom_onsets` 压缩成"最早首发"取走，复发/加重信息全丢；查询历史只用于评测。即长期记忆"存了却没被用上"。
+
+- **P0 用药史注入 + 新旧药冲突核对**：`memory_load_node` 从 L1 读回 `get_medication_names`（去重药物名，最近优先）存进 `state["current_medications"]`。两条读出路径：① 注入 RAG/直答 prompt 的 L1 冻结段（延用 `frozen_profile_section`，不改模板，另注明确"仅供用药安全核对参考、不是本次建议来源"），LLM 生成时知情；② `medication_guide_engine` 新增 `check_medication_history_interactions`——原 `check_drug_interactions` 只查"回答内部药物"之间，回答建议布洛芬、用户历史在服阿司匹林这类跨集合冲突全程漏检；现 `run_medication_guide_review` 接 `current_medications`，命中即注入"与您正在服用的药物存在相互作用提醒"并标记 `medication_history_interaction` 风险。实测：布洛芬↔阿司匹林双向命中、对乙酰氨基酚不误报、同药不计、无历史药不触发。
+- **P1 症状趋势降采样**：`get_symptom_trends` 聚合保留期内每症状事件流为 `{count, first/last_ts, first/last_iso}`，`memory_load_node` 存入 `state["symptom_trends"]`，prompt 只注入**复发≥2次**的信号（"头痛已出现3次"），回答得以提示复发性；单次发作不注入，避免噪声。
+- **P2 跨会话澄清提示**：新会话首问带药物指代（"这个药还能吃吗"）时，会话内无 prior 轮次可破指代、只能强制澄清。`_build_clarify_answer` 增加可选 `user_id`，命中 `_DRUG_PRONOUN_RE` 时从 `get_query_history` 取历史话题生成"（检测到您之前咨询过：『阿司匹林…』——若指其中一个请点名确认）"——**仅提示、不断言指代对象为事实**，与回退策略一致；记忆缺失/异常时静默回落原澄清文案，不炸主流程。
+
+验证（`my_medical_env`）：
+- 新增 `tests/test_memory_reuse.py` 9 用例全过：历史交互双向命中/不误报/边界、`run_medication_guide_review` 端到端注入警告、prompt 注入段（只含复发≥2次、标注非建议来源）、跨会话提示（有历史命中/记忆故障静默回落）。
+- 无回归：`test_nodes.py`、`test_intent_clarify.py`、`test_self_containment.py` 中 82 passed；16 个 failed 为基线即存在（router/白名单/off-doc 清洁器相关，与本次改动无关，`git stash` 后基线复现确认）。
+
+诚实结论：本次不改变检索/生成逻辑，只是把已写入 L1 的长期记忆**真正接回**生成与安全核对链路；安全收益>精度收益——历史在服药被纳入相互作用核对是实打实的用药安全提升。用药史/症状趋势异常读写均以 try/except 包裹、不阻塞主流程。
+
+<footer>v9.71 · app/memory/long_term_memory.py、app/skills/medication_guide_engine.py、app/graph/nodes/nodes.py、app/graph/state.py、tests/test_memory_reuse.py、CHANGELOG.md</footer>
+
 ## v9.70 - 评测检索对齐生产 + 修复生产端知识检索静默崩溃（app/rag/evaluation.py、app/graph/nodes/nodes.py）
 
 背景：攻"A 类检索缺失"时发现**评测与生产检索路径不一致**——生产端对 symptom 类查询在检索前做症状检索词增强（`_enrich_treatment_query` / `_enrich_disease_direction`），而评测 `evaluation.run_retrieval` 直接用原始问题调 `retriever.invoke`，跳过这层增强。实测「6个月宝宝发烧怎么办」的剂量要点（按体重/5-10mg/10-15mg/6月龄），生产端增强后已召回 4/5，评测却报 0/5——**低通过率里有相当部分是"评测在打半残系统"，而非生产真失败**。与 v9.66 曾把评测检索深度对齐生产、v9.67 把评测标尺温度对齐同一哲学一脉相承。

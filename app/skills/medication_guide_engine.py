@@ -314,6 +314,75 @@ def check_drug_interactions(drugs: List[str]) -> Dict[str, Any]:
     }
 
 
+def check_medication_history_interactions(
+    answer_drugs: List[str],
+    history_drugs: Optional[List[str]],
+) -> Dict[str, Any]:
+    """检查回答中建议的新药与用户历史用药之间的相互作用（P0）。
+
+    check_drug_interactions 只在"回答内部出现的药物"之间检查；
+    用户在服/曾服的药（来自 L1 长期记忆）不在回答里，因此在原链路会被漏掉——
+    例如回答建议"布洛芬"，而用户历史在服"阿司匹林"，二者存在已知相互作用，
+    原来的检查查不到。本函数专查「新建议药 ↔ 历史药」跨集合冲突。
+
+    Args:
+        answer_drugs: 回答中建议（新开）的药物名
+        history_drugs: 用户在服/曾服的药物名列表（可为 None）
+
+    Returns:
+        {
+            "has_interaction": bool,
+            "interactions": [{"drug_a", "drug_b", "note"}, ...],
+            "involved_history_drugs": [...],
+        }
+    """
+    if not history_drugs:
+        return {"has_interaction": False, "interactions": [], "involved_history_drugs": []}
+
+    answer_set = [d for d in answer_drugs if d]
+    history_known = [d for d in history_drugs if d in DRUG_SAFETY_RULES]
+
+    interactions = []
+    involved = []
+
+    # 对每个"回答中新药"逐一与"历史药"做相互作用核对（只报新药侧冲突，避免反向重复）
+    for new_drug in answer_set:
+        new_info = DRUG_SAFETY_RULES.get(new_drug)
+        if not new_info:
+            continue
+        for his_drug in history_known:
+            if his_drug == new_drug:
+                # 历史已在服的同药，不算相互作用；是否重复给药由其他环节判断
+                continue
+            if his_drug in new_info.get("interactions", []):
+                interaction_item = {
+                    "drug_a": new_drug,
+                    "drug_b": his_drug,
+                    "note": f"{new_drug} 与您正在服用的 {his_drug} 存在已知相互作用，"
+                            "请勿自行联用，务必咨询医生或药师后再调整用药",
+                }
+                if not any(i["drug_a"] == new_drug and i["drug_b"] == his_drug for i in interactions):
+                    interactions.append(interaction_item)
+                    if new_drug not in involved:
+                        involved.append(new_drug)
+
+    return {
+        "has_interaction": bool(interactions),
+        "interactions": interactions,
+        "involved_history_drugs": involved,
+    }
+
+
+def _inject_history_interaction_warning(answer: str, interactions: List[Dict]) -> str:
+    """追加「新药 vs 历史用药」相互作用警告（措辞强调是'正在服用'的药，促使核对）"""
+    if not interactions:
+        return answer
+    lines = ["\n\n⚠️ 与您正在服用的药物存在相互作用提醒："]
+    for ia in interactions:
+        lines.append(f"  - {ia['note']}")
+    return answer.rstrip() + "\n".join(lines)
+
+
 _DOSAGE_UNIT_MG = {"mg": 1.0, "g": 1000.0, "ug": 0.001, "mcg": 0.001}
 _DOSE_NUM_UNIT = r"(\d+(?:\.\d+)?)\s*(mg|g|ug|μg|mcg|微克)"
 
@@ -515,6 +584,7 @@ def run_medication_guide_review(
     answer: str,
     clinical_checkpoint: Optional[Dict] = None,
     user_profile: Optional[Dict] = None,
+    current_medications: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """执行用药指导规则引擎审查
 
@@ -522,6 +592,8 @@ def run_medication_guide_review(
         answer: LLM 生成的回答
         clinical_checkpoint: 临床快照（包含症状等信息）
         user_profile: 用户档案（包含年龄、特殊状态等）
+        current_medications: 用户在服/曾服的药物名列表（来自 L1 长期记忆），
+            用于「新建议药 ↔ 历史用药」相互作用核对。None 表示未提供历史用药。
 
     Returns:
         {
@@ -566,6 +638,16 @@ def run_medication_guide_review(
         risk_tags.append("drug_interaction")
         revisions_needed.append(("interaction", None, interaction_result["interactions"]))
 
+    # 3b. P0 历史用药相互作用：回答中新药 vs 用户历史在服药（来自 L1）
+    history_interaction_result = check_medication_history_interactions(
+        known_drugs, current_medications,
+    )
+    if history_interaction_result["has_interaction"]:
+        risk_tags.append("medication_history_interaction")
+        revisions_needed.append((
+            "history_interaction", None, history_interaction_result["interactions"],
+        ))
+
     # 4. 用量安全范围检查
     dosage_results = {}
     for drug in known_drugs:
@@ -600,6 +682,8 @@ def run_medication_guide_review(
             revised_answer = _inject_contraindication_warning(revised_answer, data, drug)
         elif rev_type == "interaction":
             revised_answer = _inject_interaction_warning(revised_answer, data)
+        elif rev_type == "history_interaction":
+            revised_answer = _inject_history_interaction_warning(revised_answer, data)
         elif rev_type == "dosage" and drug:
             dosage_info = DRUG_SAFETY_RULES.get(drug, {})
             max_daily = dosage_info.get("max_daily_dosage", "未知")
@@ -636,6 +720,7 @@ def run_medication_guide_review(
             "unknown_drugs": unknown_drugs,
             "contraindication_results": contraindication_results,
             "interaction_result": interaction_result,
+            "medication_history_interaction_result": history_interaction_result,
             "dosage_results": dosage_results,
             "completeness_results": completeness_results,
         },

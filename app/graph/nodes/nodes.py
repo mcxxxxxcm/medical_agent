@@ -3112,6 +3112,30 @@ def sanitize_cached_answer(
 _EMIT_CHUNK = 24
 
 
+def _build_memory_context_section(state: MedicalAssistantState) -> str:
+    """构建 L1 长期记忆注入段（用药史 + 症状趋势，仅供核对/背景参考，非处方依据）。
+
+    P0/P1：用药史与症状复发趋势是从 L1 长期记忆读出的跨会话信号，原先只写不读
+    （见 get_medication_events 零调用点）。现注入 prompt，让 LLM 在生成时知情，
+    但明确标注"仅供用药安全核对参考，不是处方建议来源"——既补上复用，又不越权
+    让历史用药成为建议依据（与 _strip_off_doc_medications 防幻觉口径一致）。
+    """
+    parts = []
+
+    meds = state.get("current_medications") or []
+    if meds:
+        parts.append("【用户历史用药（仅供用药安全核对参考，不是本次建议来源）】\n"
+                     + "、".join(meds))
+
+    trends = state.get("symptom_trends") or {}
+    recurring = {k: v["count"] for k, v in trends.items() if v.get("count", 0) >= 2}
+    if recurring:
+        desc = "、".join(f"{k}（已出现{v}次）" for k, v in recurring.items())
+        parts.append("【症状复发提示（历史记录，仅供参考核实）】\n" + desc)
+
+    return ("\n\n".join(parts) + "\n") if parts else ""
+
+
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
     """构建 RAG 问答提示词（三层上下文架构）
 
@@ -3129,6 +3153,11 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
     profile_text = get_user_context_prompt(user_profile)
     if profile_text:
         frozen_profile_section = f"【L1 用户档案（永不压缩）】\n{profile_text}\n"
+
+    # L1 长期记忆补充：用药史 + 症状趋势（P0/P1）
+    memory_context_section = _build_memory_context_section(state)
+    if memory_context_section:
+        frozen_profile_section += memory_context_section
 
     # L3 短期窗口：注入近期对话历史
     # v9.4: RAG场景启用 compress_ai_answers，防止LLM从历史中复制旧答案作为事实
@@ -3259,6 +3288,11 @@ def build_direct_answer_prompt(question: str, user_profile: Optional[Dict[str, A
     profile_text = get_user_context_prompt(user_profile)
     if profile_text:
         frozen_profile_section = f"【L1 用户档案（永不压缩）】\n{profile_text}\n"
+
+    # L1 长期记忆补充：用药史 + 症状趋势（P0/P1）
+    memory_context_section = _build_memory_context_section(state)
+    if memory_context_section:
+        frozen_profile_section += memory_context_section
 
     # L2 会话层：临床快照
     checkpoint_section = f"【L2 临床快照】\n{checkpoint_text if checkpoint_text else '无'}\n"
@@ -3470,7 +3504,10 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     try:
         from app.skills.medication_guide_engine import run_medication_guide_review
         med_review = run_medication_guide_review(
-            revised_answer, clinical_checkpoint, state.get("user_profile"),
+            revised_answer,
+            clinical_checkpoint,
+            state.get("user_profile"),
+            current_medications=state.get("current_medications"),
         )
         if med_review["status"] == "revise":
             revised_answer = med_review["revised_answer"]
@@ -3632,6 +3669,23 @@ def memory_load_node(state: MedicalAssistantState) -> Dict[str, Any]:
                     logger.info(f"L1→L2 症状首发时间已合并：{list(merged_onset.keys())}")
         except Exception as e:
             logger.warning(f"从L1加载症状首发时间失败（不影响主流程）：{e}")
+
+        # P0：从 L1 加载用药史（去重药物名），供 prompt 注入 & 用药安全核对
+        try:
+            result["current_medications"] = memory.get_medication_names(user_id)
+            if result["current_medications"]:
+                logger.info(f"从L1加载用药史：{result['current_medications']}")
+        except Exception as e:
+            logger.warning(f"从L1加载用药史失败（不影响主流程）：{e}")
+
+        # P1：从 L1 加载症状趋势（复发性信号），供 prompt 注入
+        try:
+            result["symptom_trends"] = memory.get_symptom_trends(user_id)
+            recurring = {k: v["count"] for k, v in result["symptom_trends"].items() if v["count"] >= 2}
+            if recurring:
+                logger.info(f"从L1加载症状趋势（复发≥2次）：{recurring}")
+        except Exception as e:
+            logger.warning(f"从L1加载症状趋势失败（不影响主流程）：{e}")
 
         return result
 
@@ -4236,7 +4290,7 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
     _answerable = _decode_answerable(state, question, messages)
     if _answerable == "clarify":
         _history_summary = _build_rewrite_context(messages) if messages else ""
-        _clarify_text = _build_clarify_answer(question)
+        _clarify_text = _build_clarify_answer(question, user_id)
         return _emit_clarify_response(
             state,
             question,
@@ -4367,7 +4421,7 @@ def query_rewrite_node(state: MedicalAssistantState) -> Dict[str, Any]:
         and is_same_query(final_question, question)
         and not _context_has_entity(history_summary, state)
     ):
-        clarify_text = _build_clarify_answer(question)
+        clarify_text = _build_clarify_answer(question, user_id)
         # Bad Case 闭环：记录澄清触发，便于回归审查触发是否恰当
         try:
             memory = get_long_term_memory()
@@ -5050,11 +5104,43 @@ def _emit_clarify_response(
     }
 
 
-def _build_clarify_answer(question: str) -> str:
+def _build_cross_session_hint(user_id: str, question: str) -> str:
+    """从 L1 查询历史构建跨会话澄清提示（P2）。
+
+    场景：新会话首问带指代（"这个药还能吃吗"），当前会话无 prior 轮次可破指代，
+    又强制澄清。此时从用户**历史会话**的查询历史取近期话题作提示——作用是
+    "提醒用户我们见过这些话题、请确认是否指它"，而非断言指代对象是事实。
+    仅当历史确有可参考话题才返回非空串。
+    """
+    if not user_id or not _DRUG_PRONOUN_RE.search(question or ""):
+        return ""
+    found = []
+    try:
+        memory = get_long_term_memory()
+        history = memory.get_query_history(user_id, limit=5)
+        q = (question or "").strip()
+        for rec in history:
+            prev = (rec.get("question") or "").strip()
+            if prev and prev != q and prev not in found:
+                found.append(prev)
+            if len(found) >= 3:
+                break
+    except Exception as e:
+        logger.warning(f"跨会话澄清提示构造失败（不影响主流程）：{e}")
+        return ""
+    if not found:
+        return ""
+    topics = "；".join(f"「{t[:20]}」" for t in found)
+    return f"\n（检测到您之前咨询过：{topics}——若您指的是其中一个，请直接点名确认。）"
+
+
+def _build_clarify_answer(question: str, user_id: Optional[str] = None) -> str:
     """构建主动澄清文案（与拒答风格一致，不编造事实、不透传 LLM 原文）
 
     v9.45：若命中药物指代（"这个药/那个药/该药…"），追加"具体哪种药"的追问，
     避免患者只给代词、系统却拿泛化药物知识作答。
+
+    P2：提供 user_id 时，读取历史会话近期话题生成跨会话提示（仅提示、不断言）。
     """
     base = (
         f"抱歉，我暂时无法确定您问的“{question}”具体指向哪里，"
@@ -5070,6 +5156,11 @@ def _build_clarify_answer(question: str) -> str:
             "2. 相关的药物名称或症状持续时间；",
             "2. 您具体指的是哪一种药（例如：二甲双胍、布洛芬），以及已经吃了多久、多大剂量；",
         )
+    if user_id:
+        hint = _build_cross_session_hint(user_id, question)
+        if hint:
+            # 药物指代分支已含"具体哪种药"追问，把跨会话提示接在清单末尾，作为补充线索
+            base = base.rstrip("\n") + "\n" + hint
     return base
 
 

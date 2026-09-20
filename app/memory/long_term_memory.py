@@ -503,6 +503,65 @@ class LongTermMemoryManager:
         records.sort(key=lambda x: x.get("onset_ts", 0), reverse=True)
         return records[:limit]
 
+    def get_symptom_trends(
+            self,
+            user_id: str,
+            limit: int = 200,
+    ) -> Dict[str, Dict[str, Any]]:
+        """获取保留期内症状的重复/复发趋势（供 P1 趋势信号注入）。
+
+        与 get_all_symptom_onsets 只取"最早首发"不同，这里聚合每个症状在保留期内
+        的完整事件流，产出 {症状名: {count, first_ts, last_ts, first_iso, last_iso}}，
+        用于回答"你这症状已反复出现 N 次"这类复发性提示。
+
+        Returns:
+            {症状名: {"count": n, "first_ts":.., "last_ts":.., "first_iso":"..", "last_iso":".."}}
+        """
+        events = self.get_symptom_events(user_id, limit=limit)
+        trends: Dict[str, Dict[str, Any]] = {}
+        for ev in events:
+            name = ev.get("symptom", "")
+            if not name:
+                continue
+            ts = ev.get("onset_ts", 0)
+            iso = ev.get("onset_iso", "")
+            cur = trends.get(name)
+            if cur is None:
+                trends[name] = {
+                    "count": 1,
+                    "first_ts": ts, "last_ts": ts,
+                    "first_iso": iso, "last_iso": iso,
+                }
+            else:
+                cur["count"] += 1
+                if ts < cur["first_ts"]:
+                    cur["first_ts"], cur["first_iso"] = ts, iso
+                if ts > cur["last_ts"]:
+                    cur["last_ts"], cur["last_iso"] = ts, iso
+        return trends
+
+    def get_medication_names(
+            self,
+            user_id: str,
+            limit: int = 5,
+    ) -> List[str]:
+        """获取用户在服/曾服的去重药物名（供 P0 用药史注入与用药安全核对）。
+
+        读取保留期内的用药事件流，按时间倒序取最近的事件，去重后返回最常用的药物名。
+
+        Returns:
+            去重后的药物名列表（保持最近优先）
+        """
+        events = self.get_medication_events(user_id, limit=limit * 3)
+        names: List[str] = []
+        for ev in events:
+            drug = (ev.get("drug") or "").strip()
+            if drug and drug not in names:
+                names.append(drug)
+            if len(names) >= limit:
+                break
+        return names
+
     def get_latest_symptom_onset(
             self,
             user_id: str,
