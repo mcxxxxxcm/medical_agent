@@ -1,5 +1,5 @@
 # ===== Web Framework =====
-uvicorn~=0.32.1
+uvicorn==0.32.1  # 锁死：uvicorn>=0.36 在 Windows 硬编码 ProactorEventLoop，导致 psycopg async 检查点必降级内存（见 CHANGELOG）
 fastapi~=0.129.0
 pydantic~=2.12.5
 pydantic-settings~=2.12.0

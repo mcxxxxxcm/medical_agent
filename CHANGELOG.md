@@ -1,5 +1,17 @@
 # 系统优化更新日志
 
+## v9.72 - 修复 Windows 下 PG 检查点降级内存的隐患：锁死 uvicorn + 降级日志给出根因（requirements.txt、app/memory/checkpointer.py）
+
+背景：排查 `logs/error.log` 中「PostgreSQL检查点初始化失败，降级为内存检查点：Psycopg cannot use the 'ProactorEventLoop'」时，验证了完整根因链路——**psycopg async（langgraph `AsyncPostgresSaver` 底层）在 Windows 上只接受 `SelectorEventLoop`，拒绝 `ProactorEventLoop`**；而 `uvicorn>=0.36` 的 `loops/asyncio.py` 对 Windows **硬编码返回 `ProactorEventLoop`**，完全绕过 `app/graph/graph.py:21` 的 `WindowsSelectorEventLoopPolicy` 设置，导致该 policy 形同虚设，检查点必降级内存（跨会话记忆/历史在重启后丢失）。本地实测：Proactor loop 下 psycopg async 连 PG 必然失败，Selector loop 下成功连上 PostgreSQL 16.10。
+
+- **锁死 `uvicorn==0.32.1`**：`requirements.txt` 由 `uvicorn~=0.32.1` 改为精确 `==0.32.1` 并注释根因。0.32.1 的 `Server.run` 走 `asyncio.run()`（尊重已设 policy），`graph.py` 的 SelectorEventLoopPolicy 真正生效，psycopg async 可用。防止未来 `pip` 漂移到 0.36+/0.4x 重新引入该 bug（当前 `my_medical_env` 实际已是 0.32.1，故本项为防回归，不属追溯修复）。
+- **降级日志给出可行动根因**：`checkpointer.py` 捕获到含 `ProactorEventLoop`/`Select` 关键字时，追加明确提示「Windows 事件循环类型不兼容、uvicorn>=0.36 强制 Proactor、修复为锁定 uvicorn 0.32.1 并重启」，下次再遇到不再靠猜。
+- **诚实结论**：在 PyCharm 真实解释器 `my_medical_env`（Python 3.11.15 + uvicorn 0.32.1）实测 `get_checkpointer()` 返回 `AsyncPostgresSaver`（非 `InMemorySaver`）、loop 为 `_WindowsSelectorEventLoop`——即当前环境并无降级，日志中的降级来自历史时段曾用高版本 uvicorn（如系统 python 3.14 的 0.52.3）启动。因此本次是**隐患加固 + 可观测性**，不改变运行行为。已还原 miniconda base 被临时降级的 uvicorn（试用非项目环境，同版本还原）。
+
+验证（`my_medical_env`）：`py_compile` 通过；`tests/test_memory_reuse.py` 9 用例全过；`get_checkpointer()` 初始化返回 `AsyncPostgresSaver`。
+
+<footer>v9.72 · requirements.txt、app/memory/checkpointer.py、CHANGELOG.md</footer>
+
 ## v9.71 - 长期记忆「重写轻读」修正：用药史/症状趋势/跨会话澄清接入读回（app/memory/long_term_memory.py、app/skills/medication_guide_engine.py、app/graph/nodes/nodes.py、app/graph/state.py）
 
 背景：代码审计发现长期记忆存在**写入富、读取窄**的不对称——多会话数据（用药、症状、查询历史、bad case）都落进了 L1 长期记忆，但真正读回并注入 prompt 的只有很小一部分。最典型的死数据是**用药史**：`append_medication_event` 负责写、`get_medication_events` 却在整个 `app/` 里**零调用点**；症状事件流只被 `get_all_symptom_onsets` 压缩成"最早首发"取走，复发/加重信息全丢；查询历史只用于评测。即长期记忆"存了却没被用上"。

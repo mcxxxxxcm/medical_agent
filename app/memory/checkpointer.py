@@ -56,8 +56,20 @@ async def get_checkpointer():
                 except Exception as e:
                     # PG 不可用时降级为内存检查点（与 Redis 降级策略对称），
                     # 保证对话服务不因数据库故障整体不可用；代价是重启后会话状态丢失
+                    reason_hint = ""
+                    msg = str(e)
+                    if "ProactorEventLoop" in msg or isinstance(e, Exception) and "Select" in msg:
+                        reason_hint = (
+                            "（根因提示）这是 Windows 事件循环类型不兼容：psycopg async 仅支持 "
+                            "SelectorEventLoop，但当前 uvicorn 创建了 ProactorEventLoop。\n"
+                            "  - 若本机实际安装的 uvicorn >= 0.36，其 loops/asyncio.py 在 Windows 上硬编码 "
+                            "ProactorEventLoop，会绕过 graph.py 里设置的事件循环 policy。\n"
+                            "  - 修复：把 uvicorn 锁定回 0.32.1（requirements.txt 已锁），并重启服务。\n"
+                            "  - 验证：`python -c \"import asyncio,uvicorn;asyncio.set_event_loop_policy("
+                            "asyncio.WindowsSelectorEventLoopPolicy())\"` 后确认日志不再出现本条降级。"
+                        )
                     logger.error(
-                        f"PostgreSQL检查点初始化失败，降级为内存检查点：{e}\n"
+                        f"PostgreSQL检查点初始化失败，降级为内存检查点：{msg}\n{reason_hint}"
                         f"降级后对话状态仅在进程内存中保留，服务重启后历史会话将丢失。"
                     )
                     _checkpointer = InMemorySaver()
