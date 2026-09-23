@@ -231,7 +231,14 @@ def run_one(evaluator: RAGEvaluator, sample: Dict, threshold: float,
 
 
 def _print_report(results, passed, failed, avg_hit, llm_recovered_total,
-                  facts_llm_judged, total, threshold, duration, skipped=0) -> None:
+                  facts_llm_judged, total, threshold, duration, skipped=0,
+                  loose_threshold=0.6) -> None:
+    # 宽松通过：以 looser 阈值判"要点覆盖达大半"，作为参考以认可"内容已答到大部分要点"
+    # 的系统（尤其差 1 个要点未全对的样本），与 0.7 严格口径并存，不改严格判定。
+    loose_passed = [
+        r for r in results
+        if r.get("fact_total", 0) > 0 and r.get("hit_ratio", 0.0) >= loose_threshold
+    ]
     print("\n" + "=" * 60)
     print("黄金测试集匹配判定报告")
     print("=" * 60)
@@ -239,7 +246,7 @@ def _print_report(results, passed, failed, avg_hit, llm_recovered_total,
     print(f"  通过:        {len(passed)}   ❌未通过: {len(failed)}")
     print(f"  通过率:      {len(passed) / total:.1%}" if total else "  通过率:      -")
     print(f"  平均要点命中率: {avg_hit:.1%}")
-    print(f"  阈值:        {threshold:.0%}")
+    print(f"  阈值(严格):  {threshold:.0%}   宽松(参考): {loose_threshold:.0%} → {len(loose_passed)}/{total} = {len(loose_passed) / total:.1%}" if total else "")
     if facts_llm_judged:
         print(f"  语义复审:    {facts_llm_judged} 条字面未中要点交 LLM 判定，"
               f"其中 {llm_recovered_total} 条确认语义命中（被挽回的假阴性）")
@@ -272,7 +279,9 @@ def main():
     parser = argparse.ArgumentParser(description="黄金测试集答案匹配判定（可并行 + LLM 语义复审）")
     parser.add_argument("--golden-set", type=str, default=DEFAULT_GOLDEN_SET, help="黄金测试集 JSONL 路径")
     parser.add_argument("--output", type=str, default=DEFAULT_OUTPUT, help="报告输出路径")
-    parser.add_argument("--threshold", type=float, default=0.7, help="通过阈值（0~1，默认 0.7）")
+    parser.add_argument("--threshold", type=float, default=0.7, help="严格通过阈值（0~1，默认 0.7）")
+    parser.add_argument("--loose-threshold", dest="loose_threshold", type=float, default=0.6,
+                        help="宽松通过阈值（参考指标，默认 0.6；判定内容已答到大部分要点但未全对的样本）")
     parser.add_argument("--limit", type=int, default=0, help="只评估前 N 条（0=全部）")
     parser.add_argument("--concurrent", type=int, default=3, help="并行 worker 数（默认 3；云端并发越高越易限流）")
     parser.add_argument("--no-semantic", action="store_true", help="关闭 LLM 语义复审，只用字面子串匹配")
@@ -374,8 +383,14 @@ def main():
         1 for r in results for fm in r.get("fact_matches", []) if fm.get("judged_by") == "llm"
     )
 
+    loose_threshold = args.loose_threshold
+    loose_passed = [
+        r for r in results
+        if r.get("fact_total", 0) > 0 and r.get("hit_ratio", 0.0) >= loose_threshold
+    ]
     _print_report(results, passed, failed, avg_hit, llm_recovered_total,
-                  facts_llm_judged, total, args.threshold, time.time() - start, skipped=len(skipped))
+                  facts_llm_judged, total, args.threshold, time.time() - start,
+                  skipped=len(skipped), loose_threshold=loose_threshold)
 
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -383,6 +398,11 @@ def main():
         "passed": len(passed),
         "failed": len(failed),
         "pass_rate": round(len(passed) / total, 4) if total else 0.0,
+        # 宽松通过（参考指标）：内容已答到大部分要点（>=loose_threshold）但未全对的样本。
+        # 与 strict 口径并存，不改严格判定，仅提供"回答质量"的第二视角。
+        "loose_threshold": loose_threshold,
+        "loose_passed": len(loose_passed),
+        "loose_pass_rate": round(len(loose_passed) / total, 4) if total else 0.0,
         "avg_hit_ratio": avg_hit,
         "threshold": args.threshold,
         "concurrency": args.concurrent,

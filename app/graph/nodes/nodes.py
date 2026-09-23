@@ -1682,6 +1682,58 @@ def _build_symptom_sub_queries(symptoms: List[str]) -> List[str]:
     return queries
 
 
+# v9.73: 急诊"需立即拨打120"类的列举型问题跨文档召回增强。
+# 此类问题的正确答案分散在多个独立急救文档里（急性心肌梗死/急性脑卒中FAST/过敏性休克/急诊指南），
+# Dense/BM25 因查询无具体病名实体定位不到，邻域扩展又只在同文档内。触发时按急诊场景
+# 子查询并行检索把独立急救文档补进候选集。
+_EMERGENCY_ENUM_TRIGGER_RE = re.compile(
+    r"(拨打\s*120|叫?\s*(救护车|急救车)|(哪些|什么|何种)情况[^。？?，,]{0,8}(120|急救|急诊|就医|送医|送医院))"
+)
+
+_EMERGENCY_SCENARIO_QUERIES = [
+    "急性心肌梗死 心梗 胸痛 危险信号 拨打120",
+    "急性脑卒中 中风 FAST 识别 拨打120",
+    "过敏性休克 识别 危险信号 立即处置",
+    "严重呼吸困难 气道 窒息 急救",
+    "大出血 止血 急救 拨打120",
+    "意识丧失 昏迷 意识障碍 急救",
+    "高热惊厥 抽搐 儿童 急救 拨打120",
+]
+
+
+# 急诊增强触发后，查询里仍允许出现"不算具体病名"的问句泛词（急诊触发词自身 + 普遍泛词）。
+# 用于区分「通用急诊清单」与「单病种需就医指征」：前者无具体病名实体（如"什么情况需要拨
+# 打120"），应跨文档聚合所有急救场景；后者含具体病名/症状实体（如"头痛什么情况需就医"、
+# "荨麻疹什么情况需急诊"），应只由该病种自身章节回答，跨病种增强会引入噪声反致漏答。
+_EMERGENCY_ENUM_GENERIC_TERMS = frozenset(
+    "什么 哪些 何种 情况 时候 情形 需要 应该 立即 拨打 120 救护车 急救车 急救 急诊 就医 送医 送医院 "
+    "去医院 处理 怎么办 怎么 症状 表现 会 是不是 还是 或者 和 与 有 要 吗 呢 ?".split()
+)
+
+
+def _is_emergency_enum_query(query: str) -> bool:
+    """是否为列举型急诊问题（"哪些情况需要拨打120/急诊/急救/送医"）。
+
+    仅返回 True 表示触发跨文档急诊增强。触发条件是同时满足：
+        1. 命中急诊触发正则（明确"拨打120/列举需急救情形"信号）；
+        2. 查询里除了急诊泛词外无具体病名/症状实体（非单病种指征）。
+    这样"头痛什么情况需就医"这类单病种闭项不触发，避免跨病种噪声稀释自身要点。
+    """
+    if not query:
+        return False
+    if not _EMERGENCY_ENUM_TRIGGER_RE.search(query):
+        return False
+    # 用实体检测排除含具体病名/症状的查询（如"头痛…就医""荨麻疹…急诊"、"胸痛需要拨打120吗"）。
+    # 这类是单病种需就医指征，应只由该病种章节回答；跨病种增强会引入噪声反致漏答。
+    from app.rag.entity_overlap import extract_entity_terms
+    terms = extract_entity_terms(query)
+    concrete = [t for t in terms if t not in _EMERGENCY_ENUM_GENERIC_TERMS]
+    if concrete:
+        logger.debug(f"急诊增强跳过单病种指征查询：{query}（具体实体={concrete}）")
+        return False
+    return True
+
+
 @timing_decorator("知识检索")
 def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
     """知识检索节点
@@ -1843,6 +1895,11 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 if len(symptom_queries) >= 2:
                     explicit_sub_questions = symptom_queries
                     logger.info(f"按症状分别检索：{symptom_queries}")
+        # v9.73: 急诊"需立即拨打120"列举型问题——正确信息分散在多个独立急救文档，
+        # 查询无病名实体定位不到；按急诊场景子查询并行检索把独立急救文档补回候选。
+        if _is_emergency_enum_query(original_query) and len(explicit_sub_questions) <= 1:
+            explicit_sub_questions = list(_EMERGENCY_SCENARIO_QUERIES)
+            logger.info(f"急诊跨文档增强：追加 {len(explicit_sub_questions)} 个急诊子查询")
         sub_questions = explicit_sub_questions or [search_query]
         if len(sub_questions) > 1:
             logger.info(f"多子问题并行检索：{len(sub_questions)} 个子问题")

@@ -264,7 +264,8 @@
       "Bash(/c/Users/86176/miniconda3/python.exe -m conda env list)",
       "Read(//d/Agent/medical_assistant_agent/=== 检查 3.14 系统python能否 import 项目核心\\(app/cache/**)",
       "Bash(/c/Users/86176/AppData/Local/Python/bin/python -c \"import sys;sys.path.insert\\(0,r'D:\\\\Agent\\\\medical_assistant_agent'\\); import uvicorn, langgraph; print\\('sys314 uvicorn:', uvicorn.__version__\\)\")",
-      "Bash(/c/Users/86176/miniconda3/python.exe -m pip install \"uvicorn==0.52.3\")"
+      "Bash(/c/Users/86176/miniconda3/python.exe -m pip install \"uvicorn==0.52.3\")",
+      "Bash(PY=\"/d/Agent/software/envs/my_medical_env/python.exe\" cp data/golden_match_report.json data/_smoke_limit2.json)"
     ]
   },
   "enableAllProjectMcpServers": true,
