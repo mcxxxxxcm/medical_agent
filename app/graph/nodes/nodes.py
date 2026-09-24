@@ -600,6 +600,24 @@ def router_node(state: MedicalAssistantState) -> Command:
         logger.info("检测到图片输入，路由到vision分支")
         return Command(goto="vision_analysis")
 
+    # ===== 复用入站路由结果（v9.74 TTFT 优化）：跳过规则/上下文/LLM 三层重复计算 =====
+    # app/graph/streaming.py StreamingOrchestrator.run() 阶段2 已执行过一次 router_node
+    # 拿到 question_type（用于缓存分支决策），缓存 miss 后进入 graph.astream 时经
+    # input_state 注入 _forced_route=True + question_type（复用值），此处直接分发 goto，
+    # 不再二次跑规则/上下文/本地 LLM。仅当显式注入 _forced_route 时才短路，
+    # 其余路径（图片/入口闸/自纠正重试等）保持原逻辑。
+    # 仅复用例行可检索/直答标签；entry_refusal 等非规范标签不触发短路（走原三层逻辑）
+    _reusable_qtype = state.get("question_type")
+    if state.get("_forced_route") and _reusable_qtype in ("symptom", "knowledge", "general"):
+        question_type = normalize_router_label(_reusable_qtype)
+        _record_route_metrics(state, question, question_type, "pre_injected")
+        logger.info(f"复用入站路由结果（跳过本地LLM）：question_type={question_type}")
+        if question_type == "symptom":
+            return Command(goto="symptom_analysis", update={"question_type": question_type})
+        elif question_type == "knowledge":
+            return Command(goto="query_rewrite", update={"question_type": question_type})
+        return Command(goto="direct_answer", update={"question_type": question_type})
+
     # ===== 入口正交闸（v9.55）：第一轴=可答性与合规，先于检索与改写 =====
     # 短路结果（合规红线拒答 / 信息不足澄清）直接终止，不让残缺 query 触发
     # symptom_analysis 或 LLM 改写的空转，更不冲检索。未命中则放行第二轴（检索策略）。

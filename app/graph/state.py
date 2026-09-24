@@ -138,6 +138,7 @@ class InputSchema(TypedDict):
     final_question: Optional[str]
     symptoms: Optional[Dict[str, Any]]
     question_type: Optional[str]
+    _forced_route: Optional[bool]  # v9.74 TTFT优化：标记 question_type 为入站预路由结果，router_node 据此短路跳过二次判定
     retrieval_attempts: Optional[int]
     retrieval_confidence: Optional[float]
     refusal_type: Optional[str]

@@ -265,7 +265,21 @@
       "Read(//d/Agent/medical_assistant_agent/=== 检查 3.14 系统python能否 import 项目核心\\(app/cache/**)",
       "Bash(/c/Users/86176/AppData/Local/Python/bin/python -c \"import sys;sys.path.insert\\(0,r'D:\\\\Agent\\\\medical_assistant_agent'\\); import uvicorn, langgraph; print\\('sys314 uvicorn:', uvicorn.__version__\\)\")",
       "Bash(/c/Users/86176/miniconda3/python.exe -m pip install \"uvicorn==0.52.3\")",
-      "Bash(PY=\"/d/Agent/software/envs/my_medical_env/python.exe\" cp data/golden_match_report.json data/_smoke_limit2.json)"
+      "Bash(PY=\"/d/Agent/software/envs/my_medical_env/python.exe\" cp data/golden_match_report.json data/_smoke_limit2.json)",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "Bash(curl -s -m 20 -L \"https://docs.bigmodel.cn/cn/guide/llm/caching\" -H \"User-Agent: Mozilla/5.0\" -o zhipu_cache.html -w \"HTTP %{http_code} size %{size_download}\\\\n\")",
+      "Bash(curl -s -m 20 -L \"https://open.bigmodel.cn/dev/api\" -H \"User-Agent: Mozilla/5.0\" -o zhipu_api.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(python3 scripts/measure_ttft.py)",
+      "Bash(~/miniconda3/envs/my_medical_env/python.exe --version)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" scripts/measure_ttft.py)",
+      "Bash(sed -n '3740,3830p' app/graph/nodes/nodes.py)",
+      "Bash(sed -n '1220,1300p' app/graph/nodes/nodes.py)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -m py_compile app/graph/nodes/nodes.py app/graph/streaming.py app/graph/state.py app/graph/graph.py)",
+      "Bash(\"/d/Agent/software/envs/my_medical_env/python.exe\" -c \"import app.graph.streaming; import app.graph.nodes; import app.graph.state; print\\('import OK'\\)\")",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name like 'python%'\\\\\" | Select-Object ProcessId,CommandLine | Format-List\")",
+      "Bash(timeout 60 curl -sN --noproxy '*' -m 55 -H 'Content-Type: application/json' -d '{\"question\":\"高血压有哪些常见症状\",\"user_id\":\"reloadck\",\"thread_id\":\"reload-ck-1\"}' http://localhost:8000/api/chat/stream)",
+      "Bash(grep -v \"^$\")",
+      "Bash(echo \"exit=$?（1=未用,v9.74可用）\")"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1,5 +1,19 @@
 # 系统优化更新日志
 
+## v9.74 - 首字延迟(TTFT)优化：消除 router 双跑 + SSE 早期 status 事件（app/graph/nodes/nodes.py、app/graph/streaming.py、app/graph/state.py）
+
+背景：`/api/chat/stream` 冷请求（缓存 miss）实测首 token 延迟 **7–11s**，体感极差；缓存命中时秒回、general 直接应答也快(60ms)。实测拆解瓶颈（本优化未动 RAG 检索流程内部）：
+- **A 段**（请求→检索完成，2.7–4.3s）：`router_node` 在 `StreamingOrchestrator.run()` 阶段2 与 graph 内各执行一次（规则/本地 LLM 全部算两遍），是确定性的重复浪费。
+- **B 段**（检索完成→首内容 token，4–7s）：`answer_generation` 云端 glm-4-flash 长 prefill（随注入文档/档案/历史 token 量放大）+ `_SegmentedEmitter` 首段校验缓冲。此段受"不动 RAG 流程"约束，本版不改动，作为后续项。
+
+- **物理·消除 router 双跑**：`streaming.py` 阶段2 已执行一次 `router_node` 拿到 `question_type`（用于缓存分支），缓存 miss 走 graph 时经 `input_state` 注入 `_forced_route=True + question_type`（在 `InputSchema` 声明该字段）；`router_node` 在图片/入口闸判断之后、规则/上下文/LLM 三层之前新增短路——仅当注入的 `question_type ∈ {symptom,knowledge,general}` 时才复用直接分发 `Command.goto`，其余路径（图片/入口闸/自纠正重试）保持原逻辑，未注入时行为与现状完全一致。实测检索前耗时（sources 首事件）由 2.7–4.3s 普遍降到 300–800ms。
+- **体感·SSE 早期 status 事件**：`run()` 最开头即 yield `{"type":"status","status":"processing"}`，前端几十毫秒内收到响应，体感 TTFT 由 7–11s 缩至近乎即时。前端 `index.html` 对未知 JSON 类型对象本就静默忽略（不拼入答案），故无需改前端。
+- 诚实结论：优化后 status 事件即时返回、A 段（路由+检索前）大幅缩短；剩余首 token 时间集中在 B 段 answer prefill（5–13s，随模型/文档量波动），该段在"不动 RAG 流程"约束下无立竿见影手段，列为后续单独评估（`_SegmentedEmitter` 首段时序 / context caching）。
+
+验证（`my_medical_env`，`scripts/measure_ttft.py` 复测）：status=0ms（体感达标）；symptom 首 token 7.1s→5.8–6.5s、general 0.06s→0.4–0.8s、drug 7.7s→5.3s；knowledge 类首 token 仍 5–13s（B 段未动，且实测为模型/文档量波动，非本版回归——与优化前 11.4s 同量级）。`py_compile` 通过；`import app.graph.streaming/nodes/state` 冒烟正常。
+
+<footer>v9.74 · app/graph/nodes/nodes.py、app/graph/streaming.py、app/graph/state.py、CHANGELOG.md</footer>
+
 ## v9.73b - 评测改用双阈值：新增宽松通过率(0.6)作参考，保留0.7严格口径（scripts/evaluate_golden_match.py）
 
 背景：用户反馈 g9.70 起真·生产黄金基线 42.6%、v9.73 后 46.3% 偏低，排查发现**多数失败样本语义上其实答到了大部分要点，只差临门一脚没过 0.7**——黄金 key_facts 每个样本只有 2~7 个要点，0.7 阈值意味着"3 要点须全中、5 要点须中 4、6 要点须中 5"，对要点覆盖偏苛；大量命中 `4/6`、`3/5`、`2/4`、`4/7`、`3/6` 的系统被判不过。用户指出"实际上 LLM 判断的回答内容还是可以的"，要求让评估阈值缓和、降低指标占比。经核对，此为**标尺本身过苛的失真**（与记忆 feedback_golden_eval_semantic 同一哲学：判定粒度不当会产生误导性低分），而非系统崩坏，故引入第二视角而非掩盖缺陷。

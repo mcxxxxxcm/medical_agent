@@ -203,6 +203,8 @@ class StreamingOrchestrator:
         self._full_answer = ""
         self._has_profile = False
         self._has_history = False
+        # v9.74 TTFT 优化：阶段2 预路由得到的 question_type，注入 graph input_state 供 router_node 复用跳过二次判定
+        self._pre_route_qtype = None
         self._state: dict = {
             "question": question,
             "user_id": user_id,
@@ -616,7 +618,10 @@ class StreamingOrchestrator:
             "rewritten_query": None,
             "final_question": None,
             "symptoms": None,
-            "question_type": None,
+            # v9.74 TTFT 优化：注入阶段2 预路由结果，graph 内 router_node 据此短路，
+            # 跳过规则/上下文/本地LLM 的重复判定；仅当预路由为常规标签时强制复用
+            "question_type": getattr(self, "_pre_route_qtype", None),
+            "_forced_route": getattr(self, "_pre_route_qtype", None) in ("symptom", "knowledge", "general"),
             "retrieval_attempts": 0,
             "retrieval_confidence": None,
             "refusal_type": None,
@@ -717,6 +722,10 @@ class StreamingOrchestrator:
     async def run(self):
         """主入口：执行完整的流式编排，yield SSE 事件字符串"""
         try:
+            # v9.74 TTFT 优化：请求一进入即回传工作状态事件，让前端立即收到响应
+            # （体感 TTFT 由原来的 7-11s 缩至几十 ms）。该事件非文本 token，不进入 _full_answer。
+            yield f"data: {json.dumps({'type': 'status', 'status': 'processing', 'request_id': self.request_id}, ensure_ascii=False)}\n\n"
+
             # 阶段 1：加载初始状态（档案 + 历史）
             await self._load_initial_state()
             self._has_profile = bool(self._state.get("user_profile"))
@@ -732,6 +741,9 @@ class StreamingOrchestrator:
             else:
                 route_command = await self._run_route_sync()
                 route_type = getattr(route_command, "goto", "direct_answer") if route_command else "direct_answer"
+                # TTFT 优化：缓存 miss 走 graph 时复用本次路由结果，避免 graph 内 router_node 二次判定
+                if route_command is not None:
+                    self._pre_route_qtype = (getattr(route_command, "update", None) or {}).get("question_type")
 
                 if route_type == "query_rewrite":
                     # knowledge：知识查询常重复 → L0 + L2 语义缓存
