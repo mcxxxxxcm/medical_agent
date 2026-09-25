@@ -134,6 +134,10 @@ class Settings(BaseSettings):
     ENABLE_SEMANTIC_CACHE: bool = True  # 是否启用语义相似缓存
     SEMANTIC_CACHE_THRESHOLD: float = 0.90  # v9.61: 0.92→0.90，温和放宽相似问法命中（省检索~3s）；0.90仍有区分度，命中仅返回检索文档、答案仍重新生成
 
+    # ===== 工具注册表与审计 =====
+    ENABLE_TOOL_AUDIT: bool = True        # 是否记录工具调用审计日志（规则引擎/分诊/用药统一入口）
+    ENABLE_RETRIEVAL_TOOL: bool = False   # 是否注册检索工具（默认关，防 LLM 绕过确定性路由/检索管线）
+
     # ===== RERANKER_MODEL本地路径 =====
     # Docker 默认路径为 /app/models/...，本地开发可通过环境变量或 .env 覆盖
     RERANKER_MODEL_PATH: str = str(PROJECT_ROOT / "bge-reranker-onnx")

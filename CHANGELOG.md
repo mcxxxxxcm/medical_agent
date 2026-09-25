@@ -1,5 +1,19 @@
 # 系统优化更新日志
 
+## v9.75 - 工具注册表 + 审计：规则引擎统一入口、可观测、LLM 能力约束（app/tools/registry.py、app/tools/__init__.py、app/core/metrics.py、app/core/config.py、app/graph/nodes/nodes.py）
+
+背景：医疗三规则引擎（安全审查 / 症状分诊 / 用药指导）此前硬编码在 `safety_check` 节点内被强制调用（`nodes.py:3572-3625`），无统一入口、无元数据、无审计，LLM 也感知不到系统具备哪些能力。目标是在不动确定性命中安全底线的前提下，收口「调用入口 + 元数据 + 审计」三件事。核心设计取舍：**调度权仍在图流程（graph）手里**，注册表只加统一调用层与审计；不引入 `create_react_agent`/`ToolNode`/自由 agent 工具选择，防 LLM 跳过安全审查；检索工具默认不注册，防 LLM 绕过确定性路由/检索管线。
+
+- **工具注册表 `app/tools/registry.py`**：`MedicalTool` dataclass + `TOOL_REGISTRY`，`register_tool`/`get_tool`/`enabled_tools`/`tool_descriptions`/`invoke_tool`。import 即自动注册 `safety_review`/`symptom_triage`/`medication_guide` 三个规则引擎（用 SKILL.md 语义作 description），`retrieval` 检索工具默认 `enabled=False`。统一入口 `invoke_tool` 计时 + 调 handler + 落审计，异常记录 status=error 后原样上抛，写库失败只告警不阻断主流程（与 `metrics.py` 容错一致）。
+- **审计落库 `app/core/metrics.py`**：新增第 5 张表 `tool_audit`（`request_id`/`thread_id`/`tool_name`/`status`/`duration_ms`/输入输出摘要/`error`/时间戳）+ `record_tool_call`/`get_tool_audit`，`cleanup()` 纳入 30 天清理。复用既有 SQLite 线程安全写 + trace 关联基建，`request_id`/`thread_id` 与 `node_metrics` 关联。
+- **配置 `app/core/config.py`**：新增 `ENABLE_TOOL_AUDIT=True`（审计总开关）、`ENABLE_RETRIEVAL_TOOL=False`（检索工具注册开关）。
+- **节点接统一入口 `nodes.py`**：`safety_check` 三处引擎调用改为经 `invoke_tool(...)` 并透传 `request_id`/`thread_id`，**顺序、trigger 判断、异常 try/except 完全不变**（只换入口）。
+- **LLM 能力约束**：`safety_check` 的 LLM 深审阶段注入 `tool_descriptions()` 作为只读系统说明——告知审查 LLM 下游已有哪些规则引擎校验过，勿重复/跳过；不改决策权（router 因高耦合 + 标签空间固定，不注入）。
+
+验证（`my_medical_env`，`tests/test_tool_registry.py` 11 用例全过）：注册完备（4 工具、3 启用）✓；`invoke_tool` 落审计（status/duration/request_id 正确）✓；审计开关关闭时零写入 ✓；异常记录 error 且不吞异常 ✓；`tool_descriptions()` 含三工具名与触发语义 ✓；检索默认禁用 ✓。全量 `pytest tests/ --deselect tests/test_nodes.py` 59 通过、0 新增失败；`test_nodes.py` 16 个失败经 clean-HEAD worktree 核对为**改动前既有**（`_strip_off_doc_medications` 签名与测试不匹配，属历史遗留，与本版无关）。
+
+<footer>v9.75 · app/tools/registry.py、app/tools/__init__.py、app/core/metrics.py、app/core/config.py、app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
 ## v9.74 - 首字延迟(TTFT)优化：消除 router 双跑 + SSE 早期 status 事件（app/graph/nodes/nodes.py、app/graph/streaming.py、app/graph/state.py）
 
 背景：`/api/chat/stream` 冷请求（缓存 miss）实测首 token 延迟 **7–11s**，体感极差；缓存命中时秒回、general 直接应答也快(60ms)。实测拆解瓶颈（本优化未动 RAG 检索流程内部）：

@@ -3567,9 +3567,17 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
         return {"warnings": []}
 
     clinical_checkpoint = state.get("clinical_checkpoint")
+    request_id = state.get("request_id", "")
+    thread_id = state.get("thread_id", "")
 
-    # ===== 第一步：规则引擎审查（0ms） =====
-    rule_result = run_rule_based_review(content, clinical_checkpoint)
+    from app.tools import invoke_tool
+
+    # ===== 第一步：规则引擎审查（0ms，经工具注册表统一入口+审计） =====
+    rule_result = invoke_tool(
+        "safety_review",
+        request_id=request_id, thread_id=thread_id,
+        answer=content, clinical_checkpoint=clinical_checkpoint,
+    )
     risk_tags = list(rule_result.get("risk_tags", []))
     status = rule_result["status"]
     revised_answer = rule_result["revised_answer"]
@@ -3577,11 +3585,12 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     # 1b. 用药指南规则核查（剂量上限/禁忌人群/相互作用/5字段完整性）
     #     仅在回答中出现药物名时触发，无药物则 0ms 直接 pass
     try:
-        from app.skills.medication_guide_engine import run_medication_guide_review
-        med_review = run_medication_guide_review(
-            revised_answer,
-            clinical_checkpoint,
-            state.get("user_profile"),
+        med_review = invoke_tool(
+            "medication_guide",
+            request_id=request_id, thread_id=thread_id,
+            answer=revised_answer,
+            clinical_checkpoint=clinical_checkpoint,
+            user_profile=state.get("user_profile"),
             current_medications=state.get("current_medications"),
         )
         if med_review["status"] == "revise":
@@ -3597,10 +3606,11 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
     #     只响应"症状组合"与"建议就诊"信号，不注入整块分诊文本；
     #     单症状紧急信号已由 run_rule_based_review 的 check_emergency_signals 覆盖
     try:
-        from app.skills.symptom_triage_engine import run_symptom_triage
         triage_symptoms = _get_checkpoint_symptoms(clinical_checkpoint)
         if triage_symptoms:
-            triage = run_symptom_triage(
+            triage = invoke_tool(
+                "symptom_triage",
+                request_id=request_id, thread_id=thread_id,
                 symptoms=triage_symptoms, clinical_checkpoint=clinical_checkpoint,
             )
             tr = triage.get("triage_result", {})
@@ -3646,6 +3656,17 @@ def safety_check_node(state: MedicalAssistantState) -> Dict[str, Any]:
                 answer=revised_answer,
                 clinical_snapshot=clinical_checkpoint or "无",
             )
+
+            # 工具能力介绍：告知审查 LLM 下游已有哪些规则引擎做过校验（只读约束，不改决策权）
+            from app.tools import tool_descriptions
+            _tool = tool_descriptions()
+            if _tool and "可用工具" in _tool:
+                messages.insert(0, SystemMessage(content=(
+                    "【系统下游已有工具（供审查参考，勿重复/跳过）】\n"
+                    f"{_tool}\n"
+                    "以上为已执行的确定性规则引擎能力。审查时应基于其 risk_tags 综合判断，"
+                    "不必为同一信号重复调用；若发现规则引擎未捕获的高危风险，仍按本提示升级处理。"
+                )))
 
             result: SafetyCheckOutput = invoke_structured(
                 llm, messages, SafetyCheckOutput,

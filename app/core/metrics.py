@@ -6,6 +6,7 @@
     2. token_usage: LLM Token 用量（成本估算 + 阈值告警）
     3. feedback: 用户反馈闭环（👍/👎 → 差评分析 → 黄金测试集候选）
     4. refusal_logs: 拒答日志（三层拒答机制的可观测性支撑）
+    5. tool_audit: 工具调用审计（工具注册表统一入口的可观测性）
 
 用法：
     from app.core.metrics import get_metrics_collector
@@ -156,6 +157,25 @@ class MetricsCollector:
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_refusal_timestamp ON refusal_logs(timestamp)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_refusal_type ON refusal_logs(refusal_type)")
+
+                # 表5：工具调用审计（工具注册表统一入口的可观测性）
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS tool_audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        request_id TEXT NOT NULL DEFAULT '',
+                        thread_id TEXT NOT NULL DEFAULT '',
+                        tool_name TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'ok',
+                        duration_ms REAL NOT NULL DEFAULT 0,
+                        input_summary TEXT NOT NULL DEFAULT '',
+                        output_summary TEXT NOT NULL DEFAULT '',
+                        error TEXT NOT NULL DEFAULT '',
+                        timestamp REAL NOT NULL
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_timestamp ON tool_audit(timestamp)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_name ON tool_audit(tool_name)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_request_id ON tool_audit(request_id)")
 
                 # 拒答日志聚合视图
                 conn.execute("""
@@ -1030,6 +1050,97 @@ class MetricsCollector:
             return []
 
     # ===================================================================
+    # 工具调用审计
+    # ===================================================================
+
+    def record_tool_call(
+        self,
+        tool_name: str,
+        request_id: str = "",
+        thread_id: str = "",
+        status: str = "ok",
+        duration_ms: float = 0.0,
+        input_summary: str = "",
+        output_summary: str = "",
+        error: str = "",
+    ):
+        """记录一次工具调用审计。
+
+        Args:
+            tool_name: 被调用工具名（对应 TOOL_REGISTRY 中的 name）
+            request_id / thread_id: trace 标识（与 node_metrics 关联）
+            status: "ok" 或 "error"
+            duration_ms: 工具执行耗时
+            input_summary: 输入摘要（脱敏/截断）
+            output_summary: 输出摘要（如 status/risk_tags 精简）
+            error: 异常信息（仅在 status=error 时非空）
+        """
+        with self._lock:
+            try:
+                conn = sqlite3.connect(str(self._db_path))
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO tool_audit
+                        (request_id, thread_id, tool_name, status, duration_ms,
+                         input_summary, output_summary, error, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            request_id,
+                            thread_id,
+                            tool_name,
+                            status,
+                            round(duration_ms, 2),
+                            (input_summary or "")[:1000],
+                            (output_summary or "")[:1000],
+                            (error or "")[:500],
+                            time.time(),
+                        ),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.warning(f"Tool audit 写入失败：{e}")
+
+    def get_tool_audit(self, hours: int = 24) -> List[Dict]:
+        """查询近 N 小时工具调用审计明细。"""
+        cutoff = time.time() - hours * 3600
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, request_id, thread_id, tool_name, status,
+                           duration_ms, input_summary, output_summary, error, timestamp
+                    FROM tool_audit WHERE timestamp > ?
+                    ORDER BY timestamp DESC LIMIT 10000
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                return [
+                    {
+                        "id": r[0],
+                        "request_id": r[1],
+                        "thread_id": r[2],
+                        "tool_name": r[3],
+                        "status": r[4],
+                        "duration_ms": r[5],
+                        "input_summary": r[6],
+                        "output_summary": r[7],
+                        "error": r[8],
+                        "timestamp": r[9],
+                    }
+                    for r in rows
+                ]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Tool audit 查询失败：{e}")
+            return []
+
+    # ===================================================================
     # 通用
     # ===================================================================
 
@@ -1044,7 +1155,7 @@ class MetricsCollector:
             try:
                 conn = sqlite3.connect(str(self._db_path))
                 try:
-                    for table in ("node_metrics", "token_usage", "feedback"):
+                    for table in ("node_metrics", "token_usage", "feedback", "tool_audit"):
                         deleted = conn.execute(
                             f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,)
                         ).rowcount

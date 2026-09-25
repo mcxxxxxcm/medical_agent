@@ -279,7 +279,13 @@
       "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name like 'python%'\\\\\" | Select-Object ProcessId,CommandLine | Format-List\")",
       "Bash(timeout 60 curl -sN --noproxy '*' -m 55 -H 'Content-Type: application/json' -d '{\"question\":\"高血压有哪些常见症状\",\"user_id\":\"reloadck\",\"thread_id\":\"reload-ck-1\"}' http://localhost:8000/api/chat/stream)",
       "Bash(grep -v \"^$\")",
-      "Bash(echo \"exit=$?（1=未用,v9.74可用）\")"
+      "Bash(echo \"exit=$?（1=未用,v9.74可用）\")",
+      "Bash(grep -r \"pytest\\\\|test_\" D:/Agent/medical_assistant_agent -name \"*.sh\" -o)",
+      "Bash(xargs grep *)",
+      "Bash(python -c \"import app.core.config; print\\('config ok'\\)\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(/c/Users/86176/miniconda3/python.exe *)",
+      "Bash(xargs -n1 basename)"
     ]
   },
   "enableAllProjectMcpServers": true,
