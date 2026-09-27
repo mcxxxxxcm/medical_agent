@@ -1793,7 +1793,7 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "退烧": "退热", "发烧": "发热",
             "止疼": "止痛", "镇痛": "止痛",
             "咳嗽有痰": "咳嗽咳痰", "干咳": "咳嗽无痰",
-            "感冒灵颗粒": "感冒灵", "芬必得": "布洛芬缓释胶囊",
+            "感冒灵颗粒": "感冒灵",
             "美林": "布洛芬混悬液", "泰诺": "对乙酰氨基酚",
             "扑热息痛": "对乙酰氨基酚", "芬必得": "布洛芬",
             # v9.3: 口语症状词 → 书面语（修复"流鼻血"召回错误）
@@ -1824,7 +1824,10 @@ def knowledge_retrieval_node(state: MedicalAssistantState) -> Dict[str, Any]:
             "退烧药": "解热镇痛药", "消炎药": "抗感染药",
             "感冒药": "感冒用药", "止痛药": "镇痛药", "拉肚子药": "止泻药",
         }
-        for colloquial, standard in _SYNONYMS.items():
+        # 必须按词长降序替换：短词在前会吞掉长词——如"退烧"先于"退烧药"替换，
+        # 使"退烧药"变"退热药"后，"退烧药"→"解热镇痛药"永远匹配不到。
+        # 最长优先保证精确词先命中，再处理剩余的部分匹配。
+        for colloquial, standard in sorted(_SYNONYMS.items(), key=lambda kv: -len(kv[0])):
             q = q.replace(colloquial, standard)
         # 去除语气词前缀
         q = re.sub(r'^(我想问一下|请问|问一下|请教一下|咨询一下|麻烦问一下)\s*', '', q)

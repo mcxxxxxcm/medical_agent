@@ -1,5 +1,16 @@
 # 系统优化更新日志
 
+## v9.76 - 同义词替换顺序 bug 修复：长词优先保精确词命中（app/graph/nodes/nodes.py）
+
+背景：`knowledge_retrieval_node._preprocess_query` 的同义词替换按 dict **插入顺序** `str.replace`，短词在前会吞掉长词——如 `"退烧"→"退热"` 先于 `"退烧药"→"解热镇痛药"`，使输入 `"退烧药"` 先变 `"退热药"`，后面的 `"退烧药"` 键永远匹配不到，最终只得到 `"退热药"` 而非预期的 `"解热镇痛药"`。同类受害者：`"拉肚子"`(1789) 吞掉 `"拉肚子药"→"止泻药"`(1825)、`"退烧"` 系与 `"退烧药"`。另清除 dict 字面量中重复的 `"芬必得"` 键（1796 与 1798，后定义 `"布洛芬"` 已覆盖前者，前者是死代码）。
+
+- **修复**：替换循环改为按 **key 长度降序** 遍历（`sorted(_SYNONYMS.items(), key=lambda kv: -len(kv[0]))`），最长优先保证精确词先命中，再处理剩余部分匹配。仅改动遍历顺序，dict 内容与各映射值不变，不影响既有单字节词（如 `"头疼"→"头痛"`）。
+- **去重**：删除字面量中重复的 `"芬必得": "布洛芬缓释胶囊"` 行，保留先定义位置之外的 `"芬必得": "布洛芬"`，消除死键与维护歧义。
+
+验证（本机 Python，非 conda env——本次 bash 无法定位 `my_medical_env`，用 `AppData/Local/Python` 复现验证）：`py_compile` 通过；独立复现同义词逻辑输出——`退烧药→解热镇痛药`、`拉肚子药→止泻药`、`感冒药→感冒用药`、`止痛药→镇痛药`，长短词均已正确命中；修复前短词先替换会得到 `退热药/腹泻药`。注：因无法连上 `my_medical_env`，未在项目 pytest/RAG 检索流程内跑回归，建议后续在环境里按「检索改动须关缓存」政策以 `ENABLE_SEMANTIC_CACHE=false` 复测检索质量。
+
+<footer>v9.76 · app/graph/nodes/nodes.py、CHANGELOG.md</footer>
+
 ## v9.75 - 工具注册表 + 审计：规则引擎统一入口、可观测、LLM 能力约束（app/tools/registry.py、app/tools/__init__.py、app/core/metrics.py、app/core/config.py、app/graph/nodes/nodes.py）
 
 背景：医疗三规则引擎（安全审查 / 症状分诊 / 用药指导）此前硬编码在 `safety_check` 节点内被强制调用（`nodes.py:3572-3625`），无统一入口、无元数据、无审计，LLM 也感知不到系统具备哪些能力。目标是在不动确定性命中安全底线的前提下，收口「调用入口 + 元数据 + 审计」三件事。核心设计取舍：**调度权仍在图流程（graph）手里**，注册表只加统一调用层与审计；不引入 `create_react_agent`/`ToolNode`/自由 agent 工具选择，防 LLM 跳过安全审查；检索工具默认不注册，防 LLM 绕过确定性路由/检索管线。

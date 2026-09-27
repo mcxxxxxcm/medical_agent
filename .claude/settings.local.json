@@ -285,7 +285,12 @@
       "Bash(python -c \"import app.core.config; print\\('config ok'\\)\")",
       "Bash(echo \"exit=$?\")",
       "Bash(/c/Users/86176/miniconda3/python.exe *)",
-      "Bash(xargs -n1 basename)"
+      "Bash(xargs -n1 basename)",
+      "Bash([ -f \"$ENVPY\" ])",
+      "Bash(/c/Users/86176/miniconda3/envs/my_medical_env/python.exe -c 'import sys; print\\(sys.version\\)')",
+      "Bash(/c/Users/86176/miniconda3/envs/my_medical_env/python.exe -c \"print\\('hello from env'\\)\")",
+      "Bash([ -f \"$PY\" ])",
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python.exe -m py_compile app/graph/nodes/nodes.py)"
     ]
   },
   "enableAllProjectMcpServers": true,
