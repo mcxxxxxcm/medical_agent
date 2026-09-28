@@ -290,7 +290,12 @@
       "Bash(/c/Users/86176/miniconda3/envs/my_medical_env/python.exe -c 'import sys; print\\(sys.version\\)')",
       "Bash(/c/Users/86176/miniconda3/envs/my_medical_env/python.exe -c \"print\\('hello from env'\\)\")",
       "Bash([ -f \"$PY\" ])",
-      "Bash(/c/Users/86176/AppData/Local/Python/bin/python.exe -m py_compile app/graph/nodes/nodes.py)"
+      "Bash(/c/Users/86176/AppData/Local/Python/bin/python.exe -m py_compile app/graph/nodes/nodes.py)",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -c \"import app.graph.nodes.nodes as n; import app.graph.nodes.prompts as p; print\\('IMPORT_OK'\\); print\\('emitter exists:', hasattr\\(n,'_SegmentedEmitter'\\)\\); import inspect,re; src=inspect.getsource\\(n._SegmentedEmitter._next_split\\); print\\('early-flush in _next_split:', 'not self.clean_parts' in src\\)\")",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest tests/test_nodes.py -k \"SegmentedEmitter or sanitize or Sanitize\" -q)",
+      "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -m pytest \"tests/test_nodes.py::TestSegmentedEmitter\" -v)",
+      "Bash(ENABLE_SEMANTIC_CACHE=false \"D:/Agent/software/envs/my_medical_env/python.exe\" scripts/evaluate_golden_match.py --only \"拨打120\" --concurrent 1)",
+      "Bash(ENABLE_SEMANTIC_CACHE=false \"D:/Agent/software/envs/my_medical_env/python.exe\" scripts/evaluate_golden_match.py --concurrent 3)"
     ]
   },
   "enableAllProjectMcpServers": true,

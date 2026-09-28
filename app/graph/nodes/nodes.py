@@ -3086,6 +3086,18 @@ class _SegmentedEmitter:
         buf = self.buf
         if not buf:
             return None, None
+        # v9.77 首段提前发射：首个逻辑块尚未发出时，优先按句末符切，让首 token 尽快出。
+        # 解码 bullet 式回答「憋住首条 bullet 直到下一条 \n- 才发射」的延迟（首 chunk 多等
+        # 一整条 bullet + 下一条起点）；首 chunk 发出后 clean_parts 非空即回落原分组逻辑。
+        # 清洗语义不变（每个 segment 仍走同一 _sanitize_answer），仅发射时机提前。
+        if not self.clean_parts:
+            best = -1
+            for ch in _SEG_SENT_END:
+                i = buf.rfind(ch)
+                if i > best:
+                    best = i
+            if 0 <= best < len(buf) - 1:
+                return best + 1, "sent"
         # 1) 新 bullet 起点："...\n- "/"\n* "/"\n• "
         m = _SEG_SENT_END and re.search(r"\n[-\*•]\s", buf)
         if m and m.start() > 0:
@@ -3336,6 +3348,25 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
             "其余措辞仍须严格忠于【文档】，不得因点明方向而编造或夸大。"
         )
 
+    # v9.77：急诊列举型问题的生成覆盖强化（"哪些情况需立即拨打120/急救/急诊就医"）。
+    # 检索层（v9.73）已把全部急诊独立文档跨文档召回喂全，但生成层需显式指令才会逐一转述
+    # 已召回的多类急诊场景，否则只挑最显眼的一两条，漏掉脑卒中FAST/大出血/高热惊厥等。
+    # 仅当是"无具体病名实体的通用急诊清单"时触发（_is_emergency_enum_query 已与单病种
+    # 指征分离开），其它查询此段为空串，行为零变化。不改检索/拆解/K/final_question。
+    emergency_enum_section = ""
+    if _is_emergency_enum_query(question):
+        emergency_enum_section = (
+            "【急诊情形转述（重要）】\n"
+            "【问题】是列举型急诊问题（需在哪些情况下立即拨打120/急救/急诊就医）。"
+            "请把需立即拨打120的急危重症情形，**归并成少数几个核心大类、每类一条 bullet**"
+            " 列出，并写明各类的**关键危险信号与时限/数值阈值**（如心梗胸痛持续不缓解的时长、"
+            "脑卒中突然偏瘫/言语不清、严重呼吸困难、过敏性休克、大出血无法止住、意识丧失、"
+            "持续抽搐/惊厥超过的分钟数等）。\n"
+            "只针对明确危及生命的急症大类作答，**不要罗列文档中琐碎的次要求助场景**（如扭伤、"
+            "烫伤、动物咬伤等非急危重情形不要堆叠）；危险信号与时长/数值阈值尽量写具体，"
+            "以【文档】实际记载为准，文档未记载不得编造或自行补充。"
+        )
+
     # 使用 ChatPromptTemplate 构建
     messages = RAG_ANSWER_PROMPT.format_messages(
         frozen_profile_section=frozen_profile_section,
@@ -3346,6 +3377,7 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         question=question,
         symptom_whitelist_section=symptom_whitelist_section,
         disease_direction_section=disease_direction_section,
+        emergency_enum_section=emergency_enum_section,
         followup_section=followup_section,
     )
     return messages

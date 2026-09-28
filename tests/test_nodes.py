@@ -639,6 +639,27 @@ class TestSegmentedEmitter:
         em.feed("- 你好，祝您健康。")
         assert em.finish() == "- 你好，祝您健康。"
 
+    def test_first_bullet_flows_at_first_sentence_end(self):
+        # v9.77 首段提前发射：首个 bullet 在句末符处即流出，无需等下一 bullet 起点
+        em = self._SegmentedEmitter([], [], "")
+        em.feed("- 心梗胸痛应立即拨打120。")
+        assert em.clean_parts == []  # 句末符后尚无后续字符，暂不切（与散文句末一致）
+        em.feed("请")  # 后续字符到达 → 首块在句末处切出，TTFT 提前
+        assert em.clean_parts and em.clean_parts[0] == "- 心梗胸痛应立即拨打120。"
+
+    def test_after_first_block_content_intact(self):
+        # v9.77 首块发出后回落原分组逻辑，但清洗内容完整不漏
+        em = self._SegmentedEmitter([], [], "")
+        em.feed("- 心梗胸痛>30分钟应立即拨打120。")
+        em.feed("脑卒中FAST任一阳性也应拨打120。")
+        em.feed("\n- 大出血无法止住需急救。")
+        em.feed("\n- 意识丧失应立即拨打120。")
+        full = em.finish()
+        assert "心梗胸痛>30分钟应立即拨打120。" in full
+        assert "脑卒中FAST任一阳性也应拨打120。" in full
+        assert "大出血无法止住需急救。" in full
+        assert "意识丧失应立即拨打120。" in full
+
 
 # ===== v9.52: 病症方向检索增强（温度分档 + 规则对齐）确定性单测 =====
 class TestDiseaseDirection:
