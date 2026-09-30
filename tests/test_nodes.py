@@ -762,3 +762,121 @@ class TestDiseaseDirection:
     def test_enrich_dedup_and_truncate(self):
         out = _enrich_disease_direction("一个很长的头痛查询", {"disease_direction": ["感冒", "感冒"]})
         assert out.count("感冒") == 1
+
+
+class _FakeDoc:
+    def __init__(self, content, source):
+        self.page_content = content
+        self.metadata = {"source": source}
+    def __repr__(self):
+        return f"Doc({self.metadata['source']}:{self.page_content[:12]}...)"
+
+
+from app.graph.nodes.nodes import _compact_answer_docs
+
+
+class TestCompactAnswerDocs:
+    """v9.78 检索注入去重/压缩"""
+
+    def _doc(self, src, content):
+        return _FakeDoc(content, src)
+
+    def test_exact_dedup(self):
+        docs = [
+            self._doc("a.md", "心脏骤停处理"),
+            self._doc("a.md", "心脏骤停处理"),  # 同源同内容 → 去重
+            self._doc("b.md", "呼吸衰竭处理"),
+        ]
+        out = _compact_answer_docs(docs, per_doc_cap=3000, budget=10000)
+        assert len(out) == 2  # 去重后保留 2 篇
+
+    def test_dedup_different_source_kept(self):
+        docs = [
+            self._doc("a.md", "同样的正文"),
+            self._doc("b.md", "同样的正文"),  # 不同来源、同内容 → 都保留（来源多样优先）
+        ]
+        out = _compact_answer_docs(docs, per_doc_cap=3000, budget=10000)
+        assert len(out) == 2
+
+    def test_budget_truncates_multi_source(self):
+        # 大量文档 + 小预算 → 只保留能容纳的前几篇（来源多样轮询）
+        docs = [
+            self._doc(f"s{i}.md", "内文" * 500)  # 每篇 1000 字符
+            for i in range(20)
+        ]
+        out = _compact_answer_docs(docs, per_doc_cap=3000, budget=3000)
+        # 预算 3000，每篇 min(1000,3000)=1000 → 至少 3 篇，来源各不相同
+        assert 3 <= len(out) <= 20
+        sources = {d.metadata["source"] for d in out}
+        assert len(sources) == len(out)  # 来源互不重复
+
+    def test_empty_input(self):
+        assert _compact_answer_docs([], per_doc_cap=3000, budget=10000) == []
+        assert _compact_answer_docs(None, per_doc_cap=3000, budget=10000) == []
+
+    def test_single_doc_returned(self):
+        docs = [self._doc("a.md", "只有一篇")]
+        assert len(_compact_answer_docs(docs, per_doc_cap=3000, budget=10)) == 1
+
+    def test_preserves_source_order(self):
+        # 单来源桶内保持原序
+        docs = [self._doc("s.md", f"片段{i}") for i in range(5)]
+        out = _compact_answer_docs(docs, per_doc_cap=3000, budget=10000)
+        assert [d.page_content for d in out] == [f"片段{i}" for i in range(5)]
+
+
+from app.graph.nodes.structured_output import invoke_structured
+from pydantic import BaseModel
+
+
+class _Review(BaseModel):
+    score: int
+
+
+class TestStructuredOutput:
+    """v9.78 结构化失败诊断（可行动原因替代「最后错误：None」）"""
+
+    def test_failure_aggregates_reasons(self):
+        from unittest.mock import patch
+        # 三层均失败且带原因 → ValueError 文案含逐层原因
+        with patch("app.graph.nodes.structured_output._try_tool_calling",
+                   return_value=(None, "tool_calling: 模型不支持 bind_tools")), \
+             patch("app.graph.nodes.structured_output._try_json_mode",
+                   return_value=(None, "json_mode: LLM 未配置 JSON Mode，跳过")), \
+             patch("app.graph.nodes.structured_output._try_text_parse",
+                   return_value=(None, "text_parse: 输出无 JSON 块")):
+            import pytest as _p
+            with _p.raises(ValueError) as ei:
+                invoke_structured(None, "hi", _Review, force_strategy=None)
+        msg = str(ei.value)
+        assert "模型不支持 bind_tools" in msg
+        assert "未配置 JSON Mode" in msg
+        assert "输出无 JSON 块" in msg
+        assert "最后错误：None" not in msg
+
+    def test_silent_none_gives_hint(self):
+        from unittest.mock import patch
+        # 三层全部静默返回空（无异常）→ 提示「各策略静默返回空（无异常）」
+        with patch("app.graph.nodes.structured_output._try_tool_calling", return_value=(None, "")), \
+             patch("app.graph.nodes.structured_output._try_json_mode", return_value=(None, "")), \
+             patch("app.graph.nodes.structured_output._try_text_parse", return_value=(None, "")):
+            import pytest as _p
+            with _p.raises(ValueError) as ei:
+                invoke_structured(None, "hi", _Review, force_strategy=None)
+        assert "各策略静默返回空（无异常）" in str(ei.value)
+
+    def test_success_returns_result(self):
+        from unittest.mock import patch
+
+        def _tool_calling_ok(llm, prompt, schema):
+            return _Review(score=3), ""
+
+        def _json_skip(llm, prompt, schema):
+            return None, "json_mode: 跳过"
+
+        # 某一层成功 → 返回结果，不抛异常（用真实函数替 mock，保留 __name__）
+        with patch("app.graph.nodes.structured_output._try_tool_calling", _tool_calling_ok), \
+             patch("app.graph.nodes.structured_output._try_json_mode", _json_skip), \
+             patch("app.graph.nodes.structured_output._try_text_parse", _json_skip):
+            out = invoke_structured(None, "hi", _Review, force_strategy=None)
+        assert out.score == 3

@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
     DEFAULT_K: int = 3  # v9.0: 5→3，减少送入 LLM 的文档数，缩短 Prompt token，降低 TTFT
+    # v9.78: 答案生成的注入上下文总字符预算。多子问题/兄弟扩展会把大量父文档灌进 prompt
+    #（拨120 实测 94 篇×3000≈282k 字符，远超 8192-token 上下文窗，后部关键文档被丢弃）。
+    # 生成侧「去重 + 按相关度序 + 字符预算」压缩注入（nodes._compact_answer_docs）：
+    # 保留高相关度哨兵文档进得了上下文（提正确性）、又把超窗洪水显式压到 budget 内压 prefill。
+    # 尺寸权衡：10000 只能装 ~3-5 篇 → 多类别枚举查询（拨打120）哨兵文档(大出血/惊厥/卒中)深度
+    # 靠后会被截掉、实测回退 5/7→4/7；15000 大致对齐未压缩时被上下文窗截住的前段覆盖，保 5/7。
+    # 单一来源/少量样本不受影响（本就低于预算）。以金标语义评测调参。
+    ANSWER_CONTEXT_CHAR_BUDGET: int = 15000
     DEFAULT_SEARCH_TYPE: str = "similarity"
     RERANKER_TOP_K: int = 8  # RRF 融合后送入 Reranker 的候选数（三阶段：先截 top8 再精排）
     RERANKER_THRESHOLD: float = 0.005  # v9.16: 0.02→0.005，原阈值过高导致合理文档被过滤后降级兜底

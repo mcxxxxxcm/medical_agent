@@ -3226,6 +3226,46 @@ def _build_memory_context_section(state: MedicalAssistantState) -> str:
     return ("\n\n".join(parts) + "\n") if parts else ""
 
 
+# v9.78: 检索注入去重/压缩（P0 正确性病）。多子问题/兄弟扩展会把同一父文档重复灌入、
+# 且总字符无预算上限——拨120 实测 94 篇×3000≈282k 字符，远超 8192-token 上下文窗，
+# 后部关键哨兵文档（心梗/卒中/惊厥…）被丢弃/稀释。改为：
+#   ① 精确去重 (source, page_content) 相同只留首个（并行子问题会返回同一父文档多次）；
+#   ② 按「原列表相关度序」逐篇截到 per_doc_cap、累计字符达 budget 即停——保持相关度序，
+#      让进入窗口的前段（本就被 8192-token 窗截住的部分）保留最高相关度文档（含哨兵），
+#      同时把超窗洪水显式压到 budget 内、生成 prefill 可控。
+# 注意：不能按来源轮询重排——那会打乱相关度序，让哨兵文档落到被窗口截掉的尾部
+# （拨120 实测回归 5/7→4/7）。本实现返回仍是 Document 列表、相对序不变、至少 1 篇。
+def _compact_answer_docs(retrieved_docs, per_doc_cap=3000, budget=None):
+    if budget is None:
+        budget = config.ANSWER_CONTEXT_CHAR_BUDGET
+
+    # ① 精确去重（保留首个出现的副本，保持原相对序）
+    dedup = []
+    seen = set()
+    for doc in retrieved_docs or []:
+        if doc is None:
+            continue
+        key = (doc.metadata.get("source", ""), doc.page_content)
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(doc)
+    if not dedup:
+        return []
+
+    # ② 按原序逐篇计入预算；budget<=0 或仅一篇时原样返回前列（至少 1 篇）
+    if budget <= 0:
+        return dedup
+    picked = []
+    total_chars = 0
+    for doc in dedup:
+        picked.append(doc)
+        total_chars += min(len(doc.page_content), per_doc_cap)
+        if total_chars >= budget:
+            break
+    return picked
+
+
 def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_profile: Optional[Dict[str, Any]], state: MedicalAssistantState, symptoms: Optional[Dict[str, Any]] = None) -> str:
     """构建 RAG 问答提示词（三层上下文架构）
 
@@ -3263,8 +3303,21 @@ def build_rag_prompt(question: str, retrieved_docs: Optional[List[Any]], user_pr
         )
         return messages
 
+    # v9.78: 检索注入去重/压缩。多子问题/兄弟扩展会把同一父文档重复灌入、且无总字符预算，
+    # 拨120 实测 94 篇×3000≈282k 字符远超上下文窗，后部关键哨兵文档被丢弃。此处按
+    # 「来源多样 + 字符预算」压缩注入；单来源/少量样本路径（索引不变、截断 [:3000] 保留）
+    # 行为不变，仅多来源大召回受益。
+    compact_docs = _compact_answer_docs(
+        retrieved_docs, per_doc_cap=3000, budget=config.ANSWER_CONTEXT_CHAR_BUDGET
+    )
+    if len(compact_docs) != len(retrieved_docs):
+        logger.info(
+            "注入上下文压缩：%d→%d 篇",
+            len(retrieved_docs), len(compact_docs),
+        )
+
     formatted_docs = []
-    for i, doc in enumerate(retrieved_docs, 1):
+    for i, doc in enumerate(compact_docs, 1):
         source = doc.metadata.get("source", "未知来源")
         content = doc.page_content
         # v9.69: 2000→3000，配合 MAX_SIBLING_CHARS 拉高（P0-2），避免多要点聚合查询的

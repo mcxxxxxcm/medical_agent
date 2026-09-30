@@ -75,6 +75,69 @@ def invalidate_kb_version():
         logger.info(f"kb_version 已失效（旧值：{old}），下次调用将重新计算")
 
 
+def _probe_chroma(persist_dir, collection_name, embeddings) -> object:
+    """探测一个候选 KB 目录/集合能否被 chromadb 打开（返回 Chroma 实例或 None）。
+
+    v9.78: Chroma 检索加载鲁棒性。旧故障「Could not connect to tenant default_tenant」+
+    「'RustBindingsAPI' object has no attribute 'bindings'」源于：无活跃指针/指针丢失时
+    VectorStoreManager 回退到顶层脏 data/chroma_db/chroma.sqlite3（老 schema），
+    chromadb 1.5.5 打不开 tenant。此处以轻探针验证候选：
+        - 构造 langchain_chroma.Chroma(persist_directory, collection_name, embedding_function)
+        - 触 _collection.count() → 解析 tenant/schema
+    构造或 count 任一异常 → 返回 None（该候选不可用）。
+    """
+    try:
+        kwargs = {
+            "persist_directory": str(persist_dir),
+            "embedding_function": embeddings,
+        }
+        if collection_name:
+            kwargs["collection_name"] = collection_name
+        vs = Chroma(**kwargs)
+        vs._collection.count()
+        return vs
+    except Exception as e:
+        logger.debug(f"候选KB探测失败 {persist_dir}/{collection_name or 'langchain'}：{type(e).__name__}: {e}")
+        return None
+
+
+def _candidate_kb_dirs(active_dir=None, active_name=None) -> List:
+    """返回候选 KB 目录/集合的有序列表（统一候选序，首个可加载者 = 生效KB）。
+
+    顺序：
+        1. 当前活跃指针（若有）；
+        2. data/chroma_db/medical_kb_v* 按修改时间倒序（天然覆盖「指针丢失/子目录损坏
+           → 回退到最新可加载世代」），跳过已在更前候选里出现过的目录；
+        3. 顶层 legacy config.PERSIST_DIRECTORY（老 schema，底座）。
+    返回 List[(persist_dir, collection_name_or_None)]。
+    """
+    candidates = []
+    seen_dirs = set()
+
+    if active_dir:
+        candidates.append((str(active_dir), active_name))
+        seen_dirs.add(str(active_dir))
+
+    base = Path(config.PERSIST_DIRECTORY)
+    if base.exists():
+        for child in sorted(base.glob("medical_kb_v*"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not child.is_dir():
+                continue
+            key = str(child)
+            if key in seen_dirs:
+                continue
+            seen_dirs.add(key)
+            # 兄弟世代目录名即影子集合名（create_shadow_collection 用同名命名），
+            # 传 dir 名作 collection_name 才指向真实集合；探测失败由 _probe 判 None。
+            candidates.append((key, child.name))
+
+    legacy = str(config.PERSIST_DIRECTORY)
+    if legacy not in seen_dirs:
+        candidates.append((legacy, None))
+
+    return candidates
+
+
 def _resolve_active_collection() -> tuple:
     """从 kb_active.json 解析当前活跃集合（零停机重建指针）
 
@@ -178,16 +241,45 @@ class VectorStoreManager:
                 print(f"  已写入 {min(i + batch_size, len(documents))}/{len(documents)} 个文档")
             print(f"向量数据库已保存到：{self.persist_directory}")
         else:
-            abs_path = self.persist_directory.resolve()
-            print(f"向量库位于：{abs_path}")
-            print(f"从{self.persist_directory}加载现有向量库。")
-            load_kwargs = {
-                "persist_directory": str(self.persist_directory),
-                "embedding_function": self.embeddings,
-            }
-            if self.collection_name:
-                load_kwargs["collection_name"] = self.collection_name
-            self.vector_store = Chroma(**load_kwargs)
+            # v9.78: 加载候选 KB 不硬失败；候选坏了能回退。按统一候选序
+            # （活跃指针 → 最新 medical_kb_v* 世代 → 顶层 legacy）逐个探测，
+            # 首个能打开者 = 生效KB，并同步 self.persist_directory/collection_name
+            # 保证后续 add_documents/检索用对目录。全部失败 → 可行动日志 + 抛错
+            # （由调用方原有 except 兜底返回空，但此时日志已给根因）。
+            active_dir, active_name = _resolve_active_collection()
+            candidates = _candidate_kb_dirs(active_dir, active_name)
+            loaded = None
+            tried = 0
+            for cand_dir, cand_name in candidates:
+                tried += 1
+                vs = _probe_chroma(cand_dir, cand_name, self.embeddings)
+                if vs is not None:
+                    loaded = vs
+                    if cand_dir != str(self.persist_directory):
+                        logger.warning(
+                            f"活跃KB {self.persist_directory}{('/'+self.collection_name) if self.collection_name else ''} "
+                            f"不可用，已回退到 {cand_dir}{('/'+cand_name) if cand_name else '/langchain'}"
+                        )
+                    self.persist_directory = Path(cand_dir)
+                    self.collection_name = cand_name
+                    abs_path = Path(cand_dir).resolve()
+                    print(f"向量库位于：{abs_path}")
+                    print(f"从{cand_dir}加载现有向量库。")
+                    break
+
+            if loaded is None:
+                import chromadb
+                logger.error(
+                    f"向量库加载失败：共探测 {tried} 个候选目录均无法打开。"
+                    f"chromadb 版本={chromadb.__version__}。"
+                    f"请检查 data/chroma_db/ 各世代目录完整性；若 schema 损坏请重建向量库。"
+                    f"详情见上方各候选探测日志。"
+                )
+                raise RuntimeError(
+                    f"向量库加载失败：全部 {tried} 个候选 KB 均无法打开"
+                    f"（chromadb {getattr(__import__('chromadb'), '__version__', '?')}）。请重建向量库 data/chroma_db。"
+                )
+            self.vector_store = loaded
         return self.vector_store
 
     def get_retriever(self, k: int = None, search_type: str = None) -> BaseRetriever:

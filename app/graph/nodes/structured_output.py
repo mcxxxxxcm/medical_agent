@@ -60,7 +60,8 @@ def _try_tool_calling(
     llm,
     prompt,
     schema: Type[BaseModel],
-) -> Optional[BaseModel]:
+) -> (Optional[BaseModel], str):
+    """返回 (result, reason_str)。成功 reason 为空串；失败返回带可行动定位的原因。"""
     """Layer 1: Tool Calling 策略
 
     流程：
@@ -95,7 +96,7 @@ def _try_tool_calling(
         # 提取 tool_calls
         if not hasattr(response, "tool_calls") or not response.tool_calls:
             logger.debug(f"Tool Calling: LLM 未返回 tool_calls，降级")
-            return None
+            return None, "tool_calling: LLM 未返回 tool_calls"
 
         tool_call = response.tool_calls[0]
 
@@ -107,27 +108,31 @@ def _try_tool_calling(
 
         result = schema.model_validate(args)
         logger.debug(f"Tool Calling 成功：{tool_name} → {result}")
-        return result
+        return result, ""
 
     except NotImplementedError:
         logger.debug(f"Tool Calling: 模型不支持 bind_tools，降级")
-        return None
+        return None, "tool_calling: 模型不支持 bind_tools"
     except TypeError as e:
         # bind_tools 参数不被接受（如 Ollama 旧版不支持 tool_choice）
         if "tool_choice" in str(e) or "bind_tools" in str(e):
             logger.debug(f"Tool Calling: bind_tools 参数错误，降级：{e}")
-            return None
+            return None, f"tool_calling: bind_tools 参数不被接受（{e}）"
         raise
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.debug(f"Tool Calling 参数解析失败：{e}")
+        return None, f"tool_calling: tool_calls 参数解析失败（{e}）"
     except Exception as e:
         logger.debug(f"Tool Calling 失败，降级：{e}")
-        return None
+        return None, f"tool_calling: 调用失败（{e}）"
 
 
 def _try_json_mode(
     llm,
     prompt,
     schema: Type[BaseModel],
-) -> Optional[BaseModel]:
+) -> (Optional[BaseModel], str):
+    """返回 (result, reason)。"""
     """Layer 2: JSON Mode 策略
 
     前提：llm 已通过 model_kwargs 设置了 response_format={"type": "json_object"}
@@ -138,7 +143,7 @@ def _try_json_mode(
         model_kwargs = getattr(llm, "model_kwargs", {}) or {}
         if not model_kwargs.get("response_format", {}).get("type") == "json_object":
             # 没有 JSON Mode，直接跳到 Layer 3
-            return None
+            return None, "json_mode: LLM 未配置 JSON Mode，跳过"
 
         response = llm.invoke(prompt)
         raw_text = response.content if hasattr(response, "content") else str(response)
@@ -147,20 +152,21 @@ def _try_json_mode(
         if parsed is not None:
             result = schema.model_validate(parsed)
             logger.debug(f"JSON Mode 成功：{schema.__name__}")
-            return result
+            return result, ""
 
-        return None
+        return None, "json_mode: 输出无 JSON 块"
 
     except Exception as e:
         logger.debug(f"JSON Mode 失败，降级：{e}")
-        return None
+        return None, f"json_mode: 校验失败（{e}）"
 
 
 def _try_text_parse(
     llm,
     prompt,
     schema: Type[BaseModel],
-) -> Optional[BaseModel]:
+) -> (Optional[BaseModel], str):
+    """返回 (result, reason)。"""
     """Layer 3: 纯文本 + 本地解析（兜底）
 
     无格式约束，完全依赖后处理：
@@ -175,13 +181,13 @@ def _try_text_parse(
         if parsed is not None:
             result = schema.model_validate(parsed)
             logger.debug(f"纯文本解析成功：{schema.__name__}")
-            return result
+            return result, ""
 
-        return None
+        return None, "text_parse: 输出无 JSON 块"
 
     except Exception as e:
         logger.debug(f"纯文本解析失败：{e}")
-        return None
+        return None, f"text_parse: 解析校验失败（{e}）"
 
 
 def invoke_structured(
@@ -226,11 +232,15 @@ def invoke_structured(
         # 默认：三层降级
         strategies = [_try_tool_calling, _try_json_mode, _try_text_parse]
 
-    last_error = None
+    # v9.78: 逐策略收集「为什么 None」的可行动原因（去重），替代原先恒 None 的误导性
+    # 「最后错误：None」（tool 层模型不产 tool_calls / json 未配置 / text 无 JSON 块时，
+    # 三层全部静默 return None，last_error 恒 None，日志无从定位）。
+    reasons = []
+    exceptions = []
     for attempt in range(max_attempts):
         for strategy_fn in strategies:
             try:
-                result = strategy_fn(llm, prompt, schema)
+                result, reason = strategy_fn(llm, prompt, schema)
                 if result is not None:
                     strategy_name = strategy_fn.__name__.replace("_try_", "")
                     logger.info(
@@ -238,15 +248,20 @@ def invoke_structured(
                         f"（第{attempt+1}次尝试）"
                     )
                     return result
+                if reason and reason not in reasons:
+                    reasons.append(reason)
             except Exception as e:
-                last_error = e
+                exceptions.append(f"{strategy_fn.__name__}: 异常 {e}")
                 logger.debug(f"{strategy_fn.__name__} 异常：{e}")
                 continue
 
         if attempt < max_attempts - 1:
             logger.warning(f"{schema.__name__} 第{attempt+1}次全部策略失败，重试")
 
+    reason_text = "；".join(reasons) if reasons else "各策略静默返回空（无异常）"
+    if exceptions:
+        reason_text += "（捕获异常：" + "；".join(exceptions) + "）"
+    logger.error(f"{schema.__name__} 结构化输出失败（{max_attempts}次尝试 × {len(strategies)}种策略）：{reason_text}")
     raise ValueError(
-        f"{schema.__name__} 结构化输出失败（{max_attempts}次尝试 × {len(strategies)}种策略），"
-        f"最后错误：{last_error}"
+        f"{schema.__name__} 结构化输出失败（{max_attempts}次尝试 × {len(strategies)}种策略）：{reason_text}"
     )
