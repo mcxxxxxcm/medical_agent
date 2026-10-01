@@ -301,7 +301,8 @@
       "Bash(tail -60 logs/error.log)",
       "Bash(\"D:/Agent/software/envs/my_medical_env/python.exe\" -c \"import chromadb; print\\('chromadb', chromadb.__version__\\)\")",
       "Bash(sed -n '5480,5560p' app/graph/nodes/nodes.py)",
-      "Bash(ENABLE_SEMANTIC_CACHE=false /d/Agent/software/envs/my_medical_env/python.exe scripts/evaluate_golden_match.py --only 拨打120 --concurrent 1)"
+      "Bash(ENABLE_SEMANTIC_CACHE=false /d/Agent/software/envs/my_medical_env/python.exe scripts/evaluate_golden_match.py --only 拨打120 --concurrent 1)",
+      "Bash(ENABLE_SEMANTIC_CACHE=false /d/Agent/software/envs/my_medical_env/python.exe scripts/evaluate_golden_match.py --concurrent 3)"
     ]
   },
   "enableAllProjectMcpServers": true,

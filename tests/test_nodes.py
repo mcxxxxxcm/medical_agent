@@ -339,7 +339,12 @@ class TestSymptomWhitelistSanitizer:
 class TestOffDocMedicationStrip:
     """v9.32 文档外用药整句剔除（含残句修复）"""
 
-    from app.graph.nodes.nodes import _strip_off_doc_medications
+    from app.graph.nodes.nodes import _strip_off_doc_medications as _strip_impl
+    # v9.78: 类体内 import 会把函数当绑定方法，self 被注入进 text 参位，与 docs_text= 撞成
+    # TypeError（"got multiple values for 'docs_text'"）。用 staticmethod 解除绑定后，
+    # self._strip_off_doc_medications(...) 才按普通函数调用。此为测试调用 bug，实现签名本就正确
+    # （CHANGELOG v9.75 说的"签名不匹配"实际是这一 self 绑定问题）。
+    _strip_off_doc_medications = staticmethod(_strip_impl)
 
     def test_whole_sentence_removed_no_residual(self):
         # errorLog 复现：奥司他韦不在文档中 → 整句连同剂量括号一起删，不残留"（每次75mg…）"

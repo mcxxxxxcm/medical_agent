@@ -1,5 +1,37 @@
 # 系统优化更新日志
 
+## v9.78 - 评测失败归因+混淆矩阵 / 语义缓存纳入检索配置指纹 / 测试债清理：先造"尺子"再看清失分（scripts/evaluate_golden_match.py、app/cache/semantic_cache.py、tests/test_nodes.py）
+
+背景：errorLog.txt 方案的"未完成项"里，经批判核对多已过时/部分落地，本轮只挑低风险闭环做，并主动砍掉无效项：
+- **评测早已是逐 key_facts + LLM 语义判定**（v9.73 起），真正缺的只是"混淆矩阵（要点级漏报）+ 失败归因分桶（帕累托）"。
+- **语义缓存 key 只绑 kb_version+prompt_version**（v9.2/v9.4），缺检索配置指纹——改检索参数后 L2 命中旧结果掩盖效果，正是 errorLog 五节与 memory"检索改动须关缓存"政策想守的纪律。
+- **批判性砍掉"评测强制绕过缓存"**：`evaluation.py` 的检索/生成路径本不走 `semantic_cache`（grep 确认无引用），若加"强制关缓存+断言命中0"会恒真＝空转，制造假保护，故不做。
+- **不做生成侧结构化 JSON 重构**：杠杆最高但工程量最大、与 `_SegmentedEmitter` 强耦合、风险最高；且 v9.77 已证明"轻量门控生成指令"路线更省力。本轮先造尺、看清每类失分，再决定怎么改生成。
+
+### 改动1 评测：失败归因（二分）+ 混淆矩阵（要点级漏报）+ 类目命中率（scripts/evaluate_golden_match.py）
+- 新增 `_med_terms` / `_in_retrieval` / `_find_evidence` / `_attribute_miss`：对每个**未命中 key_fact** 做二分归因（`检索缺失`=召回池里证据词全不出现 / `生成未覆盖`=召回有依据但生成没覆盖，含上下文稀释，统一并入此桶）。证据词=数值(+单位)/品牌字母(FAST 等)/中文段；中文段整段未中退到"段内多数 2-gram 命中"缓解同义换词的假阴性。判定方向保守——宁可误判进"生成未覆盖"引导去查生成，也不误判"检索缺失"误导去加检索。
+- 新增 `_build_profiles`：汇总①混淆矩阵（judged_hit 判定方式分布 + **常漏报要点 TopN**）②失败归因帕累托（含证据片段与代表样本）③按类目要点命中率。
+- 控制台新增"常漏报要点 Top / 失败归因分布 / 按类目要点命中率"三小节；报告 JSON 新增 `conf_matrix` / `attribution` / `category_hit_rate`（每样本含 attribution 子字段）。`--no-attribution` 可关（纯规则免费、**无新增 LLM 调用**）。
+- **不动**既有 `passed`/`pass_rate`/strict 0.7/loose 0.6 判定，历史口径不回退。
+
+### 改动2 语义缓存：检索配置指纹（app/cache/semantic_cache.py）
+- 新增 `_get_retrieval_config_version()`：把 config 里 `RETRIEVAL_*` / `RERANK*` / `RERANKER_*` / `ENABLE_HYDE` 字段 hash 成指纹（不并入 git sha，避免任何文件改动都触发全量失效的粗放行为）。
+- `set()` 写入 `retrieval_version`；`get()` 命中后校验（仿 v9.2 kb_version 判断），不匹配即删该条+当 miss 落到**重新检索**。旧缓存条目无该字段则不触发，保向后兼容。
+- 效果：改检索参数自动失效旧缓存，不再靠 `ENABLE_SEMANTIC_CACHE=false` 的人工记忆。
+
+### 改动3 测试债：纠错 v9.75 的过时表述（tests/test_nodes.py）
+- 复现确认 `TestOffDocMedicationStrip` 4 失败**真因是测试类体内 `import _strip_off_doc_medications` 把函数当实例方法，self 被注入进 `text` 参位**，与 `docs_text=...` 撞成 `TypeError: got multiple values for 'docs_text'`。**并非** v9.75 所述的"签名与测试不匹配"（该函数签名 `(text, docs_text, removed=None)` 带默认值、调用合法）。实现本身正确，零改动。
+- 修法：`_strip_off_doc_medications = staticmethod(_strip_impl)` 解除 self 绑定，4 用例按原语义全过。
+
+验证（`my_medical_env`，检索类改动关缓存）：
+- 测试债：`pytest tests/test_nodes.py::TestOffDocMedicationStrip` **4 passed**；`tests/test_memory_reuse.py` **9 passed**。全量 `test_nodes.py` 因既有慢/挂起的用例（与本次无关）未跑完，未穷尽回归，已如实标注。
+- 缓存指纹：`_get_retrieval_config_version()` 两次调用一致（确定性、非 default/unknown），纳入字段含 `RETRIEVAL_K_DEFAULT/…`、`RERANKER_TOP_K`、`RERANKER_THRESHOLD`、`RERANKER_MODEL_PATH`、`ENABLE_HYDE`。诚实说明：仅验证"指纹计算正确"；"改参数后命中转 miss"的真 Redis 集成验证未跑，需在运行服务里改检索参数观察命中率（或由用户在 PyCharm 重启后观察）。
+- 评测端到端：`python scripts/evaluate_golden_match.py --limit 2`（真实 golden 数据）跑通，报告出现"常漏报要点/失败归因/类目命中率"三小节，JSON 含新字段。归因质量抽验：hard 样本「孕妇感冒了能吃布洛芬吗」未命中「妊娠晚期」被归因为**生成未覆盖**并给证据「2. 禁用布洛芬（妊娠晚期）」——即召回里已有依据但生成只写"孕早期避免布洛芬"未转述妊娠晚期，方向为生成侧而非检索，与 v9.73/v9.77"临门一脚在生成"的结论一致。
+
+诚实结论：本轮交付三个低风险闭环，让后续生成侧优化不再靠猜失分来源；主动砍掉了空的"评测绕缓存"项、缓做生成侧结构性重构。测试债真因纠正了 v9.75 的过时描述（是测试 self 绑定、非实现签名问题）。
+
+<footer>v9.78 · scripts/evaluate_golden_match.py、app/cache/semantic_cache.py、tests/test_nodes.py、CHANGELOG.md</footer>
+
 ## v9.77 - B段 TTFT 首段时序 + 拨打120 急诊生成覆盖：完成 v9.74/v9.73 剩余核心项（app/graph/nodes/nodes.py、app/graph/nodes/prompts.py）
 
 背景：v9.74 明确把「B段 answer_generation 首 token」列为后续项、v9.73 明确把「生成层未把已召回的 7 类急诊场景逐一转述」列为下步——本轮一并收口。两项都严格不动检索/子查询/K/final_question，沿用既有硬约束。用户选定 TTFT 侧仅发射器时序（零质量风险、不裁剪 prompt）。

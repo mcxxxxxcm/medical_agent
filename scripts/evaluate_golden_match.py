@@ -31,6 +31,7 @@ import random
 import re
 import sys
 import time
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List
@@ -168,8 +169,101 @@ def match_key_facts(answer: str, key_facts: List[str], use_semantic: bool = True
     return results
 
 
+# ---- v9.78 失败归因（帕累托）+ 混淆矩阵（要点级漏报） ----
+# 归因只在两个高可信桶间做二分，拒绝造假细分：
+#   - "检索缺失"：该要点的显著证据词（数值/品牌字母/中文段）在召回文档池里全部不出现，
+#     生成即便想答也没有依据。
+#   - "生成未覆盖"：召回池里有相关依据、但生成没覆盖 → 上下文稀释与生成偏离统一并入此桶。
+# 反向判定同理：宁可把不确定误判进"生成未覆盖"（引导去查生成），也不误判"检索缺失"（误导去加检索）。
+# 中文段先查整段命中；整段未中再退到"段内多数 2-gram 命中"，缓解同义换词的假阴性。
+
+_STOP_CJK_2GRAM = {
+    "以下", "情况", "不会", "不能", "不可", "没有", "这些", "那些", "如果", "需要",
+    "应该", "是否", "超过", "至少", "最多", "达到", "时候", "之间", "之后", "之前",
+    "陷入", "处于", "发生", "出现", "表现", "引起", "导致", "造成", "属于", "作为",
+}
+
+
+def _med_terms(fact: str) -> Dict[str, set]:
+    """从要点抽取显著证据词：数值(+单位)/品牌字母/中文段，用于证据匹配。"""
+    terms = {"数值": set(), "字母": set(), "中文": set()}
+    for m in re.finditer(r"[<>≥≤]?\d+(?:\.\d+)?(?:-[小大])?\s*(?:分钟|小时|天|月|次|顿|日)?(?:mg|g|kg|ml)?", fact):
+        t = m.group(0).strip()
+        if t and any(ch.isdigit() for ch in t):
+            terms["数值"].add(t)
+    for m in re.finditer(r"[A-Za-z]{2,}", fact):
+        terms["字母"].add(m.group(0).upper())
+    for m in re.finditer(r"[一-鿿]{3,}", fact):
+        seg = m.group(0).strip()
+        if seg:
+            terms["中文"].add(seg)
+    return terms
+
+
+def _in_retrieval(terms: Dict[str, set], npool: str):
+    """证据词在归一化召回池里是否出现（二分判定的规则近似）。"""
+    if not terms or not npool:
+        return None
+    for tok in terms["数值"] | terms["字母"]:
+        nt = _normalize(tok)
+        if nt and nt in npool:
+            return True
+    for seg in terms["中文"]:
+        nseg = _normalize(seg)
+        if not nseg:
+            continue
+        if nseg in npool:
+            return True
+        grams = [seg[i:i + 2] for i in range(len(seg) - 1)]
+        grams = [g for g in grams if g not in _STOP_CJK_2GRAM]
+        if not grams:
+            continue
+        hit = sum(1 for g in grams if _normalize(g) in npool)
+        if hit >= (len(grams) + 1) // 2:
+            return True
+    return False
+
+
+def _find_evidence(fact: str, contexts: List[str], maxlen: int = 120) -> str:
+    """从召回池里取与要点相关的证据片段（含命中词的句子），供人工复核归因判断。"""
+    if not contexts:
+        return ""
+    terms = _med_terms(fact)
+    npool = _normalize("\n".join(contexts))
+    wanted = [t for t in terms["数值"] | terms["字母"] if _normalize(t) and _normalize(t) in npool]
+    for dm in terms["中文"]:
+        if _normalize(dm) in npool:
+            wanted.append(dm)
+    for ctx in contexts:
+        nctx = _normalize(ctx)
+        for w in wanted:
+            if _normalize(w) and _normalize(w) in nctx:
+                for sent in re.split(r"[。！？\n]", ctx):
+                    if w in sent or _normalize(w) in _normalize(sent):
+                        return sent[:maxlen]
+    return ""
+
+
+def _attribute_miss(fact: str, contexts: List[str]) -> Dict:
+    """对未命中要点做二分归因，返回 {label, in_retrieval, evidence}。"""
+    terms = _med_terms(fact)
+    pool = "\n".join(contexts) if contexts else ""
+    npool = _normalize(pool)
+    if not terms or not npool:
+        label = "unknown"
+        in_retr = None
+    elif _in_retrieval(terms, npool):
+        label = "生成未覆盖"
+        in_retr = True
+    else:
+        label = "检索缺失"
+        in_retr = False
+    return {"label": label, "in_retrieval": in_retr, "evidence": _find_evidence(fact, contexts) if contexts else ""}
+
+
 def run_one(evaluator: RAGEvaluator, sample: Dict, threshold: float,
-            use_semantic: bool, store_contexts: bool = False) -> Dict:
+            use_semantic: bool, store_contexts: bool = False,
+            enable_attribution: bool = True) -> Dict:
     """对单条样本执行检索+生成+匹配判定（含空答案重试）"""
     question = sample.get("question", "")
     ground_truth = sample.get("ground_truth", "")
@@ -205,6 +299,11 @@ def run_one(evaluator: RAGEvaluator, sample: Dict, threshold: float,
                 source = f"error: {e}"
 
     fact_matches = match_key_facts(answer, key_facts, use_semantic)
+    if enable_attribution:
+        # v9.78 归因用全量召回判定，报告仍只存前3段省体积
+        for fm in fact_matches:
+            if not fm["hit"]:
+                fm["attribution"] = _attribute_miss(fm["fact"], contexts)
     hit_count = sum(1 for fm in fact_matches if fm["hit"])
     total = len(fact_matches)
     hit_ratio = round(hit_count / total, 4) if total else 0.0
@@ -230,9 +329,62 @@ def run_one(evaluator: RAGEvaluator, sample: Dict, threshold: float,
     }
 
 
+def _build_profiles(results: List[Dict]) -> Dict:
+    """汇总混淆矩阵(要点级漏报 TopN + 判定方式分布)、失败归因分布、category 要点命中率。"""
+    judged_hit = Counter()          # (judged_by, 命中与否) 计数
+    miss_by_fact = {}               # 文本聚类：未命中要点 -> {fact, missed, examples[]}
+    label_counter = Counter()       # 未命中要点 归因 label 分布（帕累托）
+    samples_by_label = defaultdict(list)
+    cats = defaultdict(lambda: {"fact_total": 0, "hit": 0})
+
+    for r in results:
+        for fm in r.get("fact_matches", []):
+            jb = fm.get("judged_by", "none")
+            judged_hit[(jb, "hit" if fm["hit"] else "miss")] += 1
+            c = r.get("category") or "未分类"
+            cats[c]["fact_total"] += 1
+            if fm["hit"]:
+                cats[c]["hit"] += 1
+                continue
+            norm = _normalize(fm.get("fact", "")) or str(fm.get("fact", ""))
+            entry = miss_by_fact.setdefault(norm, {"fact": fm.get("fact", ""), "missed": 0, "examples": []})
+            entry["missed"] += 1
+            if len(entry["examples"]) < 3:
+                entry["examples"].append(r.get("question", ""))
+            att = fm.get("attribution")
+            if att:
+                lb = att.get("label") or "unknown"
+                label_counter[lb] += 1
+                if len(samples_by_label[lb]) < 5:
+                    samples_by_label[lb].append({
+                        "question": r.get("question", ""),
+                        "fact": fm.get("fact", ""),
+                        "evidence": att.get("evidence", ""),
+                    })
+
+    most_missed = sorted(miss_by_fact.values(), key=lambda e: -e["missed"])[:8]
+    category_hit_rate = {c: {"fact_total": e["fact_total"], "hit": e["hit"],
+                             "rate": round(e["hit"] / max(1, e["fact_total"]), 4)}
+                         for c, e in cats.items()}
+    attribution_total = sum(label_counter.values()) or 1
+    return {
+        "conf_matrix": {
+            "judged_hit": {k[0]: {k[1]: v} for k, v in sorted(judged_hit.items())},
+            "most_missed_facts": most_missed,
+        },
+        "attribution": {
+            "total_missed_facts": sum(label_counter.values()),
+            "distribution": dict(label_counter),
+            "distribution_ratio": {lb: round(c / attribution_total, 4) for lb, c in label_counter.items()},
+            "samples": {lb: samples_by_label[lb] for lb in label_counter},
+        },
+        "category_hit_rate": category_hit_rate,
+    }
+
+
 def _print_report(results, passed, failed, avg_hit, llm_recovered_total,
                   facts_llm_judged, total, threshold, duration, skipped=0,
-                  loose_threshold=0.6) -> None:
+                  loose_threshold=0.6, profiles=None) -> None:
     # 宽松通过：以 looser 阈值判"要点覆盖达大半"，作为参考以认可"内容已答到大部分要点"
     # 的系统（尤其差 1 个要点未全对的样本），与 0.7 严格口径并存，不改严格判定。
     loose_passed = [
@@ -274,6 +426,33 @@ def _print_report(results, passed, failed, avg_hit, llm_recovered_total,
         if r.get("ground_truth"):
             print(f"    标 : {r['ground_truth'][:200]}")
 
+    if profiles:
+        cm = profiles.get("conf_matrix", {})
+        most_missed = cm.get("most_missed_facts", [])
+        if most_missed:
+            print("\n" + "-" * 60)
+            print("常漏报要点 Top（混淆矩阵｜可定位\"拨120\"具体丢哪个要点）")
+            for e in most_missed:
+                ex = e["examples"][0][:30] if e["examples"] else ""
+                print(f"  ×{e['missed']}  {e['fact'][:40] or '（空要点）'}  ← 例:{ex}")
+        att = profiles.get("attribution", {})
+        dist = att.get("distribution", {})
+        if dist:
+            print("-" * 60)
+            print(f"失败归因分布（帕累托｜未命中要点 {att.get('total_missed_facts', 0)} 个）")
+            for lb, c in sorted(dist.items(), key=lambda kv: -kv[1]):
+                ratio = att.get("distribution_ratio", {}).get(lb, 0)
+                print(f"  {lb}: {c} 个 ({ratio:.0%})")
+                for s in att.get("samples", {}).get(lb, [])[:2]:
+                    ev = f"｜证据:{s['evidence'][:50]}" if s.get("evidence") else ""
+                    print(f"     ↳ {s['question'][:28]} → 「{s['fact'][:24]}」{ev}")
+        catr = profiles.get("category_hit_rate", {})
+        if catr:
+            print("-" * 60)
+            print("按类目要点命中率")
+            for c, e in sorted(catr.items(), key=lambda kv: -kv[1]["rate"]):
+                print(f"  {c}: {e['rate']:.0%} ({e['hit']}/{e['fact_total']})")
+
 
 def main():
     parser = argparse.ArgumentParser(description="黄金测试集答案匹配判定（可并行 + LLM 语义复审）")
@@ -289,6 +468,8 @@ def main():
                         help="把每条检索召回的前3段写进报告（诊断检索错位用，默认开启）")
     parser.add_argument("--no-contexts", dest="store_contexts", action="store_false",
                         help="不把检索召回写进报告（省体积）")
+    parser.add_argument("--no-attribution", dest="attribution", action="store_false", default=True,
+                        help="关闭失败归因（v9.78 新增；默认开启，纯规则免费、无额外 LLM 调用）")
     parser.add_argument("--only", type=str, default="", metavar="子串",
                         help="只评估 question 包含该子串的样本（如 --only 布洛芬），多个用 | 分隔")
     args = parser.parse_args()
@@ -332,7 +513,7 @@ def main():
     done = 0
 
     def _worker(sample: Dict) -> Dict:
-        return run_one(evaluator, sample, args.threshold, use_semantic, args.store_contexts)
+        return run_one(evaluator, sample, args.threshold, use_semantic, args.store_contexts, args.attribution)
 
     logger.info(f"并行度 {args.concurrent}，共 {total} 条开始评估" + ("，启用 LLM 语义复审" if use_semantic else "，仅字面子串"))
     if args.concurrent == 1:
@@ -388,9 +569,11 @@ def main():
         r for r in results
         if r.get("fact_total", 0) > 0 and r.get("hit_ratio", 0.0) >= loose_threshold
     ]
+    profiles = _build_profiles(results) if args.attribution else None
     _print_report(results, passed, failed, avg_hit, llm_recovered_total,
                   facts_llm_judged, total, args.threshold, time.time() - start,
-                  skipped=len(skipped), loose_threshold=loose_threshold)
+                  skipped=len(skipped), loose_threshold=loose_threshold,
+                  profiles=profiles)
 
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -410,6 +593,9 @@ def main():
         "facts_llm_judged": facts_llm_judged,
         "llm_recovered": llm_recovered_total,
         "skipped_no_facts": len(skipped),
+        "conf_matrix": profiles["conf_matrix"] if profiles else None,
+        "attribution": profiles["attribution"] if profiles else None,
+        "category_hit_rate": profiles["category_hit_rate"] if profiles else None,
         "per_sample": results,
         "skipped_samples": [{"question": s.get("question", ""),
                              "reason": f"key_facts空缺({s.get('fact_total', 0)}个要点)"} for s in skipped],

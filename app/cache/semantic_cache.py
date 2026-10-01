@@ -54,6 +54,41 @@ def _get_prompt_version() -> str:
     return "unknown"
 
 
+# v9.78 检索配置指纹：只收集会改变检索输出的关键参数前缀，不过度纳入无关字段，
+# 避免频繁失效缓存。也不并入 git sha（改动任何文件都会触发全量失效，过于粗放）。
+_RETRIEVAL_CFG_PREFIXES = ("RETRIEVAL_", "RERANK_", "RERANKER_")
+_RETRIEVAL_CFG_EXACT = ("ENABLE_HYDE",)
+
+
+def _get_retrieval_config_version() -> str:
+    """检索/重排/过滤配置指纹（v9.78 新增）。
+
+    语义缓存 key 只绑 kb_version + prompt_version（v9.2/v9.4），改检索参数（K 值/重排
+    top_k/HyDE 开关等）不会失效旧缓存，L2 会命中旧检索结果掩盖改动效果（errorLog 五节，
+    也是 memory"检索改动须关缓存"政策想守住的纪律）。本指纹把 config 里 RETRIEVAL_* /
+    RERANK*/ENABLE_HYDE 字段纳入 hash，任一检索相关配置变化缓存自动失效——把"人工记得
+    关缓存"变成机制，无需 ENABLE_SEMANTIC_CACHE=false 的临时纪律。
+    """
+    try:
+        from app.core.config import get_config
+        cfg = get_config()
+        parts = []
+        for attr in sorted(dir(cfg)):
+            if not attr.isupper():
+                continue
+            if attr.startswith(_RETRIEVAL_CFG_PREFIXES) or attr in _RETRIEVAL_CFG_EXACT:
+                try:
+                    val = getattr(cfg, attr)
+                except Exception:
+                    val = "?"
+                parts.append(f"{attr}={val}")
+        if not parts:
+            return "default"
+        return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:8]
+    except Exception:
+        return "unknown"
+
+
 class SemanticCache:
     """语义相似缓存管理器"""
 
@@ -262,14 +297,31 @@ class SemanticCache:
 
             # v9.2 漏洞1修复：校验缓存数据的 kb_version 是否与当前知识库一致
             # 不一致说明知识库已更新，旧缓存应失效
-            cached_kb_version = data.get("kb_version")
             current_kb_version = _get_kb_version()
-            if cached_kb_version and cached_kb_version != current_kb_version:
+            if data.get("kb_version") and data.get("kb_version") != current_kb_version:
                 logger.info(
-                    f"语义缓存 kb_version 不匹配（缓存={cached_kb_version}, "
+                    f"语义缓存 kb_version 不匹配（缓存={data.get('kb_version')}, "
                     f"当前={current_kb_version}），跳过过期缓存"
                 )
                 # 删除过期缓存条目
+                try:
+                    self._cache._redis.delete(key)
+                    self._cache._redis.zrem(self._keys_zset, key)
+                    self._cache._redis.srem(self._keys_set, key)
+                except Exception:
+                    pass
+                self._stats["misses"] += 1
+                return None
+
+            # v9.78：校验检索配置指纹。改动检索参数后旧缓存当作 miss 落到重新检索，
+            # 避免 L2 命中旧检索结果掩盖检索改动效果。旧缓存条目(无该字段)不做判断，保向后兼容。
+            current_rv = _get_retrieval_config_version()
+            if (data.get("retrieval_version") and current_rv not in ("unknown", "default")
+                    and data.get("retrieval_version") != current_rv):
+                logger.info(
+                    f"语义缓存检索配置指纹不匹配（缓存={data.get('retrieval_version')}, "
+                    f"当前={current_rv}），检索参数已变更，跳过过期缓存"
+                )
                 try:
                     self._cache._redis.delete(key)
                     self._cache._redis.zrem(self._keys_zset, key)
@@ -342,6 +394,9 @@ class SemanticCache:
         query_hash = hashlib.md5(f"{query}:{kb_version}:{prompt_version}".encode("utf-8")).hexdigest()
         key = f"{self.prefix}{query_hash}"
 
+        # v9.78：检索配置指纹纳入写入端，供 get() 侧校验，检索参数改动自动失效（见下方 get 判断）
+        retrieval_version = _get_retrieval_config_version()
+
         data = {
             "query": query,
             "embedding": query_embedding,
@@ -350,6 +405,7 @@ class SemanticCache:
             "created_at": datetime.now().isoformat(),
             "doc_count": len(documents),
             "kb_version": kb_version,  # 记录写入时的知识库版本
+            "retrieval_version": retrieval_version,
         }
 
         try:
